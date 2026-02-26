@@ -1,0 +1,164 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────
+//  Enums
+// ─────────────────────────────────────────
+
+enum Role {
+  USER
+  ADMIN
+  MODERATOR
+}
+
+enum TokenFamily {
+  REFRESH
+}
+
+// ─────────────────────────────────────────
+//  User
+// ─────────────────────────────────────────
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  passwordHash   String?   // null for OAuth-only users (e.g. Google)
+  name           String?
+  role           Role      @default(USER)
+  emailVerified  Boolean   @default(false)
+  isActive       Boolean   @default(true)
+
+  // OAuth provider (e.g. "google") – when set, passwordHash is null
+  provider       String?
+  providerId     String?   // provider's unique user id (e.g. Google sub)
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  lastLoginAt    DateTime?
+
+  refreshTokens  RefreshToken[]
+  auditLogs      AuditLog[]
+  trips          Trip[]
+
+  @@index([email])
+  @@index([provider, providerId])
+  @@map("users")
+}
+
+// ─────────────────────────────────────────
+//  Refresh Token (session store)
+// ─────────────────────────────────────────
+
+model RefreshToken {
+  id          String      @id @default(cuid())
+  tokenHash   String      @unique          // SHA-256 of the raw token (never store raw)
+  userId      String
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  family      String                       // rotation family – revoke on reuse
+  isRevoked   Boolean     @default(false)
+  expiresAt   DateTime
+  createdAt   DateTime    @default(now())
+  replacedBy  String?                      // cuid of the token that superseded this one
+
+  userAgent   String?
+  ipAddress   String?
+
+  @@index([userId])
+  @@index([family])
+  @@map("refresh_tokens")
+}
+
+// ─────────────────────────────────────────
+//  Audit Log
+// ─────────────────────────────────────────
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String                         // e.g. LOGIN, LOGOUT, REFRESH, REGISTER
+  ipAddress String?
+  userAgent String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────
+//  Rate Limit (DB-backed fallback)
+// ─────────────────────────────────────────
+
+model RateLimitEntry {
+  id        String   @id @default(cuid())
+  key       String   @unique              // e.g. "ratelimit:login:ip:1.2.3.4"
+  count     Int      @default(0)
+  resetAt   DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([key])
+  @@map("rate_limit_entries")
+}
+
+// ─────────────────────────────────────────
+//  Trip
+// ─────────────────────────────────────────
+
+model Trip {
+  id          String       @id @default(cuid())
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  destination String
+  startDate   DateTime
+  endDate     DateTime
+  createdAt   DateTime     @default(now())
+
+  itineraries Itinerary[]
+  chatMessages ChatMessage[]
+
+  @@index([userId])
+  @@map("trips")
+}
+
+// ─────────────────────────────────────────
+//  Itinerary
+// ─────────────────────────────────────────
+
+model Itinerary {
+  id        String   @id @default(cuid())
+  tripId    String
+  trip      Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  rawJson   Json
+  createdAt DateTime @default(now())
+
+  @@index([tripId])
+  @@map("itineraries")
+}
+
+// ─────────────────────────────────────────
+//  ChatMessage
+// ─────────────────────────────────────────
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  tripId    String
+  trip      Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  role      String
+  content   String
+  createdAt DateTime @default(now())
+
+  @@index([tripId])
+  @@map("chat_messages")
+}
