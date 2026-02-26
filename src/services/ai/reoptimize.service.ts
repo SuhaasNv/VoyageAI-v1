@@ -4,7 +4,7 @@
  * Generates a reoptimized itinerary based on user feedback, constraints, or external events.
  */
 
-import { getLLMClient, executeWithRetry, parseJSONResponse } from "../../lib/ai/llm";
+import { getLLMClient, executeWithRetry, parseJSONResponse, AIServiceError } from "../../lib/ai/llm";
 import { buildFullPrompt } from "../../lib/ai/prompts";
 import { SYSTEM_PROMPTS, SCHEMA_INSTRUCTIONS } from "../../lib/ai/prompts";
 import { assembleContext } from "../../lib/ai/context";
@@ -13,6 +13,13 @@ import {
     ReoptimizeResponse,
     ReoptimizeRequestSchema,
 } from "../../lib/ai/schemas";
+import { validateItineraryStructure, ItineraryValidationError } from "../../lib/ai/itineraryValidation";
+import {
+    reoptimizeCacheKey,
+    getReoptimizeCached,
+    setReoptimizeCached,
+} from "../../lib/ai/cache";
+import { logError } from "@/lib/logger";
 
 /**
  * Reoptimizes a trip itinerary.
@@ -22,6 +29,16 @@ export async function reoptimizeTrip(
     contextBundle?: ReturnType<typeof assembleContext>
 ): Promise<ReoptimizeResponse> {
     const parsedReq = ReoptimizeRequestSchema.parse(request);
+
+    const cacheKey = reoptimizeCacheKey({
+        tripId: parsedReq.tripId,
+        currentItinerary: parsedReq.currentItinerary,
+        reoptimizationReasons: parsedReq.reoptimizationReasons,
+        remainingBudget: parsedReq.remainingBudget,
+        lockedDays: parsedReq.lockedDays,
+    });
+    const cached = await getReoptimizeCached(cacheKey);
+    if (cached) return cached as ReoptimizeResponse;
 
     const system = SYSTEM_PROMPTS.REOPTIMIZER;
     const context = contextBundle ? contextBundle : "";
@@ -49,18 +66,28 @@ Given the current itinerary (ID: ${parsedReq.tripId}) and the following reoptimi
         const llmResponse = await executeWithRetry(client, [{ role: "user", content: fullPrompt }], llmOptions);
         const response = parseJSONResponse<ReoptimizeResponse>(llmResponse.content);
         const final = (await import("../../lib/ai/schemas")).ReoptimizeResponseSchema.parse(response);
+
+        try {
+            validateItineraryStructure(final.reoptimizedItinerary, {
+                maxBudget: parsedReq.remainingBudget,
+                flexibility: "flexible",
+            });
+        } catch (validationErr) {
+            if (validationErr instanceof ItineraryValidationError) {
+                throw new AIServiceError(
+                    "SCHEMA_VALIDATION_FAILED",
+                    validationErr.message,
+                    { code: validationErr.code }
+                );
+            }
+            throw validationErr;
+        }
+
+        await setReoptimizeCached(cacheKey, final);
         return final;
     } catch (err) {
-        console.error("[Reoptimize Service] LLM error – fallback", err);
-        // Simple fallback: return original itinerary unchanged with empty changes
-        return {
-            tripId: parsedReq.tripId,
-            originalItinerary: parsedReq.currentItinerary,
-            reoptimizedItinerary: parsedReq.currentItinerary,
-            changesSummary: [],
-            budgetDelta: 0,
-            aiReasoning: "Fallback: no changes applied due to LLM failure.",
-            reoptimizedAt: new Date().toISOString(),
-        };
+        if (err instanceof AIServiceError) throw err;
+        logError("[Reoptimize Service] LLM error", err);
+        throw err;
     }
 }

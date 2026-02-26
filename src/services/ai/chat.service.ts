@@ -9,6 +9,7 @@
  */
 
 import { getLLMClient, executeWithRetry, parseJSONResponse } from "../../lib/ai/llm";
+import { logError } from "@/lib/logger";
 import { buildFullPrompt } from "../../lib/ai/prompts";
 import { SYSTEM_PROMPTS, SCHEMA_INSTRUCTIONS } from "../../lib/ai/prompts";
 import { assembleContext } from "../../lib/ai/context";
@@ -17,6 +18,7 @@ import {
     ChatResponse,
     ChatRequestSchema,
 } from "../../lib/ai/schemas";
+import { chatCacheKey, getChatCached, setChatCached } from "../../lib/ai/cache";
 
 /**
  * Handles a chat request.
@@ -29,6 +31,16 @@ export async function chatCompanion(
     contextBundle?: ReturnType<typeof assembleContext>
 ): Promise<ChatResponse> {
     const parsedReq = ChatRequestSchema.parse(request);
+
+    const cacheKey = chatCacheKey({
+        tripId: (parsedReq as { tripId?: string }).tripId,
+        messages: parsedReq.messages,
+        travelDNA: parsedReq.travelDNA,
+        currentItinerary: parsedReq.currentItinerary,
+        currentLocation: parsedReq.currentLocation,
+    });
+    const cached = await getChatCached(cacheKey);
+    if (cached) return cached as ChatResponse;
 
     const system = SYSTEM_PROMPTS.CHAT_COMPANION;
     // Fallback to generic AI companion if specific key missing
@@ -62,18 +74,10 @@ Respond to the user's query using the provided context. Follow these rules:
         const llmResponse = await executeWithRetry(client, [{ role: "user", content: fullPrompt }], llmOptions);
         const response = parseJSONResponse<ChatResponse>(llmResponse.content);
         const final = (await import("../../lib/ai/schemas")).ChatResponseSchema.parse(response);
+        await setChatCached(cacheKey, final);
         return final;
     } catch (err) {
-        console.error("[Chat Service] LLM error – fallback", err);
-        // Minimal fallback response
-        return {
-            message: "Sorry, I couldn't process your request right now. Please try again later.",
-            intent: "fallback",
-            suggestedActions: [],
-            relatedTips: [],
-            confidenceScore: 0,
-            modelVersion: "fallback-mock",
-            respondedAt: new Date().toISOString(),
-        };
+        logError("[Chat Service] LLM error", err);
+        throw err;
     }
 }

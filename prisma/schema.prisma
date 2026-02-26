@@ -32,6 +32,7 @@ model User {
   email          String    @unique
   passwordHash   String?   // null for OAuth-only users (e.g. Google)
   name           String?
+  image          String?   // profile picture URL (e.g. from Google)
   role           Role      @default(USER)
   emailVerified  Boolean   @default(false)
   isActive       Boolean   @default(true)
@@ -40,6 +41,8 @@ model User {
   provider       String?
   providerId     String?   // provider's unique user id (e.g. Google sub)
 
+  hasOnboarded   Boolean   @default(false)
+  preferences    Json?     // travel preferences from onboarding
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   lastLoginAt    DateTime?
@@ -113,19 +116,46 @@ model RateLimitEntry {
 }
 
 // ─────────────────────────────────────────
+//  LLM Call Log (usage tracking for cost awareness)
+// ─────────────────────────────────────────
+
+model AiUsageLog {
+  id               String   @id @default(cuid())
+  provider         String
+  modelUsed        String
+  promptTokens     Int
+  completionTokens Int
+  totalTokens      Int
+  latencyMs        Int
+  costEstimateUsd  Float    @default(0)
+  requestId        String?
+  endpoint         String?
+  createdAt        DateTime @default(now())
+
+  @@index([provider])
+  @@index([createdAt])
+  @@index([requestId])
+  @@map("ai_usage_logs")
+}
+
+// ─────────────────────────────────────────
 //  Trip
 // ─────────────────────────────────────────
 
 model Trip {
-  id          String       @id @default(cuid())
-  userId      String
-  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  destination String
-  startDate   DateTime
-  endDate     DateTime
-  createdAt   DateTime     @default(now())
+  id             String       @id @default(cuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  destination    String
+  startDate      DateTime
+  endDate        DateTime
+  budgetTotal    Float        @default(0)
+  budgetCurrency String       @default("USD")
+  style          String?      // relaxed | creative | exciting | luxury | budget
+  imageUrl       String?
+  createdAt      DateTime     @default(now())
 
-  itineraries Itinerary[]
+  itineraries  Itinerary[]
   chatMessages ChatMessage[]
 
   @@index([userId])

@@ -6,6 +6,7 @@
  */
 
 import { getLLMClient, executeWithRetry, parseJSONResponse } from "../../lib/ai/llm";
+import { logError } from "@/lib/logger";
 import { buildFullPrompt } from "../../lib/ai/prompts";
 import { SYSTEM_PROMPTS, SCHEMA_INSTRUCTIONS } from "../../lib/ai/prompts";
 import { assembleContext } from "../../lib/ai/context";
@@ -55,19 +56,7 @@ Given the itinerary for **${parsedReq.itinerary.destination}** (${parsedReq.itin
         const final = (await import("../../lib/ai/schemas")).SimulationResponseSchema.parse(response);
         return final;
     } catch (err) {
-        console.error("[Simulation Service] LLM error – fallback", err);
-        // Minimal fallback: low risk, no outcomes
-        return {
-            tripId: parsedReq.tripId ?? undefined,
-            destination: parsedReq.itinerary.destination,
-            overallRiskScore: 1,
-            riskLevel: "low",
-            outcomes: [],
-            topRecommendations: ["Fallback: unable to run simulation at this time."],
-            insuranceRecommendation: "Consider basic travel insurance.",
-            flexibilityScore: 9,
-            simulatedAt: new Date().toISOString(),
-            modelVersion: "fallback-mock",
-        };
+        logError("[Simulation Service] LLM error", err);
+        throw err;
     }
 }

@@ -17,41 +17,34 @@ import { clearRefreshTokenCookie, clearCsrfCookie, clearAccessTokenCookie } from
 import { writeAuditLog } from "@/lib/auth/audit";
 import { successResponse } from "@/lib/api/response";
 import { getClientIp, getRefreshTokenFromCookie, getAuthContext } from "@/lib/api/request";
+import { logError } from "@/lib/logger";
 import { runWithRequestContext } from "@/lib/requestContext";
 
 export async function POST(req: NextRequest) {
     return runWithRequestContext(req, async () => {
-    const ip = getClientIp(req);
-    const ua = req.headers.get("user-agent") ?? "unknown";
+        const ip = getClientIp(req);
+        const ua = req.headers.get("user-agent") ?? "unknown";
+        const rawToken = getRefreshTokenFromCookie(req);
+        const authCtx = getAuthContext(req);
 
-    const rawToken = getRefreshTokenFromCookie(req);
-    const authCtx = getAuthContext(req);
+        const response = successResponse({ message: "Logged out successfully" });
+        response.headers.append("Set-Cookie", clearAccessTokenCookie());
+        response.headers.append("Set-Cookie", clearRefreshTokenCookie());
+        response.headers.append("Set-Cookie", clearCsrfCookie());
 
-    if (rawToken) {
-        const tokenHash = hashToken(rawToken);
-        try {
-            await prisma.refreshToken.updateMany({
-                where: { tokenHash, isRevoked: false },
-                data: { isRevoked: true },
-            });
-        } catch (err) {
-            // Log but don't fail the logout
-            console.error("[logout] Failed to revoke token:", err);
+        if (rawToken) {
+            const tokenHash = hashToken(rawToken);
+            prisma.refreshToken
+                .updateMany({ where: { tokenHash, isRevoked: false }, data: { isRevoked: true } })
+                .catch((err) => logError("[logout] Failed to revoke token", err));
         }
-    }
+        writeAuditLog({
+            action: "LOGOUT",
+            userId: authCtx?.user.sub,
+            ipAddress: ip,
+            userAgent: ua,
+        }).catch(() => {});
 
-    await writeAuditLog({
-        action: "LOGOUT",
-        userId: authCtx?.user.sub,
-        ipAddress: ip,
-        userAgent: ua,
-    });
-
-    const response = successResponse({ message: "Logged out successfully" });
-    response.headers.append("Set-Cookie", clearAccessTokenCookie());
-    response.headers.append("Set-Cookie", clearRefreshTokenCookie());
-    response.headers.append("Set-Cookie", clearCsrfCookie());
-
-    return response;
+        return response;
     });
 }

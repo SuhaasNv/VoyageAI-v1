@@ -1,9 +1,9 @@
 /**
  * app/api/profile/route.ts
  *
- * PATCH /api/profile
+ * GET  /api/profile — Returns the current user (for hydrating auth store).
+ * PATCH /api/profile — Updates the authenticated user's profile (name).
  *
- * Updates the authenticated user's profile (name).
  * Requires valid access token (cookie or Authorization header).
  */
 
@@ -13,6 +13,49 @@ import { prisma } from "@/lib/prisma";
 import { getAuthContext } from "@/lib/api/request";
 import { successResponse, errorResponse, validationErrorResponse } from "@/lib/api/response";
 import { runWithRequestContext } from "@/lib/requestContext";
+
+export async function GET(req: NextRequest) {
+    return runWithRequestContext(req, async () => {
+        const auth = getAuthContext(req);
+        if (!auth) {
+            return errorResponse("UNAUTHORIZED", "You must be signed in to view your profile", 401);
+        }
+
+        try {
+            const user = await prisma.user.findUnique({
+                where: { id: auth.user.sub },
+                select: {
+                    id: true,
+                    email: true,
+                    name: true,
+                    image: true,
+                    role: true,
+                    hasOnboarded: true,
+                    createdAt: true,
+                },
+            });
+
+            if (!user) {
+                return errorResponse("NOT_FOUND", "User not found", 404);
+            }
+
+            return successResponse({
+                user: {
+                    id: user.id,
+                    email: user.email,
+                    name: user.name,
+                    image: user.image,
+                    role: user.role,
+                    hasOnboarded: user.hasOnboarded ?? false,
+                    createdAt: user.createdAt.toISOString(),
+                },
+            });
+        } catch (err) {
+            console.error("[profile] Fetch failed:", err);
+            return errorResponse("INTERNAL_ERROR", "Failed to fetch profile", 500);
+        }
+    });
+}
 
 const UpdateProfileSchema = z.object({
     name: z

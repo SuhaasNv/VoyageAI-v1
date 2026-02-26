@@ -1,0 +1,68 @@
+
+> voyageai_1@0.1.0 lint
+> eslint
+
+
+/Users/suhaasnv/Documents/Desktop ALT/portfolioprojects/voyageai_1/src/app/(marketing)/careers/page.tsx
+  54:60  error  `'` can be escaped with `&apos;`, `&lsquo;`, `&#39;`, `&rsquo;`  react/no-unescaped-entities
+
+/Users/suhaasnv/Documents/Desktop ALT/portfolioprojects/voyageai_1/src/app/api/ai/create-trip-from-text/route.ts
+  11:5  warning  'errorResponse' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/suhaasnv/Documents/Desktop ALT/portfolioprojects/voyageai_1/src/app/api/ai/create-trip/route.ts
+  16:7  warning  'TripStyleEnum' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/Users/suhaasnv/Documents/Desktop ALT/portfolioprojects/voyageai_1/src/app/api/auth/refresh/route.ts
+  66:14  warning  'err' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/suhaasnv/Documents/Desktop ALT/portfolioprojects/voyageai_1/src/app/api/auth/register/route.ts
+  80:9  error  'user' is never reassigned. Use 'const' instead  prefer-const
+
+/Users/suhaasnv/Documents/Desktop ALT/portfolioprojects/voyageai_1/src/app/api/profile/route.ts
+  14:42  warning  'validationErrorResponse' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/suhaasnv/Documents/Desktop ALT/portfolioprojects/voyageai_1/src/app/api/trips/route.ts
+  13:5  warning  'errorResponse' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/suhaasnv/Documents/Desktop ALT/portfolioprojects/voyageai_1/src/app/dashboard/layout.tsx
+  6:10  warning  'DashboardBackground' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/suhaasnv/Documents/Desktop ALT/portfolioprojects/voyageai_1/src/app/dashboard/page.tsx
+  28:11  warning  'greetingName' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/Users/suhaasnv/Documents/Desktop ALT/portfolioprojects/voyageai_1/src/components/Hero.tsx
+  4:24  warning  'MapPin' is defined but never used      @typescript-eslint/no-unused-vars
+  4:37  warning  'Send' is defined but never used        @typescript-eslint/no-unused-vars
+  4:43  warning  'Navigation' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/suhaasnv/Documents/Desktop ALT/portfolioprojects/voyageai_1/src/components/Testimonials.tsx
+   66:33   error  `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   66:143  error  `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   93:33   error  `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   93:182  error  `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+  127:33   error  `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+  127:198  error  `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+
+/Users/suhaasnv/Documents/Desktop ALT/portfolioprojects/voyageai_1/src/components/dashboard/DashboardAIAssistant.tsx
+  38:23  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/suhaasnv/Documents/Desktop ALT/portfolioprojects/voyageai_1/src/components/dashboard/OnboardingModal.tsx
+  43:23  warning  'setInterests' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/Users/suhaasnv/Documents/Desktop ALT/portfolioprojects/voyageai_1/src/components/trip/TripTopBar.tsx
+  7:22  warning  'updateTrip' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/suhaasnv/Documents/Desktop ALT/portfolioprojects/voyageai_1/src/lib/ai/llm.ts
+  135:50  warning  '_user' is defined but never used  @typescript-eslint/no-unused-vars
+  518:44  warning  'now' is defined but never used    @typescript-eslint/no-unused-vars
+  528:47  warning  'now' is defined but never used    @typescript-eslint/no-unused-vars
+  537:46  warning  'now' is defined but never used    @typescript-eslint/no-unused-vars
+
+/Users/suhaasnv/Documents/Desktop ALT/portfolioprojects/voyageai_1/src/lib/auth/audit.ts
+  37:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/suhaasnv/Documents/Desktop ALT/portfolioprojects/voyageai_1/src/lib/services/tripSimulation.ts
+  79:10  warning  'minutesToHours' is defined but never used  @typescript-eslint/no-unused-vars
+
+✖ 27 problems (10 errors, 17 warnings)
+

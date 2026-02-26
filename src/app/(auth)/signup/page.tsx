@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -44,6 +44,13 @@ export default function SignupPage() {
     const [error, setError] = useState<string | null>(null);
     const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
     const [success, setSuccess] = useState(false);
+    const redirectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    useEffect(() => {
+        return () => {
+            if (redirectTimeoutRef.current) clearTimeout(redirectTimeoutRef.current);
+        };
+    }, []);
 
     const strength = getStrength(password);
 
@@ -74,7 +81,8 @@ export default function SignupPage() {
 
             setSuccess(true);
             setAuth(json.data.user, json.data.accessToken);
-            setTimeout(() => router.replace("/dashboard"), 900);
+            if (redirectTimeoutRef.current) clearTimeout(redirectTimeoutRef.current);
+            redirectTimeoutRef.current = setTimeout(() => router.replace("/dashboard"), 900);
         } catch {
             setError("Network error. Please check your connection.");
         } finally {
@@ -284,6 +292,9 @@ export default function SignupPage() {
                         <GoogleIcon />
                         Continue with Google
                     </a>
+                    <p className="text-xs text-slate-500 mt-2 text-center">
+                        Ad blockers can block Google sign-in. If it fails, try disabling extensions or use an incognito window.
+                    </p>
 
                     <p className="text-center text-sm text-slate-400 mt-6">
                         Already have an account?{" "}

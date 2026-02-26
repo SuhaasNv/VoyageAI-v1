@@ -12,6 +12,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { logError } from "@/lib/logger";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -151,8 +152,10 @@ function memoryRateLimit(key: string, opts: RateLimitOptions): RateLimitResult {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Public API – cascades through tiers, never throws
+// Public API – cascades through tiers; in production throws on Redis/DB failure
 // ─────────────────────────────────────────────────────────────────────────────
+
+const isProduction = process.env.NODE_ENV === "production";
 
 export async function rateLimit(
     key: string,
@@ -166,14 +169,16 @@ export async function rateLimit(
         try {
             return await redisRateLimit(key, opts);
         } catch (err) {
-            console.error("[rateLimit] Upstash error, falling back:", err);
+            if (isProduction) throw err;
+            logError("[rateLimit] Upstash error, falling back", err);
         }
     }
 
     try {
         return await dbRateLimit(key, opts);
     } catch (err) {
-        console.error("[rateLimit] DB error, falling back to memory store:", err);
+        if (isProduction) throw err;
+        logError("[rateLimit] DB error, falling back to memory store", err);
     }
 
     return memoryRateLimit(key, opts);

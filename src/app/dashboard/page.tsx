@@ -1,38 +1,32 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
+import { useState } from "react";
 import { Plus, Bell } from "lucide-react";
-import { useAuthStore } from "@/stores/authStore";
 import { UpcomingTripsGrid } from "@/components/dashboard/UpcomingTripsGrid";
 import { BudgetOverviewCard } from "@/components/dashboard/BudgetOverviewCard";
 import { AISuggestionsCard } from "@/components/dashboard/AISuggestionsCard";
 import { CreateTripModal } from "@/components/dashboard/CreateTripModal";
 import { MapSimulationPanel } from "@/components/dashboard/MapSimulationPanel";
 import { CalendarWidget } from "@/components/dashboard/CalendarWidget";
-import { getUpcomingTrips, type Trip } from "@/lib/api";
-
-const fadeIn = { initial: { opacity: 0, y: 12 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.3, ease: "easeOut" as const } };
-
-function displayName(name: string | null, email: string): string {
-    if (name?.trim()) return name.trim();
-    const local = email.split("@")[0];
-    return local ? local.charAt(0).toUpperCase() + local.slice(1) : "there";
-}
+import { DashboardAIAssistant } from "@/components/dashboard/DashboardAIAssistant";
+import { useTrips } from "@/hooks/useTrips";
+import type { Trip } from "@/lib/api";
 
 export default function DashboardPage() {
-    const { user } = useAuthStore();
+    const { trips, isLoading, setTrips } = useTrips();
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [trips, setTrips] = useState<Trip[]>([]);
-    const greetingName = user ? displayName(user.name, user.email) : "there";
 
-    useEffect(() => {
-        getUpcomingTrips()
-            .then(setTrips)
-            .catch((error) => {
-                console.error("Failed to load upcoming trips", error);
-            });
-    }, []);
+    const totalBudget = trips.reduce((sum, t) => sum + (t.budget?.total ?? 0), 0);
+    const totalSpent = trips.reduce((sum, t) => sum + (t.budget?.spent ?? 0), 0);
+    const budgetCurrency = trips[0]?.budget?.currency ?? "USD";
+
+    const handleTripCreated = (newTrip: Trip) => {
+        setTrips((prev) =>
+            [...prev, newTrip].sort(
+                (a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
+            )
+        );
+    };
 
     return (
         <div className="min-h-full p-6 md:p-8 lg:p-10 max-w-7xl mx-auto space-y-8 relative">
@@ -74,16 +68,22 @@ export default function DashboardPage() {
 
             {/* Main Grid: Discover Places + Map (left), Calendar + Budget + Suggestions (right) */}
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 max-w-7xl">
-                <motion.div className="space-y-6" {...fadeIn}>
-                    <UpcomingTripsGrid trips={trips} />
+                <div className="space-y-6">
+                    <UpcomingTripsGrid
+                        trips={trips}
+                        isLoading={isLoading}
+                        onTripsChange={setTrips}
+                        onNewTripClick={() => setIsModalOpen(true)}
+                    />
                     <MapSimulationPanel />
-                </motion.div>
+                </div>
 
-                <motion.div className="space-y-6" {...fadeIn} transition={{ duration: 0.3, ease: "easeOut" as const, delay: 0.08 }}>
-                    <CalendarWidget />
-                    <BudgetOverviewCard />
+                <div className="space-y-6">
+                    <DashboardAIAssistant onTripCreated={handleTripCreated} />
+                    <CalendarWidget trips={trips} />
+                    <BudgetOverviewCard totalBudget={totalBudget} totalSpent={totalSpent} currency={budgetCurrency} />
                     <AISuggestionsCard />
-                </motion.div>
+                </div>
             </div>
 
             {/* Modal Overlay */}

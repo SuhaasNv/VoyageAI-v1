@@ -1,13 +1,37 @@
 "use client";
 
 import { useState } from "react";
-import { X, PlaneTakeoff, Navigation, Calendar } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { X, PlaneTakeoff, Navigation, Calendar, Loader2, AlertCircle } from "lucide-react";
+import { createTrip } from "@/lib/api";
 
 export function CreateTripModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
-    const [step, setStep] = useState(1);
+    const router = useRouter();
     const [destination, setDestination] = useState("");
+    const [startDate, setStartDate] = useState("");
+    const [endDate, setEndDate] = useState("");
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     if (!isOpen) return null;
+
+    const isValid = destination.trim().length >= 2 && startDate && endDate;
+
+    async function handleSubmit() {
+        if (!isValid || isLoading) return;
+        setIsLoading(true);
+        setError(null);
+
+        try {
+            const trip = await createTrip({ destination: destination.trim(), startDate, endDate });
+            onClose();
+            router.push(`/dashboard/trip/${trip.id}`);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to create trip. Please try again.");
+        } finally {
+            setIsLoading(false);
+        }
+    }
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-md p-4">
@@ -28,7 +52,8 @@ export function CreateTripModal({ isOpen, onClose }: { isOpen: boolean; onClose:
                     </div>
                     <button
                         onClick={onClose}
-                        className="w-8 h-8 rounded-full bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.06] flex items-center justify-center text-slate-400 hover:text-white transition-all duration-200 ease-out"
+                        disabled={isLoading}
+                        className="w-8 h-8 rounded-full bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.06] flex items-center justify-center text-slate-400 hover:text-white transition-all duration-200 ease-out disabled:opacity-50"
                     >
                         <X className="w-4 h-4" />
                     </button>
@@ -36,6 +61,13 @@ export function CreateTripModal({ isOpen, onClose }: { isOpen: boolean; onClose:
 
                 {/* Content */}
                 <div className="p-6 space-y-6">
+                    {error && (
+                        <div className="flex items-center gap-2.5 text-sm text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-xl px-4 py-3">
+                            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                            {error}
+                        </div>
+                    )}
+
                     <div className="space-y-4">
                         <div className="space-y-2">
                             <label className="text-sm font-semibold text-slate-300 flex items-center gap-2">
@@ -47,7 +79,8 @@ export function CreateTripModal({ isOpen, onClose }: { isOpen: boolean; onClose:
                                 placeholder="e.g. Tokyo, Japan or French Riviera"
                                 value={destination}
                                 onChange={(e) => setDestination(e.target.value)}
-                                className="w-full bg-white/[0.04] backdrop-blur-sm border border-white/[0.08] hover:border-white/[0.12] focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/30 rounded-xl px-4 py-3 text-white placeholder:text-slate-500 outline-none transition-all duration-200"
+                                disabled={isLoading}
+                                className="w-full bg-white/[0.04] backdrop-blur-sm border border-white/[0.08] hover:border-white/[0.12] focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/30 rounded-xl px-4 py-3 text-white placeholder:text-slate-500 outline-none transition-all duration-200 disabled:opacity-50"
                             />
                         </div>
 
@@ -59,7 +92,10 @@ export function CreateTripModal({ isOpen, onClose }: { isOpen: boolean; onClose:
                                 </label>
                                 <input
                                     type="date"
-                                    className="w-full bg-white/[0.04] border border-white/[0.08] focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/30 rounded-xl px-4 py-3 text-white outline-none transition-all duration-200 [color-scheme:dark]"
+                                    value={startDate}
+                                    onChange={(e) => setStartDate(e.target.value)}
+                                    disabled={isLoading}
+                                    className="w-full bg-white/[0.04] border border-white/[0.08] focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/30 rounded-xl px-4 py-3 text-white outline-none transition-all duration-200 [color-scheme:dark] disabled:opacity-50"
                                 />
                             </div>
                             <div className="space-y-2">
@@ -69,7 +105,11 @@ export function CreateTripModal({ isOpen, onClose }: { isOpen: boolean; onClose:
                                 </label>
                                 <input
                                     type="date"
-                                    className="w-full bg-white/[0.04] border border-white/[0.08] focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/30 rounded-xl px-4 py-3 text-white outline-none transition-all duration-200 [color-scheme:dark]"
+                                    value={endDate}
+                                    min={startDate}
+                                    onChange={(e) => setEndDate(e.target.value)}
+                                    disabled={isLoading}
+                                    className="w-full bg-white/[0.04] border border-white/[0.08] focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/30 rounded-xl px-4 py-3 text-white outline-none transition-all duration-200 [color-scheme:dark] disabled:opacity-50"
                                 />
                             </div>
                         </div>
@@ -78,7 +118,7 @@ export function CreateTripModal({ isOpen, onClose }: { isOpen: boolean; onClose:
                             <label className="text-sm font-semibold text-slate-300">Travel Vibe</label>
                             <div className="flex flex-wrap gap-2">
                                 {['Relaxing', 'Adventure', 'Culture', 'Foodie', 'Nightlife', 'Budget'].map(vibe => (
-                                    <button key={vibe} className="px-3 py-1.5 rounded-full border border-white/[0.08] bg-white/[0.04] text-xs font-medium text-slate-300 hover:bg-white/[0.08] hover:text-white transition-all duration-200 ease-out">
+                                    <button key={vibe} type="button" disabled={isLoading} className="px-3 py-1.5 rounded-full border border-white/[0.08] bg-white/[0.04] text-xs font-medium text-slate-300 hover:bg-white/[0.08] hover:text-white transition-all duration-200 ease-out disabled:opacity-50">
                                         {vibe}
                                     </button>
                                 ))}
@@ -89,21 +129,25 @@ export function CreateTripModal({ isOpen, onClose }: { isOpen: boolean; onClose:
 
                 {/* Footer */}
                 <div className="p-6 border-t border-white/[0.06] bg-white/[0.02] flex justify-between items-center">
-                    <span className="text-xs text-slate-500">Step {step} of 3</span>
+                    <span className="text-xs text-slate-500">Step 1 of 3</span>
                     <div className="flex gap-3">
                         <button
                             onClick={onClose}
-                            className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-400 hover:text-white hover:bg-white/[0.06] transition-all duration-200 ease-out"
+                            disabled={isLoading}
+                            className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-400 hover:text-white hover:bg-white/[0.06] transition-all duration-200 ease-out disabled:opacity-50"
                         >
                             Cancel
                         </button>
                         <button
-                            className={`px-5 py-2 rounded-xl text-sm font-semibold transition-all duration-200 ease-out ${destination
-                                ? "bg-indigo-500 hover:bg-indigo-400 text-white shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:scale-[1.02]"
-                                : "bg-white/[0.04] text-slate-500 cursor-not-allowed"
-                            }`}
+                            onClick={handleSubmit}
+                            disabled={!isValid || isLoading}
+                            className={`px-5 py-2 rounded-xl text-sm font-semibold transition-all duration-200 ease-out flex items-center gap-2 ${isValid && !isLoading
+                                    ? "bg-indigo-500 hover:bg-indigo-400 text-white shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:scale-[1.02]"
+                                    : "bg-white/[0.04] text-slate-500 cursor-not-allowed"
+                                }`}
                         >
-                            Generate Itinerary
+                            {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                            {isLoading ? "Creating..." : "Generate Itinerary"}
                         </button>
                     </div>
                 </div>

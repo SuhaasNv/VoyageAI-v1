@@ -21,6 +21,7 @@ import { generateCsrfToken } from "@/lib/auth/csrf";
 import { writeAuditLog } from "@/lib/auth/audit";
 import { OAUTH_STATE_COOKIE } from "@/lib/auth/cookies";
 import { getClientIp } from "@/lib/api/request";
+import { logError } from "@/lib/logger";
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
@@ -46,7 +47,7 @@ export async function GET(req: NextRequest) {
         if (error === "access_denied") {
             return redirectToLogin("Sign-in was cancelled.");
         }
-        console.error("[google/callback] OAuth error:", error);
+        logError("[google/callback] OAuth error", { error });
         return redirectToLogin("Google sign-in failed. Please try again.");
     }
 
@@ -56,7 +57,7 @@ export async function GET(req: NextRequest) {
 
     const storedState = req.cookies.get(OAUTH_STATE_COOKIE)?.value;
     if (!storedState || storedState !== state) {
-        console.error("[google/callback] State mismatch");
+        logError("[google/callback] State mismatch");
         return redirectToLogin("Session expired. Please try again.");
     }
 
@@ -69,78 +70,50 @@ export async function GET(req: NextRequest) {
     try {
         googleUser = await exchangeCodeForUserInfo(code, redirectUri);
     } catch (err) {
-        console.error("[google/callback] Token exchange failed:", err);
+        logError("[google/callback] Token exchange failed", err);
         return redirectToLogin("Google sign-in failed. Please try again.");
     }
 
+    const email = googleUser.email.toLowerCase();
     try {
-        let user = await prisma.user.findFirst({
-            where: {
+        // Upsert by email: never create duplicates. Links provider if existing email user.
+        const user = await prisma.user.upsert({
+            where: { email },
+            create: {
+                email,
+                name: googleUser.name ?? null,
+                image: googleUser.picture ?? null,
                 provider: "google",
                 providerId: googleUser.id,
+                emailVerified: googleUser.verified_email ?? true,
+                lastLoginAt: new Date(),
+            },
+            update: {
+                provider: "google",
+                providerId: googleUser.id,
+                emailVerified: true,
+                lastLoginAt: new Date(),
             },
             select: {
                 id: true,
                 email: true,
                 name: true,
+                image: true,
                 role: true,
                 isActive: true,
+                hasOnboarded: true,
                 createdAt: true,
             },
         });
 
-        if (!user) {
-            user = await prisma.user.findUnique({
-                where: { email: googleUser.email.toLowerCase() },
-                select: {
-                    id: true,
-                    email: true,
-                    name: true,
-                    role: true,
-                    isActive: true,
-                    createdAt: true,
-                },
-            });
-
-            if (user) {
-                // Existing email user – link Google account
-                await prisma.user.update({
-                    where: { id: user.id },
-                    data: {
-                        provider: "google",
-                        providerId: googleUser.id,
-                        name: user.name ?? googleUser.name ?? undefined,
-                        emailVerified: true,
-                        lastLoginAt: new Date(),
-                    },
-                });
-            } else {
-                // New user – create
-                user = await prisma.user.create({
-                    data: {
-                        email: googleUser.email.toLowerCase(),
-                        name: googleUser.name ?? null,
-                        provider: "google",
-                        providerId: googleUser.id,
-                        emailVerified: googleUser.verified_email ?? true,
-                        lastLoginAt: new Date(),
-                    },
-                    select: {
-                        id: true,
-                        email: true,
-                        name: true,
-                        role: true,
-                        isActive: true,
-                        createdAt: true,
-                    },
-                });
-            }
-        } else {
+        // Merge name/image from Google when existing user has none
+        const needsMerge = (!user.name && googleUser.name) || (!user.image && googleUser.picture);
+        if (needsMerge) {
             await prisma.user.update({
                 where: { id: user.id },
                 data: {
-                    name: user.name ?? googleUser.name ?? undefined,
-                    lastLoginAt: new Date(),
+                    ...(!user.name && googleUser.name ? { name: googleUser.name } : {}),
+                    ...(!user.image && googleUser.picture ? { image: googleUser.picture } : {}),
                 },
             });
         }
@@ -197,10 +170,7 @@ export async function GET(req: NextRequest) {
 
         return res;
     } catch (err) {
-        console.error("[google/callback] DB error:", err);
-        if (err instanceof Error) {
-            console.error("[google/callback] Error details:", err.message, err.stack);
-        }
+        logError("[google/callback] DB error", err instanceof Error ? { message: err.message, stack: err.stack } : err);
         return redirectToLogin("Something went wrong. Please try again.");
     }
 }

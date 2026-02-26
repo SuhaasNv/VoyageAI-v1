@@ -14,6 +14,9 @@
  */
 
 import { AIErrorSchema, type AIError } from "./schemas";
+import { logLLMUsage } from "./usageLogger";
+import { getRequestId, getRequestPathname } from "@/lib/requestContext";
+import { logInfo } from "@/lib/logger";
 
 // ─────────────────────────────────────────
 //  LLM Client Interface
@@ -148,6 +151,15 @@ class MockLLMClient implements LLMClient {
         }
         if (system.includes("trip risk analyst")) {
             return JSON.stringify(this.mockSimulationResponse(now));
+        }
+        if (system.includes("trip creation assistant")) {
+            return JSON.stringify(this.mockCreateTripFromTextResponse(now));
+        }
+        if (system.includes("ticket parser")) {
+            return JSON.stringify(this.mockExtractTripFromTicketResponse(now));
+        }
+        if (system.includes("contextual suggestion engine")) {
+            return JSON.stringify(this.mockDashboardSuggestionsResponse(now));
         }
 
         return JSON.stringify({ message: "Unknown endpoint", modelVersion: "voyage-ai-mock-v1.0" });
@@ -504,6 +516,34 @@ class MockLLMClient implements LLMClient {
         };
     }
 
+    private mockCreateTripFromTextResponse(now: string) {
+        return {
+            destination: "Tokyo, Japan",
+            startDate: "2025-04-01",
+            endDate: "2025-04-05",
+            budget: { total: 2000, currency: "USD" },
+            style: "creative",
+        };
+    }
+
+    private mockExtractTripFromTicketResponse(now: string) {
+        return {
+            departureCity: "New York JFK",
+            destination: "Tokyo Narita",
+            departureDate: "2025-04-01",
+            returnDate: "2025-04-08",
+        };
+    }
+
+    private mockDashboardSuggestionsResponse(now: string) {
+        return {
+            suggestions: [
+                { title: "Optimize Tokyo Itinerary", description: "Heavy walking on Day 3", action: "Review", tag: "Alert" },
+                { title: "Price Drop: flights to Reykjavik", description: "Dropped by $120 for your dates", action: "View", tag: "Savings" },
+            ],
+        };
+    }
+
     private mockSimulationResponse(now: string) {
         return {
             tripId: null,
@@ -604,12 +644,13 @@ class MockLLMClient implements LLMClient {
 }
 
 // ─────────────────────────────────────────
-//  Groq Client Stub (Real Integration Ready)
+//  Groq Client (llama-3.3-70b-versatile via OpenAI-compatible endpoint)
 // ─────────────────────────────────────────
 
 class GroqLLMClient implements LLMClient {
     private readonly apiKey: string;
     private readonly baseUrl = "https://api.groq.com/openai/v1";
+    private readonly defaultModel = "llama-3.3-70b-versatile";
 
     constructor(apiKey: string) {
         this.apiKey = apiKey;
@@ -620,8 +661,8 @@ class GroqLLMClient implements LLMClient {
         options: LLMRequestOptions = {}
     ): Promise<LLMResponse> {
         const startTime = Date.now();
-        const model = options.model ?? "llama-3.3-70b-versatile";
-        const timeoutMs = options.timeoutMs ?? 30000;
+        const model = options.model ?? this.defaultModel;
+        const timeoutMs = options.timeoutMs ?? 25000;
 
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -638,7 +679,10 @@ class GroqLLMClient implements LLMClient {
                     messages,
                     temperature: options.temperature ?? 0.7,
                     max_tokens: options.maxTokens ?? 4096,
-                    response_format: options.responseFormat === "json" ? { type: "json_object" } : undefined,
+                    // Groq supports JSON mode for structured outputs
+                    response_format: options.responseFormat === "json"
+                        ? { type: "json_object" }
+                        : undefined,
                 }),
                 signal: controller.signal,
             });
@@ -646,11 +690,14 @@ class GroqLLMClient implements LLMClient {
             clearTimeout(timeout);
 
             if (!response.ok) {
-                const error = await response.json().catch(() => ({}));
+                let errBody: Record<string, unknown> = {};
+                try { errBody = await response.json(); } catch { /* ignore */ }
+                const groqMessage = (errBody?.error as { message?: string })?.message
+                    ?? response.statusText;
                 throw new AIServiceError(
-                    "LLM_ERROR",
-                    `Groq API error: ${response.status} ${response.statusText}`,
-                    error
+                    response.status === 429 ? "RATE_LIMIT_EXCEEDED" : "LLM_ERROR",
+                    `Groq API error ${response.status}: ${groqMessage}`,
+                    errBody
                 );
             }
 
@@ -658,15 +705,18 @@ class GroqLLMClient implements LLMClient {
             const choice = data.choices?.[0];
 
             if (!choice?.message?.content) {
-                throw new AIServiceError("LLM_ERROR", "Empty response from Groq API");
+                throw new AIServiceError(
+                    "LLM_ERROR",
+                    `Empty response from Groq API (finish_reason: ${choice?.finish_reason ?? "unknown"})`
+                );
             }
 
             return {
-                content: choice.message.content,
-                modelUsed: data.model ?? model,
-                promptTokens: data.usage?.prompt_tokens ?? 0,
-                completionTokens: data.usage?.completion_tokens ?? 0,
-                totalTokens: data.usage?.total_tokens ?? 0,
+                content: choice.message.content as string,
+                modelUsed: (data.model as string) ?? model,
+                promptTokens: (data.usage?.prompt_tokens as number) ?? 0,
+                completionTokens: (data.usage?.completion_tokens as number) ?? 0,
+                totalTokens: (data.usage?.total_tokens as number) ?? 0,
                 latencyMs: Date.now() - startTime,
                 provider: "groq",
             };
@@ -674,12 +724,20 @@ class GroqLLMClient implements LLMClient {
             clearTimeout(timeout);
             if (err instanceof AIServiceError) throw err;
             if ((err as Error).name === "AbortError") {
-                throw new AIServiceError("TIMEOUT", `LLM request timed out after ${timeoutMs}ms`);
+                throw new AIServiceError(
+                    "TIMEOUT",
+                    `Groq request timed out after ${timeoutMs}ms`
+                );
             }
-            throw new AIServiceError("LLM_ERROR", `Groq request failed: ${(err as Error).message}`, err);
+            throw new AIServiceError(
+                "LLM_ERROR",
+                `Groq request failed: ${(err as Error).message}`,
+                err
+            );
         }
     }
 }
+
 
 // ─────────────────────────────────────────
 //  Gemini Client Stub (Real Integration Ready)
@@ -699,6 +757,10 @@ class GeminiLLMClient implements LLMClient {
     ): Promise<LLMResponse> {
         const startTime = Date.now();
         const model = options.model ?? "gemini-1.5-flash";
+        const timeoutMs = options.timeoutMs ?? 25000;
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
         // Convert OpenAI-style messages to Gemini format
         const systemInstruction = messages.find((m) => m.role === "system")?.content;
@@ -727,8 +789,11 @@ class GeminiLLMClient implements LLMClient {
                                 options.responseFormat === "json" ? "application/json" : "text/plain",
                         },
                     }),
+                    signal: controller.signal,
                 }
             );
+
+            clearTimeout(timeout);
 
             if (!response.ok) {
                 throw new AIServiceError(
@@ -750,7 +815,14 @@ class GeminiLLMClient implements LLMClient {
                 provider: "gemini",
             };
         } catch (err) {
+            clearTimeout(timeout);
             if (err instanceof AIServiceError) throw err;
+            if ((err as Error).name === "AbortError") {
+                throw new AIServiceError(
+                    "TIMEOUT",
+                    `Gemini request timed out after ${timeoutMs}ms`
+                );
+            }
             throw new AIServiceError(
                 "LLM_ERROR",
                 `Gemini request failed: ${(err as Error).message}`,
@@ -777,21 +849,33 @@ class LLMClientFactory {
             (process.env.LLM_PROVIDER as LLMProvider | undefined) ??
             "mock";
 
+        const isProduction = process.env.NODE_ENV === "production";
+
+        if (isProduction && (resolvedProvider === "mock" || !["groq", "gemini"].includes(resolvedProvider))) {
+            throw new AIServiceError(
+                "LLM_ERROR",
+                `LLM_PROVIDER must be "groq" or "gemini" in production. Got: "${resolvedProvider}". MockLLMClient is not permitted in production.`
+            );
+        }
+
         switch (resolvedProvider) {
             case "groq": {
                 const key = process.env.GROQ_API_KEY;
-                if (!key) throw new AIServiceError("LLM_ERROR", "GROQ_API_KEY not set");
+                if (!key) throw new AIServiceError("LLM_ERROR", "GROQ_API_KEY is not set");
                 this.instance = new GroqLLMClient(key);
                 break;
             }
             case "gemini": {
                 const key = process.env.GEMINI_API_KEY;
-                if (!key) throw new AIServiceError("LLM_ERROR", "GEMINI_API_KEY not set");
+                if (!key) throw new AIServiceError("LLM_ERROR", "GEMINI_API_KEY is not set");
                 this.instance = new GeminiLLMClient(key);
                 break;
             }
             case "mock":
             default:
+                if (isProduction) {
+                    throw new AIServiceError("LLM_ERROR", "MockLLMClient is not permitted in production");
+                }
                 this.instance = new MockLLMClient();
                 break;
         }
@@ -821,7 +905,12 @@ export async function executeWithRetry(
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
-            return await client.execute(messages, options);
+            const response = await client.execute(messages, options);
+            logLLMUsage(response, {
+                requestId: getRequestId(),
+                endpoint: getRequestPathname() ?? undefined,
+            }).catch(() => {});
+            return response;
         } catch (err) {
             lastError = err as Error;
 
@@ -838,10 +927,12 @@ export async function executeWithRetry(
 
             if (attempt < maxRetries) {
                 const delay = retryDelays[attempt] ?? 4000;
-                console.warn(
-                    `[LLM] Attempt ${attempt + 1} failed. Retrying in ${delay}ms...`,
-                    (err as Error).message
-                );
+                logInfo("[LLM] Attempt failed, retrying", {
+                    attempt: attempt + 1,
+                    delayMs: delay,
+                    message: (err as Error).message,
+                    level: "warn",
+                });
                 await new Promise((resolve) => setTimeout(resolve, delay));
             }
         }

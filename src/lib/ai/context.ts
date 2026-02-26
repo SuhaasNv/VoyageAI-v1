@@ -13,7 +13,9 @@
  */
 
 import type { TravelDNA, Itinerary, ChatMessage } from "./schemas";
+import { getTravelDNA } from "./contextStore";
 import { truncateContext, MAX_CONTEXT_TOKENS, estimateTokenCount } from "./prompts";
+import { logInfo } from "@/lib/logger";
 
 // ─────────────────────────────────────────
 //  Context Types
@@ -203,6 +205,16 @@ export function buildTripContext(trip: TripContext): string {
 // ─────────────────────────────────────────
 
 /**
+ * Assembles context with optional RAG enrichment (fetches stored Travel DNA when userId provided).
+ */
+export async function assembleContextWithRAG(bundle: FullContextBundle, userId?: string): Promise<string> {
+  const enriched: FullContextBundle = userId && !bundle.travelDNA
+    ? { ...bundle, travelDNA: (await getTravelDNA(userId)) ?? undefined }
+    : bundle;
+  return assembleContext(enriched);
+}
+
+/**
  * Assembles a complete context bundle from available data.
  * Respects token limits by truncating if necessary.
  * Order of priority: DNA > Trip > Itinerary > Location > Chat History
@@ -243,9 +255,10 @@ export function assembleContext(bundle: FullContextBundle): string {
     const estimatedTokens = estimateTokenCount(assembled);
     if (estimatedTokens > MAX_CONTEXT_TOKENS * 0.4) {
         // Context taking up too many tokens; truncate
-        console.warn(
-            `[Context] Estimated ${estimatedTokens} tokens in context. Truncating...`
-        );
+        logInfo("[Context] Estimated tokens in context, truncating", {
+            estimatedTokens,
+            level: "warn",
+        });
         return truncateContext(assembled, MAX_CONTEXT_TOKENS * 4 * 0.4);
     }
 

@@ -1,27 +1,63 @@
-import { TripTopBar } from "@/components/trip/TripTopBar";
-import { TimelineItinerary } from "@/components/trip/TimelineItinerary";
-import { InteractiveMap } from "@/components/trip/InteractiveMap";
-import { AIChatDrawer } from "@/components/trip/AIChatDrawer";
-import { getTripById } from "@/lib/api";
+import { notFound, redirect } from "next/navigation";
+import { cookies } from "next/headers";
+import { prisma } from "@/lib/prisma";
+import { verifyAccessToken } from "@/lib/auth/tokens";
+import { ACCESS_TOKEN_COOKIE } from "@/lib/auth/cookies";
+import { serializeTrip, parseStoredItinerary } from "@/lib/services/trips";
+import { ItinerarySchema, type Itinerary } from "@/lib/ai/schemas";
+import type { ChatMessageDTO } from "@/app/api/trips/[id]/chat/route";
+import { logError } from "@/lib/logger";
+import { TripViewClient } from "@/components/trip/TripViewClient";
 
-export default async function TripViewPage({ params }: { params: { id: string } }) {
-    const trip = await getTripById(params.id);
+export default async function TripViewPage({ params }: { params: Promise<{ id: string }> }) {
+    const cookieStore = await cookies();
+    const token = cookieStore.get(ACCESS_TOKEN_COOKIE)?.value;
+    if (!token) redirect("/login");
 
-    return (
-        <div className="h-screen flex flex-col overflow-hidden font-sans bg-[#0B0F14] text-white">
-            <TripTopBar trip={trip} />
+    let userId: string;
+    try {
+        const payload = verifyAccessToken(token);
+        userId = payload.sub;
+    } catch {
+        redirect("/login");
+    }
 
-            <div className="flex-1 flex overflow-hidden relative">
-                <div className="w-full md:w-[450px] lg:w-[550px] h-full relative z-20 shrink-0 flex flex-col bg-white/[0.02] backdrop-blur-sm border-r border-white/5">
-                    <TimelineItinerary trip={trip} />
-                </div>
+    const { id } = await params;
 
-                <div className="flex-1 h-full relative z-10 hidden md:block">
-                    <InteractiveMap />
-                </div>
-            </div>
+    // Load trip, latest itinerary, and chat history in parallel.
+    const [dbTrip, itineraryRow, dbMessages] = await Promise.all([
+        prisma.trip.findUnique({ where: { id } }),
+        prisma.itinerary.findFirst({
+            where: { tripId: id },
+            orderBy: { createdAt: "desc" },
+        }),
+        prisma.chatMessage.findMany({
+            where: { tripId: id },
+            orderBy: { createdAt: "asc" },
+        }),
+    ]);
 
-            <AIChatDrawer />
-        </div>
-    );
+    if (!dbTrip || dbTrip.userId !== userId) notFound();
+
+    const itinerary = itineraryRow ? parseStoredItinerary(itineraryRow) : [];
+    const trip = serializeTrip(dbTrip, itinerary);
+
+    const initialMessages: ChatMessageDTO[] = dbMessages.map((m) => ({
+        id: m.id,
+        role: m.role as "user" | "assistant",
+        content: m.content,
+        createdAt: m.createdAt.toISOString(),
+    }));
+
+    let rawItinerary: Itinerary | null = null;
+    if (itineraryRow?.rawJson) {
+        const parsed = ItinerarySchema.safeParse(itineraryRow.rawJson);
+        if (parsed.success) {
+            rawItinerary = parsed.data;
+        } else {
+            logError("[trip] Invalid rawItinerary in DB", { tripId: id, errors: parsed.error.flatten() });
+        }
+    }
+
+    return <TripViewClient trip={trip} rawItinerary={rawItinerary} initialMessages={initialMessages} />;
 }

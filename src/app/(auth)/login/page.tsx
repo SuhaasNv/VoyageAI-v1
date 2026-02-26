@@ -27,7 +27,15 @@ export default function LoginPage() {
         if (reason === "session_expired") {
             setError("Your session has expired. Please log in again.");
         } else if (errorParam) {
-            setError(decodeURIComponent(errorParam));
+            const msg = decodeURIComponent(errorParam);
+            const showAdBlockerHint =
+                !/cancelled/i.test(msg) &&
+                /google sign-in failed|invalid sign-in request|session expired/i.test(msg);
+            setError(
+                showAdBlockerHint
+                    ? `${msg} Ad blockers often block Google sign-in—try disabling them or use an incognito window.`
+                    : msg
+            );
         }
     }, []);
 
@@ -193,6 +201,9 @@ export default function LoginPage() {
                         <GoogleIcon />
                         Continue with Google
                     </a>
+                    <p className="text-xs text-slate-500 mt-2 text-center">
+                        Ad blockers can block Google sign-in. If it fails, try disabling extensions or use an incognito window.
+                    </p>
 
                     <p className="text-center text-sm text-slate-400 mt-6">
                         Don&apos;t have an account?{" "}

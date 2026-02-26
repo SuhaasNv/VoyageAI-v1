@@ -6,6 +6,7 @@
  */
 
 import { getLLMClient, executeWithRetry, parseJSONResponse } from "../../lib/ai/llm";
+import { logError } from "@/lib/logger";
 import { buildFullPrompt } from "../../lib/ai/prompts";
 import { SYSTEM_PROMPTS, SCHEMA_INSTRUCTIONS } from "../../lib/ai/prompts";
 import { assembleContext } from "../../lib/ai/context";
@@ -56,29 +57,7 @@ Create a categorized packing list for a trip to **${parsedReq.destination}** fro
         const final = (await import("../../lib/ai/schemas")).PackingListResponseSchema.parse(response);
         return final;
     } catch (err) {
-        console.error("[Packing Service] LLM error – fallback", err);
-        // Simple fallback: empty list with a tip
-        return {
-            tripId: parsedReq.tripId ?? undefined,
-            destination: parsedReq.destination,
-            totalItems: 0,
-            essentialItems: 0,
-            items: {
-                clothing: [],
-                toiletries: [],
-                electronics: [],
-                documents: [],
-                medication: [],
-                gear: [],
-                entertainment: [],
-                food: [],
-                safety: [],
-                miscellaneous: [],
-            },
-            aiTips: ["Fallback: unable to generate packing list at this time."],
-            estimatedTotalWeightKg: 0,
-            generatedAt: new Date().toISOString(),
-            modelVersion: "fallback-mock",
-        };
+        logError("[Packing Service] LLM error", err);
+        throw err;
     }
 }

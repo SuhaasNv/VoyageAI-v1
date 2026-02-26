@@ -1,6 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import React from "react";
+import Image from "next/image";
 import { LogOut } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -11,29 +12,48 @@ function displayName(name: string | null, email: string): string {
 }
 
 export function DashboardSidebarFooter() {
-    const router = useRouter();
     const { user, logout } = useAuthStore();
 
-    const handleLogout = async () => {
-        await logout();
-        router.replace("/");
+    const [isLoggingOut, setIsLoggingOut] = React.useState(false);
+
+    const handleLogout = () => {
+        setIsLoggingOut(true);
+        logout();
+        window.location.href = "/login";
     };
 
     const userName = user ? displayName(user.name, user.email) : "User";
+    const initial = userName.charAt(0).toUpperCase();
 
     return (
         <div className="space-y-1.5">
             <button
                 onClick={handleLogout}
-                className="flex w-full items-center gap-3 px-3 py-2.5 rounded-xl text-zinc-400 hover:text-white hover:bg-white/5 transition-all duration-200 ease-out text-sm font-medium"
+                disabled={isLoggingOut}
+                className="flex w-full items-center gap-3 px-3 py-2.5 rounded-xl text-zinc-400 hover:text-white hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 ease-out text-sm font-medium"
             >
-                <LogOut className="w-4 h-4" />
-                Logout
+                {isLoggingOut ? (
+                    <span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                ) : (
+                    <LogOut className="w-4 h-4" />
+                )}
+                {isLoggingOut ? "Logging out..." : "Logout"}
             </button>
 
             <div className="mt-6 flex items-center gap-3 pt-6 border-t border-white/[0.06]">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-xs font-bold text-white shadow-lg overflow-hidden border border-white/10">
-                    {userName.charAt(0).toUpperCase()}
+                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-xs font-bold text-white shadow-lg overflow-hidden border border-white/10 shrink-0">
+                    {user?.image ? (
+                        <Image
+                            src={user.image}
+                            alt={userName}
+                            width={32}
+                            height={32}
+                            className="w-full h-full object-cover"
+                            unoptimized
+                        />
+                    ) : (
+                        initial
+                    )}
                 </div>
                 <div className="flex flex-col min-w-0">
                     <span className="text-sm font-medium text-zinc-200 truncate">{userName}</span>

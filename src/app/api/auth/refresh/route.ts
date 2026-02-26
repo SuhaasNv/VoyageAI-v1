@@ -38,6 +38,7 @@ import {
     internalErrorResponse,
 } from "@/lib/api/response";
 import { getClientIp, getRefreshTokenFromCookie } from "@/lib/api/request";
+import { logError } from "@/lib/logger";
 import { runWithRequestContext } from "@/lib/requestContext";
 
 export async function POST(req: NextRequest) {
@@ -80,8 +81,10 @@ export async function POST(req: NextRequest) {
                     id: true,
                     email: true,
                     name: true,
+                    image: true,
                     role: true,
                     isActive: true,
+                    hasOnboarded: true,
                     createdAt: true,
                 },
             },
@@ -188,7 +191,7 @@ export async function POST(req: NextRequest) {
             }),
         ]);
     } catch (err) {
-        console.error("[refresh] DB transaction failed:", err);
+        logError("[refresh] DB transaction failed", err);
         return internalErrorResponse();
     }
 
@@ -204,7 +207,9 @@ export async function POST(req: NextRequest) {
         id: storedToken.user.id,
         email: storedToken.user.email,
         name: storedToken.user.name,
+        image: storedToken.user.image,
         role: storedToken.user.role,
+        hasOnboarded: storedToken.user.hasOnboarded,
         createdAt: storedToken.user.createdAt.toISOString(),
     };
     const response = successResponse({ accessToken, user });

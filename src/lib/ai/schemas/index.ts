@@ -73,8 +73,8 @@ export const ActivitySchema = z.object({
     location: z.object({
         name: z.string(),
         address: z.string().optional(),
-        lat: z.number().optional(),
-        lng: z.number().optional(),
+        lat: z.number().min(-90).max(90).optional(),
+        lng: z.number().min(-180).max(180).optional(),
     }),
     estimatedCost: z.object({
         amount: z.number().nonnegative(),
@@ -117,7 +117,7 @@ export const ItinerarySchema = z.object({
     startDate: z.string(),
     endDate: z.string(),
     totalDays: z.number().int().positive(),
-    days: z.array(ItineraryDaySchema),
+    days: z.array(ItineraryDaySchema).min(1, "Itinerary must have at least one day with activities"),
     totalEstimatedCost: z.object({
         amount: z.number().nonnegative(),
         currency: z.string().length(3),
@@ -390,6 +390,79 @@ export const SimulationResponseSchema = z.object({
 });
 
 export type SimulationResponse = z.infer<typeof SimulationResponseSchema>;
+
+// ─────────────────────────────────────────
+//  Create Trip From Text
+// ─────────────────────────────────────────
+
+export const TripStyleSchema = z.enum([
+    "relaxed",
+    "creative",
+    "exciting",
+    "luxury",
+    "budget",
+]);
+
+export const CreateTripFromTextInputSchema = z.object({
+    text: z.string().min(1).max(2000),
+});
+
+export const CreateTripFromTextOutputSchema = z
+    .object({
+        destination: z.string().min(2).max(200),
+        startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        budget: z
+            .object({
+                total: z.number().nonnegative(),
+                currency: z.string().length(3).default("USD"),
+            })
+            .optional(),
+        style: TripStyleSchema.optional(),
+    })
+    .refine(
+        (d) => new Date(d.endDate) >= new Date(d.startDate),
+        { message: "endDate must be on or after startDate", path: ["endDate"] }
+    );
+
+export type CreateTripFromTextInput = z.infer<typeof CreateTripFromTextInputSchema>;
+export type CreateTripFromTextOutput = z.infer<typeof CreateTripFromTextOutputSchema>;
+
+// ─────────────────────────────────────────
+//  Extract Trip From Ticket (PDF)
+// ─────────────────────────────────────────
+
+export const ExtractTripFromTicketOutputSchema = z
+    .object({
+        departureCity: z.string().min(2).max(200),
+        destination: z.string().min(2).max(200),
+        departureDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        returnDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    })
+    .refine(
+        (d) => new Date(d.returnDate) >= new Date(d.departureDate),
+        { message: "returnDate must be on or after departureDate", path: ["returnDate"] }
+    );
+
+export type ExtractTripFromTicketOutput = z.infer<typeof ExtractTripFromTicketOutputSchema>;
+
+// ─────────────────────────────────────────
+//  Dashboard Suggestions
+// ─────────────────────────────────────────
+
+export const DashboardSuggestionSchema = z.object({
+    title: z.string().min(1).max(120),
+    description: z.string().min(1).max(300),
+    action: z.string().max(50).optional(),
+    tag: z.string().max(30).optional(),
+});
+
+export const DashboardSuggestionsOutputSchema = z.object({
+    suggestions: z.array(DashboardSuggestionSchema).length(2),
+});
+
+export type DashboardSuggestion = z.infer<typeof DashboardSuggestionSchema>;
+export type DashboardSuggestionsOutput = z.infer<typeof DashboardSuggestionsOutputSchema>;
 
 // ─────────────────────────────────────────
 //  Generic AI Error Schema

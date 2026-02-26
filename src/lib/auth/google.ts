@@ -5,6 +5,8 @@
  * Used for server-side sign-in with Google.
  */
 
+import { logError } from "@/lib/logger";
+
 const GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token";
 const GOOGLE_USERINFO_URI = "https://www.googleapis.com/oauth2/v2/userinfo";
@@ -67,7 +69,7 @@ export async function exchangeCodeForUserInfo(
 
     if (!tokenRes.ok) {
         const err = await tokenRes.text();
-        console.error("[google] Token exchange failed:", tokenRes.status, err);
+        logError("[google] Token exchange failed", { status: tokenRes.status, err });
         throw new Error("Google sign-in failed. Please try again.");
     }
 
@@ -79,7 +81,7 @@ export async function exchangeCodeForUserInfo(
 
     const accessToken = tokens.access_token;
     if (!accessToken) {
-        console.error("[google] No access_token in response:", tokens);
+        logError("[google] No access_token in response", { tokens });
         throw new Error("Google sign-in failed. Please try again.");
     }
 
@@ -88,13 +90,13 @@ export async function exchangeCodeForUserInfo(
     });
 
     if (!userRes.ok) {
-        console.error("[google] Userinfo fetch failed:", userRes.status);
+        logError("[google] Userinfo fetch failed", { status: userRes.status });
         throw new Error("Google sign-in failed. Please try again.");
     }
 
     const user = (await userRes.json()) as GoogleUserInfo;
     if (!user.id || !user.email) {
-        console.error("[google] Invalid userinfo:", user);
+        logError("[google] Invalid userinfo", { user });
         throw new Error("Google sign-in failed. Please try again.");
     }
 

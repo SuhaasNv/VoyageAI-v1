@@ -12,13 +12,15 @@
   --color-brand-800: #253648;
   --color-brand-900: #162436;
   --color-brand-950: #0a111a;
-  
+
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
 }
 
 @layer base {
-  html, body {
+
+  html,
+  body {
     @apply antialiased bg-[#10141a] text-slate-100;
   }
 }
@@ -27,9 +29,11 @@
   .glass {
     @apply bg-white/5 backdrop-blur-md border border-white/10 shadow-xl;
   }
+
   .glass-card {
     @apply bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl;
   }
+
   .text-gradient {
     @apply bg-clip-text text-transparent bg-gradient-to-r from-white via-white to-white/60;
   }
@@ -39,9 +43,11 @@
     @apply bg-white/[0.06] backdrop-blur-xl border border-white/[0.08] rounded-2xl;
     box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25), 0 0 1px rgba(255, 255, 255, 0.05);
   }
+
   .glass-dashboard-hover {
     @apply transition-all duration-300 ease-out;
   }
+
   .glass-dashboard-hover:hover {
     @apply border-white/[0.12] bg-white/[0.08];
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), 0 0 1px rgba(255, 255, 255, 0.08);
@@ -52,6 +58,7 @@
   .noise-overlay {
     position: relative;
   }
+
   .noise-overlay::before {
     content: "";
     position: absolute;
@@ -72,9 +79,36 @@
 
   /* Progress bar fill animation */
   @keyframes progress-fill {
-    from { width: 0; }
+    from {
+      width: 0;
+    }
   }
+
   .progress-animate {
     animation: progress-fill 0.8s ease-out forwards;
+  }
+
+  /* Hide scrollbar for cleanly scrolling sidebars and rows */
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    /* IE and Edge */
+    scrollbar-width: none;
+    /* Firefox */
+  }
+
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Mapbox overrides for hover functionality */
+  .voyage-popup .mapboxgl-popup-content {
+    background: transparent !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    pointer-events: none !important;
+  }
+
+  .voyage-popup .mapboxgl-popup-tip {
+    display: none !important;
   }
 }

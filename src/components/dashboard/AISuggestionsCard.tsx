@@ -1,5 +1,4 @@
 import { Sparkles, MapPin } from "lucide-react";
-import Image from "next/image";
 
 export function AISuggestionsCard() {
     const suggestions = [
@@ -30,7 +29,7 @@ export function AISuggestionsCard() {
     ];
 
     return (
-        <div className="bg-white/[0.02] backdrop-blur-xl border border-white/5 rounded-[2rem] p-6 relative overflow-hidden shadow-2xl transition-all hover:border-white/10">
+        <div className="min-h-[280px] bg-white/[0.02] backdrop-blur-xl border border-white/5 rounded-[2rem] p-6 relative overflow-hidden shadow-2xl transition-all hover:border-white/10">
             <div className="flex items-center justify-between mb-6">
                 <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2">
                     <Sparkles className="w-5 h-5 text-[#10B981]" />
@@ -48,7 +47,7 @@ export function AISuggestionsCard() {
                         className="group flex items-center gap-4 cursor-pointer"
                     >
                         <div className="relative w-20 h-16 rounded-xl overflow-hidden shrink-0">
-                            <Image src={suggestion.image} fill className="object-cover group-hover:scale-110 transition-transform duration-500" alt={suggestion.title} />
+                            <img src={suggestion.image} className="object-cover w-full h-full group-hover:scale-110 transition-transform duration-500" alt={suggestion.title} />
                         </div>
                         <div className="flex flex-col justify-center overflow-hidden flex-1">
                             <h4 className="text-sm font-bold text-white truncate transition-colors group-hover:text-[#10B981]">{suggestion.title}</h4>

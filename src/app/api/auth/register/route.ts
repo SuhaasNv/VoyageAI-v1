@@ -28,6 +28,7 @@ import {
     internalErrorResponse,
 } from "@/lib/api/response";
 import { getClientIp } from "@/lib/api/request";
+import { logError } from "@/lib/logger";
 import { runWithRequestContext } from "@/lib/requestContext";
 
 export async function POST(req: NextRequest) {
@@ -87,6 +88,7 @@ export async function POST(req: NextRequest) {
                 email: true,
                 name: true,
                 role: true,
+                hasOnboarded: true,
                 createdAt: true,
             },
         });
@@ -128,7 +130,9 @@ export async function POST(req: NextRequest) {
                     id: user.id,
                     email: user.email,
                     name: user.name,
+                    image: null,
                     role: user.role,
+                    hasOnboarded: user.hasOnboarded,
                     createdAt: user.createdAt,
                 },
                 accessToken,
@@ -141,8 +145,16 @@ export async function POST(req: NextRequest) {
         response.headers.append("Set-Cookie", serializeCsrfCookie(csrfToken));
 
         return response;
-    } catch (err) {
-        console.error("[register] DB error:", err);
+    } catch (err: unknown) {
+        const prismaErr = err as { code?: string };
+        if (prismaErr?.code === "P2002") {
+            return errorResponse(
+                "CONFLICT",
+                "An account with that email already exists. Try signing in with Google if you used it before.",
+                409
+            );
+        }
+        logError("[register] DB error", err);
         return internalErrorResponse();
     }
     });

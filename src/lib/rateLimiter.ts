@@ -14,6 +14,8 @@
  *   RATE_LIMIT_WINDOW_SEC     – Window size in seconds   (default: 60)
  */
 
+import { logInfo } from "@/lib/logger";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Config
 // ─────────────────────────────────────────────────────────────────────────────
@@ -111,10 +113,19 @@ export async function checkRateLimit(key: string): Promise<void> {
         !!process.env.UPSTASH_REDIS_REST_URL &&
         !!process.env.UPSTASH_REDIS_REST_TOKEN;
 
-    if (isProduction && !hasRedis) {
-        throw new Error(
-            "Rate limiting requires UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN in production"
-        );
+    if (isProduction) {
+        if (!hasRedis) {
+            throw new Error(
+                "Rate limiting requires UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN in production"
+            );
+        }
+        try {
+            await redisCheckRateLimit(key);
+            return;
+        } catch (err) {
+            if (err instanceof RateLimitError) throw err;
+            throw err;
+        }
     }
 
     if (hasRedis) {
@@ -123,8 +134,7 @@ export async function checkRateLimit(key: string): Promise<void> {
             return;
         } catch (err) {
             if (err instanceof RateLimitError) throw err;
-            if (isProduction) throw err;
-            console.warn("[rateLimiter] Redis error, falling back to in-memory:", err);
+            logInfo("[rateLimiter] Redis error, falling back to in-memory", { err, level: "warn" });
         }
     }
 

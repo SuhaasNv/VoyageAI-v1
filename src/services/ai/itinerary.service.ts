@@ -14,6 +14,13 @@ import {
     Itinerary,
     GenerateItineraryRequestSchema,
 } from "../../lib/ai/schemas";
+import { validateItineraryStructure } from "../../lib/ai/itineraryValidation";
+import {
+    itineraryCacheKey,
+    getItineraryCached,
+    setItineraryCached,
+} from "../../lib/ai/cache";
+import { logError } from "@/lib/logger";
 
 /**
  * Generates a full itinerary based on the request and optional context.
@@ -23,11 +30,24 @@ import {
  * @returns a fully typed Itinerary object
  */
 export async function generateItinerary(
-    request: GenerateItineraryRequest,
+    request: GenerateItineraryRequest & { tripId?: string },
     contextBundle?: ReturnType<typeof assembleContext>
 ): Promise<Itinerary> {
-    // Validate request against Zod schema (defensive – API route should have already done this)
     const parsedReq = GenerateItineraryRequestSchema.parse(request);
+
+    const cacheKey = itineraryCacheKey({
+        destination: parsedReq.destination,
+        startDate: parsedReq.startDate,
+        endDate: parsedReq.endDate,
+        budget: parsedReq.budget,
+        mustSeeAttractions: parsedReq.mustSeeAttractions,
+        avoidAttractions: parsedReq.avoidAttractions,
+    });
+    const cached = await getItineraryCached(cacheKey);
+    if (cached) {
+        const asItinerary = cached as Itinerary;
+        return { ...asItinerary, tripId: (parsedReq as { tripId?: string }).tripId ?? asItinerary.tripId };
+    }
 
     // Build the layered prompt
     const system = SYSTEM_PROMPTS.ITINERARY_GENERATOR;
@@ -59,45 +79,18 @@ Generate a complete day‑by‑day travel itinerary for **${parsedReq.destinatio
 
     try {
         const llmResponse = await executeWithRetry(client, [{ role: "user", content: fullPrompt }], llmOptions);
-        // Parse JSON safely
         const itinerary = parseJSONResponse<Itinerary>(llmResponse.content);
-        // Validate against the Itinerary Zod schema to guarantee structural integrity
         const finalItinerary = (await import("../../lib/ai/schemas")).ItinerarySchema.parse(itinerary);
+        validateItineraryStructure(finalItinerary, {
+            maxBudget: parsedReq.budget.total,
+            flexibility: parsedReq.budget.flexibility,
+        });
+        const toCache = { ...finalItinerary, tripId: (parsedReq as { tripId?: string }).tripId ?? finalItinerary.tripId };
+        await setItineraryCached(cacheKey, toCache);
         return finalItinerary;
     } catch (err) {
-        // If any error occurs (LLM failure, JSON parse, schema validation), fall back to a minimal placeholder
-        console.error("[Itinerary Service] LLM error – falling back to mock data", err);
-        // Build a deterministic fallback using the request data (so callers still get something useful)
-        const fallback: Itinerary = {
-            tripId: `fallback_${Date.now()}`,
-            destination: parsedReq.destination,
-            startDate: parsedReq.startDate,
-            endDate: parsedReq.endDate,
-            totalDays: Math.max(
-                1,
-                Math.ceil(
-                    (new Date(parsedReq.endDate).getTime() - new Date(parsedReq.startDate).getTime()) /
-                    (1000 * 60 * 60 * 24)
-                )
-            ),
-            days: [],
-            totalEstimatedCost: {
-                amount: parsedReq.budget.total,
-                currency: parsedReq.budget.currency,
-                breakdown: {},
-            },
-            aiInsights: [
-                "Fallback itinerary generated locally due to LLM service interruption.",
-            ],
-            pacingAnalysis: {
-                overallScore: 5,
-                warnings: [],
-                suggestions: [],
-            },
-            generatedAt: new Date().toISOString(),
-            modelVersion: "fallback-mock",
-        };
-        return fallback;
+        logError("[Itinerary Service] LLM error", err);
+        throw err;
     }
 }
 

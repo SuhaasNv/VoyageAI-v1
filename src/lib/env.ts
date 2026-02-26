@@ -2,17 +2,64 @@ import { z } from "zod";
 
 const isProduction = process.env.NODE_ENV === "production";
 
-const EnvSchema = z.object({
-    DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
-    JWT_ACCESS_SECRET: z.string().min(1, "JWT_ACCESS_SECRET is required"),
-    JWT_REFRESH_SECRET: z.string().min(1, "JWT_REFRESH_SECRET is required"),
-    CSRF_SECRET: z.string().min(1, "CSRF_SECRET is required"),
-    REDIS_URL: z.string().optional(),
-    DIRECT_URL: z.string().optional(),
-    NODE_ENV: z.enum(["development", "production", "test"]).optional(),
-    ACCESS_TOKEN_EXPIRY_MS: z.coerce.number().optional(),
-    REFRESH_TOKEN_EXPIRY_MS: z.coerce.number().optional(),
-});
+const EnvSchema = z
+    .object({
+        DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
+        JWT_ACCESS_SECRET: z.string().min(1, "JWT_ACCESS_SECRET is required"),
+        JWT_REFRESH_SECRET: z.string().min(1, "JWT_REFRESH_SECRET is required"),
+        CSRF_SECRET: z.string().min(1, "CSRF_SECRET is required"),
+        REDIS_URL: z.string().optional(),
+        DIRECT_URL: z.string().optional(),
+        NODE_ENV: z.enum(["development", "production", "test"]).optional(),
+        ACCESS_TOKEN_EXPIRY_MS: z.coerce.number().optional(),
+        REFRESH_TOKEN_EXPIRY_MS: z.coerce.number().optional(),
+        LLM_PROVIDER: z.enum(["groq", "gemini"]).optional(),
+        GROQ_API_KEY: z.string().optional(),
+        GEMINI_API_KEY: z.string().optional(),
+        UPSTASH_REDIS_REST_URL: z.string().optional(),
+        UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
+        GOOGLE_CLIENT_ID: z.string().optional(),
+        GOOGLE_CLIENT_SECRET: z.string().optional(),
+        NEXT_PUBLIC_APP_URL: z.string().optional(),
+        PEXELS_API_KEY: z.string().optional(),
+    })
+    .superRefine((data, ctx) => {
+        if (!isProduction) return;
+        if (!data.LLM_PROVIDER || !["groq", "gemini"].includes(data.LLM_PROVIDER)) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["LLM_PROVIDER"], message: "LLM_PROVIDER must be groq or gemini in production" });
+        }
+        if (data.LLM_PROVIDER === "groq" && !(data.GROQ_API_KEY?.trim())) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["GROQ_API_KEY"], message: "GROQ_API_KEY is required when LLM_PROVIDER is groq" });
+        }
+        if (data.LLM_PROVIDER === "gemini" && !(data.GEMINI_API_KEY?.trim())) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["GEMINI_API_KEY"], message: "GEMINI_API_KEY is required when LLM_PROVIDER is gemini" });
+        }
+        if (!data.UPSTASH_REDIS_REST_URL?.trim()) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["UPSTASH_REDIS_REST_URL"], message: "UPSTASH_REDIS_REST_URL is required in production" });
+        }
+        if (!data.UPSTASH_REDIS_REST_TOKEN?.trim()) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["UPSTASH_REDIS_REST_TOKEN"], message: "UPSTASH_REDIS_REST_TOKEN is required in production" });
+        }
+        if (!data.GOOGLE_CLIENT_ID?.trim()) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["GOOGLE_CLIENT_ID"], message: "GOOGLE_CLIENT_ID is required in production" });
+        }
+        if (!data.GOOGLE_CLIENT_SECRET?.trim()) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["GOOGLE_CLIENT_SECRET"], message: "GOOGLE_CLIENT_SECRET is required in production" });
+        }
+        if (!data.PEXELS_API_KEY?.trim()) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["PEXELS_API_KEY"], message: "PEXELS_API_KEY is required in production" });
+        }
+        const appUrl = data.NEXT_PUBLIC_APP_URL?.trim();
+        if (!appUrl) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["NEXT_PUBLIC_APP_URL"], message: "NEXT_PUBLIC_APP_URL is required in production" });
+        } else {
+            try {
+                new URL(appUrl);
+            } catch {
+                ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["NEXT_PUBLIC_APP_URL"], message: "NEXT_PUBLIC_APP_URL must be a valid URL" });
+            }
+        }
+    });
 
 const DEV_FALLBACKS = {
     DATABASE_URL: "postgresql://localhost:5432/voyageai_dev",
@@ -22,6 +69,9 @@ const DEV_FALLBACKS = {
 } as const;
 
 function getEnvInput() {
+    if (process.env.NEXT_PUBLIC_PEXELS_API_KEY) {
+        throw new Error("NEXT_PUBLIC_PEXELS_API_KEY must not exist — Pexels key must stay server-side only");
+    }
     const raw = {
         DATABASE_URL: process.env.DATABASE_URL,
         JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET,
@@ -32,6 +82,15 @@ function getEnvInput() {
         NODE_ENV: process.env.NODE_ENV,
         ACCESS_TOKEN_EXPIRY_MS: process.env.ACCESS_TOKEN_EXPIRY_MS,
         REFRESH_TOKEN_EXPIRY_MS: process.env.REFRESH_TOKEN_EXPIRY_MS,
+        LLM_PROVIDER: process.env.LLM_PROVIDER,
+        GROQ_API_KEY: process.env.GROQ_API_KEY,
+        GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+        UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,
+        UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN,
+        GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+        GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+        NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+        PEXELS_API_KEY: process.env.PEXELS_API_KEY,
     };
     if (isProduction) return raw;
     return {

@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { getRequestId } from "@/lib/requestContext";
 import { RateLimitError } from "@/lib/rateLimiter";
+import { ItineraryValidationError } from "@/lib/ai/itineraryValidation";
+import { AIServiceError } from "@/lib/ai/llm";
 
 export interface ApiErrorBody {
     success: false;
@@ -60,6 +62,32 @@ export function formatErrorResponse(error: unknown): NextResponse<ApiErrorBody> 
             error: withRequestId({ code: error.code, message: error.message }) as ApiErrorBody["error"],
         };
         const res = NextResponse.json(body, { status: 429 });
+        addRequestIdHeader(res, requestId);
+        return res as NextResponse<ApiErrorBody>;
+    }
+    if (error instanceof ItineraryValidationError) {
+        const body: ApiErrorBody = {
+            success: false,
+            error: withRequestId({ code: error.code, message: error.message }) as ApiErrorBody["error"],
+        };
+        const res = NextResponse.json(body, { status: 422 });
+        addRequestIdHeader(res, requestId);
+        return res as NextResponse<ApiErrorBody>;
+    }
+    if (error instanceof AIServiceError) {
+        const status =
+            error.code === "RATE_LIMIT_EXCEEDED"
+                ? 429
+                : error.code === "INVALID_INPUT" || error.code === "SCHEMA_VALIDATION_FAILED"
+                    ? 400
+                    : error.code === "LLM_ERROR"
+                        ? 503
+                        : 500;
+        const body: ApiErrorBody = {
+            success: false,
+            error: withRequestId({ code: error.code, message: error.message, details: error.details }) as ApiErrorBody["error"],
+        };
+        const res = NextResponse.json(body, { status });
         addRequestIdHeader(res, requestId);
         return res as NextResponse<ApiErrorBody>;
     }

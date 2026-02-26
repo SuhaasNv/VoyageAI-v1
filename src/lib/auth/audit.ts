@@ -6,6 +6,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { logError } from "@/lib/logger";
 
 export type AuditAction =
     | "REGISTER"
@@ -39,6 +40,6 @@ export async function writeAuditLog(opts: AuditOptions): Promise<void> {
         });
     } catch (err) {
         // Audit failures must never crash the auth flow
-        console.error("[audit] Failed to write audit log:", err);
+        logError("[audit] Failed to write audit log", err);
     }
 }

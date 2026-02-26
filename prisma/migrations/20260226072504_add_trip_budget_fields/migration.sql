@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "trips" ADD COLUMN     "budgetCurrency" TEXT NOT NULL DEFAULT 'USD',
+ADD COLUMN     "budgetTotal" DOUBLE PRECISION NOT NULL DEFAULT 0;

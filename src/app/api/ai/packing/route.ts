@@ -14,6 +14,7 @@ import { generatePackingList } from "@/services/ai/packing.service";
 import { PackingListRequestSchema } from "@/lib/ai/schemas";
 import { validateBody, getAuthContext } from "@/lib/api/request";
 import { formatErrorResponse } from "@/lib/errors";
+import { logError } from "@/lib/logger";
 import { runWithRequestContext } from "@/lib/requestContext";
 import { checkRateLimit } from "@/lib/rateLimiter";
 import { unauthorizedResponse } from "@/lib/api/response";
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         const result = await generatePackingList(validation.data);
         return NextResponse.json({ success: true, data: result }, { status: 200 });
     } catch (err) {
-        console.error("[API] Packing list generation error", err);
+        logError("[API] Packing list generation error", err);
         return formatErrorResponse(err);
     }
     });

@@ -28,6 +28,7 @@ import {
     internalErrorResponse,
 } from "@/lib/api/response";
 import { getClientIp } from "@/lib/api/request";
+import { logError } from "@/lib/logger";
 import { runWithRequestContext } from "@/lib/requestContext";
 
 export async function POST(req: NextRequest) {
@@ -67,14 +68,16 @@ export async function POST(req: NextRequest) {
                 id: true,
                 email: true,
                 name: true,
+                image: true,
                 role: true,
                 passwordHash: true,
                 isActive: true,
+                hasOnboarded: true,
                 createdAt: true,
             },
         });
     } catch (err) {
-        console.error("[login] DB error (lookup):", err);
+        logError("[login] DB error (lookup)", err);
         return internalErrorResponse();
     }
 
@@ -166,7 +169,9 @@ export async function POST(req: NextRequest) {
                 id: user.id,
                 email: user.email,
                 name: user.name,
+                image: user.image,
                 role: user.role,
+                hasOnboarded: user.hasOnboarded,
                 createdAt: user.createdAt,
             },
             accessToken,
@@ -178,7 +183,7 @@ export async function POST(req: NextRequest) {
 
         return response;
     } catch (err) {
-        console.error("[login] DB error (issue tokens):", err);
+        logError("[login] DB error (issue tokens)", err);
         return internalErrorResponse();
     }
     });

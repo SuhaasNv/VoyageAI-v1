@@ -63,8 +63,10 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
             `script-src ${scriptSrc}`,
             `style-src ${styleSrc}`,
             "font-src 'self' https://fonts.gstatic.com",
-            "img-src 'self' data: blob: https://images.unsplash.com https://i.pravatar.cc",
-            "connect-src 'self'",
+            "img-src 'self' data: blob: https://images.pexels.com https://images.unsplash.com https://i.pravatar.cc https://lh3.googleusercontent.com",
+            "connect-src 'self' https://api.mapbox.com https://*.tiles.mapbox.com https://events.mapbox.com",
+            "worker-src blob:",
+            "child-src blob:",
             "frame-ancestors 'none'",
         ].join("; ")
     );

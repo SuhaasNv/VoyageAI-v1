@@ -1,36 +1,33 @@
 # VoyageAI Production Readiness Audit
 
-**Date:** 2025-02-25  
-**Scope:** Strict deploy-gate audit. Analysis only; no code changes.
+**Date:** 2025-02-26  
+**Scope:** Deep architectural and production-readiness audit. Analysis only; no code changes.
 
 ---
 
-## 🔴 Critical Issues (must fix before deploy)
+## 🔴 Critical Issues
 
 | # | Finding | Location |
 |---|---------|----------|
-| 1 | **AI routes allow anonymous access** — `userId = getAuthContext(req)?.user.sub ?? "anon"` permits unauthenticated calls. Rate limit key `ai:anon:*` enables quota abuse; no auth enforcement. | `src/app/api/ai/*/route.ts` (all 5) |
-| 2 | **All trip data is mock** — `getUpcomingTrips()`, `getTripById()`, `createTrip()` return hardcoded data from `@/data/mock-trip`. No backend persistence. Prisma has no Trip model. | `src/lib/api.ts`, `src/data/mock-trip.ts`, `prisma/schema.prisma` |
-| 3 | **CreateTripModal does not submit** — "Generate Itinerary" button has no `onClick`; form fields (dates, vibe) are not wired. Trip creation flow is non-functional. | `src/components/dashboard/CreateTripModal.tsx` |
-| 4 | **AIChatDrawer uses mock responses** — `handleSend` uses `setTimeout` with hardcoded reply. No call to `/api/ai/chat`. | `src/components/trip/AIChatDrawer.tsx` |
-| 5 | **Access token cookie is not HttpOnly** — `httpOnly: false` for `voyageai_at` (required for Edge middleware to read it). XSS can steal access token. | `src/lib/auth/cookies.ts` |
-| 6 | **JWT access and refresh can share one secret** — `env.ts` allows `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET` to fall back to `JWT_SECRET`. Single secret weakens token isolation. | `src/lib/env.ts` |
-| 7 | **`reoptimizeTrip` client fetch omits CSRF** — `lib/api.ts` `reoptimizeTrip()` does not send `X-CSRF-Token` or `credentials: "include"`. POST would fail CSRF. | `src/lib/api.ts` |
+| 1 | **Reoptimize receives wrong itinerary format** — `AIChatDrawer` passes `tripJson.data.itinerary` (adapted `ItineraryDay[]` with `events`) to `/api/ai/reoptimize`. The API expects `ItinerarySchema` (raw AI format with `days[].activities`, `location.lat/lng`, etc.). Validation will fail; reoptimize from chat is broken. | `src/components/trip/AIChatDrawer.tsx` (lines 118–119, 129); `src/lib/ai/schemas/index.ts` (ReoptimizeRequestSchema) |
+| 2 | **404 on every itinerary refresh** — `TripViewClient.handleItineraryRefresh` fetches `/api/trips/${id}/itinerary`, which does not exist. Only `GET /api/trips/[id]` exists. Second fetch returns 404 on every refresh; raw itinerary for map never updates from this path. | `src/components/trip/TripViewClient.tsx` (lines 31–35) |
+| 3 | **Auth rate limiter falls back to in-memory in production** — `lib/auth/rateLimit.ts` catches Redis/DB errors and falls back to `memoryRateLimit`. In multi-instance production, each process has its own limit; an attacker can bypass by hitting different instances. | `src/lib/auth/rateLimit.ts` (lines 164–178) |
+| 4 | **Env schema omits production-critical vars** — `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `LLM_PROVIDER`, `GROQ_API_KEY`/`GEMINI_API_KEY`, `UPSTASH_REDIS_*` not in `lib/env.ts`. App can start with missing OAuth or LLM config; failures occur at runtime. | `src/lib/env.ts` |
+| 5 | **`formatErrorResponse` does not handle `AIServiceError`** — AI routes catch `AIServiceError` (e.g. `RATE_LIMIT_EXCEEDED`, `LLM_ERROR`) but `formatErrorResponse` treats it as generic `Error` → 500. Rate limit and LLM errors lose correct status codes (429, 503). | `src/lib/errors.ts`; AI route catch blocks |
 
 ---
 
-## 🟡 High Risk / Architectural Gaps
+## 🟡 High-Risk Weaknesses
 
 | # | Finding | Location |
 |---|---------|----------|
-| 1 | **Two rate limiters, different backends** — Auth uses `lib/auth/rateLimit.ts` (Redis → DB → memory). AI uses `lib/rateLimiter.ts` (Redis → memory only). Inconsistent fallback chains. | `src/lib/auth/rateLimit.ts`, `src/lib/rateLimiter.ts` |
-| 2 | **AI rate limiter in-memory fallback in production** — When Redis is absent or down, `checkRateLimit` uses process-local Map. Multi-instance deployment = per-process limits; quota bypass. | `src/lib/rateLimiter.ts` |
-| 3 | **CSP allows `unsafe-inline` and `unsafe-eval`** — `script-src 'self' 'unsafe-inline' 'unsafe-eval'` weakens XSS mitigation. | `src/middleware.ts` |
-| 4 | **CSRF rejection returns before request ID** — Middleware order: protected routes → CSRF → request ID. CSRF rejections (403) lack `X-Request-ID` header. | `src/middleware.ts` |
-| 5 | **Refresh token family rotated on every refresh** — `newTokenFamily()` on each refresh. Non-standard; family typically fixed until reuse. Still detects same-token replay. | `src/app/api/auth/refresh/route.ts` |
-| 6 | **Middleware JWT check is structural only** — `looksLikeJwt()` validates format, not signature. Forged tokens pass middleware; route handlers must verify. Route handlers do verify. | `src/middleware.ts` |
-| 7 | **UPSTASH_REDIS_* not validated at startup** — Env schema does not require them. App starts without Redis; rate limiters silently fall back. | `src/lib/env.ts` |
-| 8 | **Prisma singleton not cached in production** — `if (env.NODE_ENV !== "production") { globalForPrisma.prisma = prisma; }` — in production, `globalForPrisma` is never set. Module cache still yields one client per process; acceptable but unusual. | `src/lib/prisma.ts` |
+| 1 | **AI rate limiter Redis fallback in dev only** — `checkRateLimit` falls back to in-memory when Redis errors in dev; in production it throws. But auth rate limiter always falls back. Inconsistent behavior; production AI routes fail hard on Redis outage while auth keeps working with weakened limits. | `src/lib/rateLimiter.ts` (line 127); `src/lib/auth/rateLimit.ts` |
+| 2 | **Chat: orphaned user message on AI failure** — User message is persisted before AI call. If AI fails, user message remains in DB with no assistant response. User sees their message in history but no reply; retry sends duplicate. | `src/app/api/ai/chat/route.ts` (lines 53–61, 76) |
+| 3 | **Budget `spent` always 0** — `serializeTrip` hardcodes `spent: 0`. No derivation from itinerary events. BudgetOverviewCard and TripTopBar show misleading spent/total. | `src/lib/services/trips.ts` (line 90); `BudgetOverviewCard`, `TripTopBar` |
+| 4 | **Simulation and packing routes accept optional `tripId` without ownership check** — If `tripId` is passed, no validation that trip belongs to user. Low risk (itinerary/packing data is user-provided in body) but inconsistent with other AI routes. | `src/app/api/ai/simulation/route.ts`; `src/app/api/ai/packing/route.ts` |
+| 5 | **Dashboard trips fetch: no loading/error UI** — `getUpcomingTrips()` failure only logs to console. User sees empty grid with no feedback. | `src/app/dashboard/page.tsx` (lines 32–38) |
+| 6 | **CSP `connect-src 'self'`** — Blocks external API calls from client. Fine for same-origin API; verify no client-side calls to third-party APIs (e.g. Mapbox, external LLM) that would be blocked. | `src/middleware.ts` (line 66) |
+| 7 | **`parseStoredItinerary` swallows parse errors** — Returns `[]` on any error. Malformed `rawJson` in DB yields empty itinerary with no logging or alert. | `src/lib/services/trips.ts` (lines 134–141) |
 
 ---
 
@@ -38,30 +35,109 @@
 
 | # | Finding | Location |
 |---|---------|----------|
-| 1 | **AISuggestionsCard is static** — Suggestions hardcoded; "Ask AI" / "Review Route" buttons have no handlers. | `src/components/dashboard/AISuggestionsCard.tsx` |
-| 2 | **`/api/profile` only supports PATCH** — No GET for profile; client may need it. | `src/app/api/profile/route.ts` |
-| 3 | **Error boundary does not surface request ID** — Dev-only details show `error.message` and `digest`; no `X-Request-ID` for correlation. | `src/app/error.tsx` |
-| 4 | **`replacedBy` stores token hash, schema comment says cuid** — `RefreshToken.replacedBy` holds `newTokenHash`; comment suggests cuid. Cosmetic. | `prisma/schema.prisma`, `src/app/api/auth/refresh/route.ts` |
-| 5 | **Dashboard sidebar links to non-existent routes** — `/dashboard/explore`, `/dashboard/trips`, `/dashboard/messages` may 404. | `src/app/dashboard/layout.tsx` |
+| 1 | **Console.error in critical paths** — 20+ occurrences in API routes, services, auth. Acceptable for debugging; consider structured logger for production. | Various `src/` |
+| 2 | **Two rate limiters** — Auth uses `lib/auth/rateLimit.ts` (Redis → DB → memory); AI uses `lib/rateLimiter.ts` (Redis → memory). Different backends and fallback chains. | `src/lib/auth/rateLimit.ts`; `src/lib/rateLimiter.ts` |
+| 3 | **`reoptimizeTrip` in lib/api.ts does not use `unwrap`** — Duplicates error handling; inconsistent with other API helpers. | `src/lib/api.ts` (lines 111–128) |
+| 4 | **UpcomingTripsGrid `IMAGES` array** — Static array for trip card images; not mock data but could be derived or configurable. | `src/components/dashboard/UpcomingTripsGrid.tsx` (lines 16–20) |
+| 5 | **AISuggestionsCard static content** — Hardcoded suggestions; "View all" and clicks have no handlers. | `src/components/dashboard/AISuggestionsCard.tsx` |
+| 6 | **`getClientIp` dev fallback** — Returns `127.0.0.1` when proxy headers absent. Document that production must set `X-Forwarded-For` or `X-Real-IP`. | `src/lib/api/request.ts` (line 28) |
 
 ---
 
-## ⚙ Structural Notes
+## ⚙ Architectural Observations
+
+### Core Product Loop Integrity
+
+| Step | Status | Notes |
+|------|--------|-------|
+| Auth | ✅ | JWT + refresh; Google OAuth; CSRF on mutating routes |
+| Create Trip | ✅ | POST /api/trips; ownership enforced |
+| Generate Itinerary | ✅ | TimelineItinerary "Generate itinerary" → POST /api/ai/itinerary; persists + updates budget |
+| Persist | ✅ | Itinerary and reoptimize both persist in transaction |
+| Reload | ⚠️ | TripViewClient fetches non-existent `/itinerary` route → 404; GET /api/trips/[id] returns full trip |
+| Chat Modify | ✅ | Chat persists; suggested actions wired |
+| Reoptimize | ❌ | Chat passes wrong format; validation fails |
+| Budget Update | ✅ | Itinerary + reoptimize update `budgetTotal` atomically |
+| Data loss on reload | ⚠️ | Raw itinerary for map comes from server-rendered page; refresh uses broken `/itinerary` fetch |
+
+**Dead-end states:** Reoptimize from chat fails validation. Map raw itinerary does not refresh correctly.
+
+### AI System Integrity
 
 | Area | Status |
 |------|--------|
-| **Auth token lifecycle** | Access 15 min, refresh 7 days. Rotation on refresh; reuse detection. |
-| **Cookie flags** | Refresh: HttpOnly, Secure (prod), SameSite strict, path `/api/auth`. Access: non-HttpOnly, Secure (prod), SameSite lax. CSRF: JS-readable, Secure, SameSite strict. |
-| **CSRF coverage** | All POST/PUT/PATCH/DELETE on `/api/*` except login, register, refresh. Header vs cookie match + HMAC verify. |
-| **Middleware order** | Protected pages → CSRF → request ID → security headers. |
-| **API error format** | `{ success: false, error: { code, message, details?, requestId? } }`. Consistent. |
-| **Global error boundary** | Exists; dev-only details; Try Again button. |
-| **Env validation** | Zod at startup; DATABASE_URL, JWT_SECRET, CSRF_SECRET required. Throws on failure. |
-| **Prisma usage** | Singleton via module cache. |
-| **"use client"** | Used only in components that need interactivity; root layout is server. |
+| LLM provider | ✅ `LLM_PROVIDER` enforced; mock blocked in production |
+| Failure handling | ✅ Services throw; no silent fallback to mock data |
+| Retry logic | ✅ `executeWithRetry` with configurable retries |
+| JSON enforcement | ✅ `parseJSONResponse` strips markdown; throws on parse failure |
+| Schema validation | ✅ Zod parse after `parseJSONResponse`; `validateItineraryStructure` post-parse |
+| Malformed LLM output | ✅ Throws; no persistence of invalid data |
+| Reoptimize vs itinerary | ✅ Same ItinerarySchema; reoptimize service returns consistent structure |
+
+### Data Integrity & Ownership
+
+| Query | Scoped By |
+|-------|-----------|
+| Trips | `userId` (auth.user.sub) |
+| Itinerary | `tripId` (trip ownership verified first) |
+| Chat messages | `tripId` (trip ownership verified first) |
+| Reoptimize | Trip ownership verified before processing |
+| Cross-user leakage | None; all trip/itinerary/chat scoped |
+| Orphaned records | Chat can leave orphaned user message on AI failure |
+| Reoptimize atomicity | ✅ Single transaction: deleteMany, create, trip update |
+| Budget derivation | From itinerary `totalEstimatedCost`; no drift |
+
+### Security & Abuse Surface
+
+| Check | Status |
+|-------|--------|
+| AI routes authenticated | ✅ All use `getAuthContext`; 401 if absent |
+| Rate limiting | ✅ AI: per-user; Auth: per-IP; Refresh: per-IP |
+| Redis fallback | ⚠️ Auth falls back to memory in prod; AI throws in prod |
+| CSRF | ✅ Mutating /api/* except login, register, refresh |
+| Token leakage | ✅ Access token HttpOnly cookie; Bearer supported |
+| Horizontal escalation | ✅ Trip ownership enforced; no IDOR |
+| Google OAuth | GET only; no CSRF needed for redirect flow |
+
+### Frontend–Backend Alignment
+
+| Check | Status |
+|-------|--------|
+| Mock data imports | ✅ None; mock-trip removed |
+| Static arrays for core features | ⚠️ AISuggestionsCard; UpcomingTripsGrid IMAGES |
+| Dashboard data from APIs | ✅ getUpcomingTrips, getTripById |
+| Loading states | ⚠️ Dashboard trips: none; TimelineItinerary: yes |
+| Error states | ⚠️ Dashboard: silent; TimelineItinerary: retry UI |
+| 404 routes | ❌ `/api/trips/[id]/itinerary` called but does not exist |
+| Sidebar links | ✅ Dashboard, Settings; no broken links |
+| Placeholder components | ⚠️ InteractiveMap (visual mock); AISuggestionsCard static |
+
+### Performance & Stability
+
+| Check | Status |
+|-------|--------|
+| Animation loops | ✅ DashboardBackground setInterval cleaned up on unmount |
+| Mapbox | ✅ Single instance; cleanup in useEffect return |
+| Duplicate maps | ✅ mountedRef guards |
+| Unnecessary "use client" | ✅ Used where needed (forms, hooks, interactivity) |
+| API overfetching | ⚠️ handleItineraryRefresh fetches same trip twice (one 404) |
+
+### Production Hardening
+
+| Check | Status |
+|-------|--------|
+| Env validation | ⚠️ Core only; OAuth, LLM, Redis not validated |
+| LLM_PROVIDER enforcement | ✅ Mock blocked in production |
+| Mock provider in prod | ✅ Throws on create |
+| console.log in critical paths | ⚠️ console.error used; no structured logging |
+| Error boundary | ✅ Root error.tsx; Try Again; dev details |
+| Logging layer | ❌ No structured logger; console only |
+| Scalability | ⚠️ Auth rate limit memory fallback; multi-instance weak |
 
 ---
 
-## 📊 Deploy Readiness Score: **3/10**
+## 📊 Final Deploy Readiness Score: **6/10**
 
-**Blockers:** Mock data in production paths; AI routes unauthenticated; trip creation and AI chat flows non-functional; access token XSS exposure; single JWT secret fallback.
+**Blockers:** Reoptimize from chat broken (wrong format); 404 on itinerary refresh; auth rate limit memory fallback in production; env schema gaps; AIServiceError not handled in formatErrorResponse.
+
+**After fixes:** Core loop (Create → Generate → Persist → Reload) works. Reoptimize from TimelineItinerary "Regenerate" works (uses same itinerary API). Chat reoptimize and map refresh need fixes. Security and rate limiting need production hardening.
