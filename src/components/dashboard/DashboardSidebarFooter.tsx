@@ -11,7 +11,7 @@ function displayName(name: string | null, email: string): string {
     return local ? local.charAt(0).toUpperCase() + local.slice(1) : "User";
 }
 
-export function DashboardSidebarFooter() {
+export function DashboardSidebarFooter({ mobileMinimal }: { mobileMinimal?: boolean }) {
     const { user, logout } = useAuthStore();
 
     const [isLoggingOut, setIsLoggingOut] = React.useState(false);
@@ -24,6 +24,23 @@ export function DashboardSidebarFooter() {
 
     const userName = user ? displayName(user.name, user.email) : "User";
     const initial = userName.charAt(0).toUpperCase();
+
+    if (mobileMinimal) {
+        return (
+            <button
+                onClick={handleLogout}
+                disabled={isLoggingOut}
+                className="flex flex-col items-center gap-1 text-zinc-500 hover:text-white transition-all duration-300"
+            >
+                {isLoggingOut ? (
+                    <span className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                ) : (
+                    <LogOut className="w-5 h-5" />
+                )}
+                <span className="text-[10px] font-medium uppercase tracking-wider">Logout</span>
+            </button>
+        );
+    }
 
     return (
         <div className="space-y-1.5">

@@ -62,8 +62,8 @@ export function TripTopBar({ trip, onTripUpdate }: TripTopBarProps) {
                 </div>
             </div>
 
-            <div className="flex items-center gap-6">
-                <div className="flex items-center gap-2.5 bg-white/[0.02] backdrop-blur-sm px-4 py-2 rounded-xl border border-white/5">
+            <div className="flex items-center gap-2 md:gap-6">
+                <div className="hidden md:flex items-center gap-2.5 bg-white/[0.02] backdrop-blur-sm px-4 py-2 rounded-xl border border-white/5">
                     {isHighFatigue ? <BatteryWarning className="w-4 h-4 text-rose-500" /> : isMedFatigue ? <BatteryMedium className="w-4 h-4 text-amber-500" /> : <Battery className="w-4 h-4 text-[#10B981]" />}
                     <div>
                         <div className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Fatigue Forecast</div>
@@ -73,7 +73,7 @@ export function TripTopBar({ trip, onTripUpdate }: TripTopBarProps) {
                     </div>
                 </div>
 
-                <div className="flex items-center gap-3 bg-white/[0.02] backdrop-blur-sm px-4 py-2 rounded-xl border border-white/5 w-64">
+                <div className="hidden lg:flex items-center gap-3 bg-white/[0.02] backdrop-blur-sm px-4 py-2 rounded-xl border border-white/5 w-64">
                     <div className="w-8 h-8 rounded-lg bg-[#10B981]/10 flex items-center justify-center flex-shrink-0 border border-[#10B981]/20">
                         <Wallet className="w-4 h-4 text-[#10B981]" />
                     </div>

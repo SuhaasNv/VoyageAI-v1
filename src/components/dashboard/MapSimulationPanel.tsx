@@ -2,13 +2,18 @@ import { Plane } from "lucide-react";
 
 export function MapSimulationPanel() {
     return (
-        <div className="bg-white/[0.02] backdrop-blur-xl border border-white/5 rounded-[2rem] p-6 shadow-2xl relative overflow-hidden h-[340px] hover:border-white/10 transition-colors flex flex-col justify-end group">
-            {/* Base map grid / aesthetic */}
-            <div className="absolute inset-0 z-0 bg-[radial-gradient(circle_at_center,_rgba(16,185,129,0.05),_transparent_70%)]" />
-            <div className="absolute inset-0 bg-[#0B0F14]/40 z-0 opacity-50 transition-opacity group-hover:opacity-75" style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
+        <div className="relative w-full h-[240px] md:h-[340px] bg-white/[0.02] border border-white/5 rounded-3xl overflow-hidden group shadow-2xl">
+            {/* Minimal Background Plate */}
+            <div className="absolute inset-0 bg-[#0B0F14]/50 backdrop-blur-md" />
 
             {/* Glowing route arc using SVG */}
-            <svg viewBox="0 0 800 300" className="absolute inset-0 w-full h-full z-10 pointer-events-none" preserveAspectRatio="none">
+            <svg
+                className="absolute inset-0 w-full h-full opacity-60"
+                viewBox="0 0 800 400"
+                preserveAspectRatio="xMidYMid meet"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+            >
                 {/* Dotted background path */}
                 <path d="M 150 220 Q 400 80 650 160" fill="transparent" stroke="rgba(16,185,129,0.3)" strokeWidth="2" strokeDasharray="4,6" />
 

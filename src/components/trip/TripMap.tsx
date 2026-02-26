@@ -265,6 +265,30 @@ export function TripMap({ rawItinerary, selectedDay }: TripMapProps) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token, retryCount]);
 
+    // ─── Handle Resize when visibility changes (Mobile Toggle) ────────────────
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container || !mapRef.current) return;
+
+        const observer = new IntersectionObserver((entries) => {
+            if (entries[0].isIntersecting) {
+                // Force multiple resizes to handle animation frames
+                setTimeout(() => mapRef.current?.resize(), 50);
+                setTimeout(() => mapRef.current?.resize(), 150);
+                setTimeout(() => {
+                    mapRef.current?.resize();
+                    const pts = extractPoints(rawItinerary, selectedDay);
+                    if (pts.length > 0 && mapRef.current && mboxRef.current) {
+                        draw(mapRef.current, mboxRef.current, pts);
+                    }
+                }, 300);
+            }
+        }, { threshold: 0.1 });
+
+        observer.observe(container);
+        return () => observer.disconnect();
+    }, [rawItinerary, selectedDay, draw]);
+
     // ─── Redraw on data / day change ─────────────────────────────────────────
     useEffect(() => {
         const map = mapRef.current;
