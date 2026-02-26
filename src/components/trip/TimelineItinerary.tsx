@@ -114,19 +114,19 @@ export function TimelineItinerary({ trip, onRefresh, onDayChange }: TimelineItin
                     </div>
 
                     {genError && (
-                    <div className="flex flex-col gap-2 text-xs bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-3 max-w-xs">
-                        <div className="flex items-center gap-2 text-amber-300">
-                            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                            <span>{genError}</span>
+                        <div className="flex flex-col gap-2 text-xs bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-3 max-w-xs">
+                            <div className="flex items-center gap-2 text-amber-300">
+                                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                                <span>{genError}</span>
+                            </div>
+                            <button
+                                onClick={() => { setGenError(null); handleGenerate(); }}
+                                className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-200 font-semibold hover:bg-amber-500/30 transition-colors"
+                            >
+                                <RefreshCw className="w-3.5 h-3.5" />
+                                Retry
+                            </button>
                         </div>
-                        <button
-                            onClick={() => { setGenError(null); handleGenerate(); }}
-                            className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-200 font-semibold hover:bg-amber-500/30 transition-colors"
-                        >
-                            <RefreshCw className="w-3.5 h-3.5" />
-                            Retry
-                        </button>
-                    </div>
                     )}
 
                     <button
@@ -197,7 +197,7 @@ export function TimelineItinerary({ trip, onRefresh, onDayChange }: TimelineItin
             )}
 
             {/* Events */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-8 scroll-smooth z-10">
+            <div className="flex-1 overflow-y-auto p-6 space-y-8 scroll-smooth z-10 hide-scrollbar">
                 {itinerary.map((day) => (
                     currentActiveDay === day.day && (
                         <div key={day.day} className="animate-in fade-in slide-in-from-bottom-4 duration-500">

@@ -30,14 +30,18 @@ export function DashboardSidebarFooter({ mobileMinimal }: { mobileMinimal?: bool
             <button
                 onClick={handleLogout}
                 disabled={isLoggingOut}
-                className="flex flex-col items-center gap-1 text-zinc-500 hover:text-white transition-all duration-300"
+                className="flex w-full items-center gap-3.5 px-4 py-3 rounded-2xl text-zinc-400 hover:text-white hover:bg-white/5 transition-all duration-200 group"
             >
-                {isLoggingOut ? (
-                    <span className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                ) : (
-                    <LogOut className="w-5 h-5" />
-                )}
-                <span className="text-[10px] font-medium uppercase tracking-wider">Logout</span>
+                <div className="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center group-hover:bg-zinc-700 transition-colors">
+                    {isLoggingOut ? (
+                        <span className="w-3.5 h-3.5 border-2 border-white/20 border-t-indigo-400 rounded-full animate-spin" />
+                    ) : (
+                        <LogOut className="w-4 h-4" />
+                    )}
+                </div>
+                <span className="text-sm font-semibold tracking-wide">
+                    {isLoggingOut ? "Logging out..." : "Logout"}
+                </span>
             </button>
         );
     }

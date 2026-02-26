@@ -10,6 +10,7 @@ import { DashboardUserProvider } from "@/components/dashboard/DashboardUserProvi
 import { LogoutOverlay } from "@/components/dashboard/LogoutOverlay";
 import { OnboardingGuard } from "@/components/dashboard/OnboardingGuard";
 import { Logo } from "@/components/Logo";
+import { MobileUserMenu } from "@/components/dashboard/MobileUserMenu";
 import { ACCESS_TOKEN_COOKIE } from "@/lib/auth/cookies";
 import { verifyAccessToken } from "@/lib/auth/tokens";
 import { prisma } from "@/lib/prisma";
@@ -72,11 +73,7 @@ export default async function DashboardLayout({
                             <Logo size="sm" className="shrink-0 text-white" />
                             <span className="text-lg font-bold tracking-tight uppercase">VoyageAI</span>
                         </Link>
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 overflow-hidden border border-white/10 shrink-0">
-                            {user.image && (
-                                <img src={user.image} alt={user.name ?? "User"} className="w-full h-full object-cover" />
-                            )}
-                        </div>
+                        <MobileUserMenu user={user} />
                     </header>
 
                     <div className="flex flex-1 w-full h-full relative z-10 overflow-hidden">
@@ -100,20 +97,11 @@ export default async function DashboardLayout({
                         </aside>
 
                         {/* Main Content */}
-                        <main className="relative z-10 flex-1 flex flex-col min-h-0 bg-transparent pb-24 md:pb-0 h-full overflow-hidden">
+                        <main className="relative z-10 flex-1 flex flex-col min-h-0 bg-transparent h-full overflow-hidden">
                             <div className="flex-1 flex flex-col min-h-0">
                                 {children}
                             </div>
                         </main>
-
-                        {/* Mobile Bottom Navigation */}
-                        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#0B0F14]/90 backdrop-blur-2xl border-t border-white/5 px-6 py-3 pb-[calc(12px+env(safe-area-inset-bottom))] flex items-center justify-around">
-                            <MobileNavLink href="/dashboard" icon={<Home className="w-5 h-5" />} label="Home" active />
-                            <MobileNavLink href="/dashboard/settings" icon={<Settings className="w-5 h-5" />} label="Settings" />
-                            <div className="shrink-0">
-                                <DashboardSidebarFooter mobileMinimal />
-                            </div>
-                        </nav>
                     </div>
                 </OnboardingGuard>
             </DashboardTripsProvider>

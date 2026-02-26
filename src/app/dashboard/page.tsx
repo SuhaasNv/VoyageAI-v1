@@ -29,7 +29,7 @@ export default function DashboardPage() {
     };
 
     return (
-        <div className="h-full overflow-y-auto scroll-smooth">
+        <div className="h-full overflow-y-auto scroll-smooth hide-scrollbar">
             <div className="min-h-full p-6 md:p-8 lg:p-10 max-w-7xl mx-auto space-y-8 relative mobile-container">
                 {/* Top Bar matching Minimal Premium OS */}
                 <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-2">

@@ -23,6 +23,13 @@
   body {
     @apply antialiased bg-[#10141a] text-slate-100 overflow-x-hidden h-full;
     padding-bottom: env(safe-area-inset-bottom);
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  html::-webkit-scrollbar,
+  body::-webkit-scrollbar {
+    display: none;
   }
 
   @media (max-width: 768px) {

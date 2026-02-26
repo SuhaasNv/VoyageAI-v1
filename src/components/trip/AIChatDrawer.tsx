@@ -170,7 +170,7 @@ export function AIChatDrawer({ tripId, rawItinerary, budgetTotal, initialMessage
                 <button
                     onClick={() => setIsOpen(true)}
                     aria-label="Open AI chat"
-                    className="fixed bottom-[180px] md:bottom-6 right-6 z-50 flex items-center justify-center w-14 h-14 bg-indigo-500 hover:bg-indigo-400 text-white rounded-full shadow-[0_0_24px_rgba(99,102,241,0.4)] transition-all duration-200 ease-out hover:scale-[1.05] active:scale-95 animate-in fade-in zoom-in slide-in-from-bottom-4 duration-500"
+                    className="fixed bottom-24 md:bottom-6 right-6 z-50 flex items-center justify-center w-14 h-14 bg-indigo-500 hover:bg-indigo-400 text-white rounded-full shadow-[0_0_24px_rgba(99,102,241,0.4)] transition-all duration-200 ease-out hover:scale-[1.05] active:scale-95 animate-in fade-in zoom-in slide-in-from-bottom-4 duration-500"
                 >
                     <Sparkles className="w-6 h-6 transition-transform group-hover:rotate-12" />
                 </button>
@@ -179,8 +179,8 @@ export function AIChatDrawer({ tripId, rawItinerary, budgetTotal, initialMessage
             {/* Chat drawer */}
             <div
                 className={`fixed md:bottom-6 right-6 z-50 w-[92vw] sm:w-[360px] bg-white/[0.06] backdrop-blur-xl border border-white/[0.1] rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.4),0_0_1px_rgba(255,255,255,0.1)] flex flex-col overflow-hidden transition-all duration-300 ease-out origin-bottom-right ${isOpen
-                        ? "scale-100 opacity-100 bottom-24 md:bottom-6 h-[520px] max-h-[70vh]"
-                        : "scale-75 opacity-0 h-0 pointer-events-none bottom-0"
+                    ? "scale-100 opacity-100 bottom-24 md:bottom-6 h-[520px] max-h-[70vh]"
+                    : "scale-75 opacity-0 h-0 pointer-events-none bottom-0"
                     }`}
             >
                 {/* Header */}
@@ -207,7 +207,7 @@ export function AIChatDrawer({ tripId, rawItinerary, budgetTotal, initialMessage
                 )}
 
                 {/* Message list */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 hide-scrollbar">
                     {messages.length === 0 && (
                         <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-4">
                             <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500/15 to-[#10B981]/10 border border-white/10 flex items-center justify-center shadow-[0_0_24px_rgba(99,102,241,0.12)]">

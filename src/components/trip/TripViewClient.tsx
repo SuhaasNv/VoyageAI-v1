@@ -63,12 +63,12 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
     );
 
     return (
-        <div className="h-full flex flex-col overflow-hidden font-sans bg-[#0B0F14] text-white relative">
+        <div className="h-full flex flex-col overflow-hidden font-sans bg-[#0B0F14] text-white relative hide-scrollbar">
             <TripTopBar trip={trip} onTripUpdate={setTrip} />
 
             <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
                 {/* Timeline panel */}
-                <div className={`w-full md:w-[450px] lg:w-[550px] shrink-0 flex flex-col bg-white/[0.02] backdrop-blur-sm border-r border-white/5 h-full overflow-hidden relative z-20`}>
+                <div className={`w-full md:w-[450px] lg:w-[550px] shrink-0 flex flex-col bg-white/[0.02] backdrop-blur-sm border-r border-white/5 h-full overflow-hidden relative z-20 hide-scrollbar`}>
                     <TimelineItinerary
                         trip={trip}
                         onRefresh={handleItineraryRefresh}
@@ -88,7 +88,7 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
                 {!showMobileMap && (
                     <button
                         onClick={() => setShowMobileMap(true)}
-                        className="md:hidden fixed bottom-28 right-6 z-50 w-14 h-14 rounded-full bg-[#10B981] text-white shadow-[0_8px_32px_rgba(16,185,129,0.4)] flex flex-col items-center justify-center gap-1 active:scale-90 transition-all animate-in fade-in zoom-in slide-in-from-bottom-4 duration-300"
+                        className="md:hidden fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-[#10B981] text-white shadow-[0_8px_32px_rgba(16,185,129,0.4)] flex flex-col items-center justify-center gap-1 active:scale-90 transition-all animate-in fade-in zoom-in slide-in-from-bottom-4 duration-300"
                     >
                         <MapIcon className="w-5 h-5" />
                         <span className="text-[10px] font-bold uppercase tracking-tighter">Map</span>
