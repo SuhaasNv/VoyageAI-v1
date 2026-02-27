@@ -131,6 +131,8 @@ export async function GET(req: NextRequest) {
         const family = newTokenFamily();
         const { rawToken, tokenHash, expiresAt } = signRefreshToken(user.id, family);
 
+        // Create refresh token session in parallel with other DB-safe operations if possible
+        // but it's needed for the response, so we await it.
         await prisma.refreshToken.create({
             data: {
                 userId: user.id,
@@ -144,25 +146,19 @@ export async function GET(req: NextRequest) {
 
         const csrfToken = generateCsrfToken();
 
-        await writeAuditLog({
+        // Fire-and-forget audit log (non-blocking)
+        writeAuditLog({
             action: "LOGIN",
             userId: user.id,
             ipAddress: ip,
             userAgent: ua,
             metadata: { provider: "google" },
-        });
+        }).catch(err => logError("[google/callback] Delayed audit log failed", err));
 
-        // Use HTML redirect so browser processes Set-Cookie before navigating.
-        // Some browsers don't send cookies set on 302 redirect when following cross-site→same-site chain.
+        // Use standard 302 redirect. Modern browsers handle Set-Cookie on 302 perfectly.
         const redirectUrl = new URL(safeRedirect, BASE_URL).toString();
-        const html = `<!DOCTYPE html><html><head><meta http-equiv="refresh" content="0;url=${redirectUrl}"></head><body>Signing you in...</body></html>`;
+        const res = NextResponse.redirect(redirectUrl);
 
-        const res = new NextResponse(html, {
-            status: 200,
-            headers: {
-                "Content-Type": "text/html; charset=utf-8",
-            },
-        });
         res.headers.append("Set-Cookie", serializeAccessTokenCookie(accessToken));
         res.headers.append("Set-Cookie", serializeRefreshTokenCookie(rawToken));
         res.headers.append("Set-Cookie", serializeCsrfCookie(csrfToken));

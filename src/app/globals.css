@@ -21,11 +21,31 @@
 
   html,
   body {
-    @apply antialiased bg-[#10141a] text-slate-100;
+    @apply antialiased bg-[#10141a] text-slate-100 overflow-x-hidden h-full;
+    padding-bottom: env(safe-area-inset-bottom);
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  html::-webkit-scrollbar,
+  body::-webkit-scrollbar {
+    display: none;
+  }
+
+  @media (max-width: 768px) {
+
+    button,
+    .btn {
+      min-height: 44px;
+    }
   }
 }
 
 @layer utilities {
+  .mobile-container {
+    @apply px-4 md:px-0;
+  }
+
   .glass {
     @apply bg-white/5 backdrop-blur-md border border-white/10 shadow-xl;
   }

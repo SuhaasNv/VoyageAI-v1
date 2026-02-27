@@ -10,6 +10,7 @@ import { DashboardUserProvider } from "@/components/dashboard/DashboardUserProvi
 import { LogoutOverlay } from "@/components/dashboard/LogoutOverlay";
 import { OnboardingGuard } from "@/components/dashboard/OnboardingGuard";
 import { Logo } from "@/components/Logo";
+import { MobileUserMenu } from "@/components/dashboard/MobileUserMenu";
 import { ACCESS_TOKEN_COOKIE } from "@/lib/auth/cookies";
 import { verifyAccessToken } from "@/lib/auth/tokens";
 import { prisma } from "@/lib/prisma";
@@ -60,40 +61,63 @@ export default async function DashboardLayout({
     };
 
     return (
-        <div className="flex h-screen w-full bg-[#0B0F14] text-white font-sans overflow-hidden relative">
+        <div className="flex flex-col md:flex-row h-screen w-full bg-[#0B0F14] text-white font-sans overflow-hidden relative">
             <LogoutOverlay />
             <DashboardUserProvider user={user} />
             <DashboardTripsProvider initialTrips={initialTrips}>
-            <AuthHydrator />
-            <OnboardingGuard>
-            <div className="flex w-full h-full relative z-10">
-                {/* Sidebar Navigation */}
-                <aside className="relative z-20 w-64 bg-[#0B0F14] flex flex-col justify-between p-6 border-r border-white/5 shadow-2xl">
-                    <div>
-                        <Link href="/dashboard" className="flex items-center gap-2 mb-10 text-white hover:opacity-90 transition-opacity duration-200">
-                            <Logo size="md" className="shrink-0 text-white" />
-                            <span className="text-xl font-bold tracking-tight uppercase">VoyageAI</span>
+                <AuthHydrator />
+                <OnboardingGuard>
+                    {/* Mobile Header */}
+                    <header className="md:hidden flex items-center justify-between px-6 py-4 border-b border-white/5 bg-[#0B0F14]/80 backdrop-blur-xl sticky top-0 z-30">
+                        <Link href="/dashboard" className="flex items-center gap-2">
+                            <Logo size="sm" className="shrink-0 text-white" />
+                            <span className="text-lg font-bold tracking-tight uppercase">VoyageAI</span>
                         </Link>
+                        <MobileUserMenu user={user} />
+                    </header>
 
-                        <nav className="space-y-1.5">
-                            <SidebarLink href="/dashboard" icon={<Home className="w-4 h-4" />} label="Dashboard" active />
-                        </nav>
+                    <div className="flex flex-1 w-full h-full relative z-10 overflow-hidden">
+                        {/* Desktop Sidebar Navigation */}
+                        <aside className="hidden md:flex relative z-20 w-64 bg-[#0B0F14] flex-col justify-between p-6 border-r border-white/5 shadow-2xl">
+                            <div>
+                                <Link href="/dashboard" className="flex items-center gap-2 mb-10 text-white hover:opacity-90 transition-opacity duration-200">
+                                    <Logo size="md" className="shrink-0 text-white" />
+                                    <span className="text-xl font-bold tracking-tight uppercase">VoyageAI</span>
+                                </Link>
+
+                                <nav className="space-y-1.5">
+                                    <SidebarLink href="/dashboard" icon={<Home className="w-4 h-4" />} label="Dashboard" active />
+                                </nav>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <SidebarLink href="/dashboard/settings" icon={<Settings className="w-4 h-4" />} label="Settings" />
+                                <DashboardSidebarFooter />
+                            </div>
+                        </aside>
+
+                        {/* Main Content */}
+                        <main className="relative z-10 flex-1 flex flex-col min-h-0 bg-transparent h-full overflow-hidden">
+                            <div className="flex-1 flex flex-col min-h-0">
+                                {children}
+                            </div>
+                        </main>
                     </div>
-
-                    <div className="space-y-1.5">
-                        <SidebarLink href="/dashboard/settings" icon={<Settings className="w-4 h-4" />} label="Settings" />
-                        <DashboardSidebarFooter />
-                    </div>
-                </aside>
-
-                {/* Main Content */}
-                <main className="relative z-10 flex-1 overflow-y-auto bg-transparent">
-                    {children}
-                </main>
-            </div>
-            </OnboardingGuard>
+                </OnboardingGuard>
             </DashboardTripsProvider>
         </div>
+    );
+}
+
+function MobileNavLink({ href, icon, label, active }: { href: string; icon: React.ReactNode; label: string; active?: boolean }) {
+    return (
+        <Link
+            href={href}
+            className={`flex flex-col items-center gap-1 transition-all duration-300 ${active ? "text-[#10B981]" : "text-zinc-500"}`}
+        >
+            {icon}
+            <span className="text-[10px] font-medium uppercase tracking-wider">{label}</span>
+        </Link>
     );
 }
 

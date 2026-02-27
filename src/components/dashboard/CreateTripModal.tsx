@@ -36,7 +36,7 @@ export function CreateTripModal({ isOpen, onClose }: { isOpen: boolean; onClose:
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-md p-4">
             <div
-                className="relative w-full max-w-lg bg-white/[0.06] backdrop-blur-xl border border-white/[0.1] rounded-3xl overflow-hidden shadow-[0_8px_32px_rgba(0,0,0,0.4),0_0_1px_rgba(255,255,255,0.1)] flex flex-col"
+                className="relative w-[95vw] md:w-full max-w-lg bg-white/[0.06] backdrop-blur-xl border border-white/[0.1] rounded-3xl overflow-hidden shadow-[0_8px_32px_rgba(0,0,0,0.4),0_0_1px_rgba(255,255,255,0.1)] flex flex-col"
                 onClick={e => e.stopPropagation()}
             >
                 {/* Header */}
@@ -142,8 +142,8 @@ export function CreateTripModal({ isOpen, onClose }: { isOpen: boolean; onClose:
                             onClick={handleSubmit}
                             disabled={!isValid || isLoading}
                             className={`px-5 py-2 rounded-xl text-sm font-semibold transition-all duration-200 ease-out flex items-center gap-2 ${isValid && !isLoading
-                                    ? "bg-indigo-500 hover:bg-indigo-400 text-white shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:scale-[1.02]"
-                                    : "bg-white/[0.04] text-slate-500 cursor-not-allowed"
+                                ? "bg-indigo-500 hover:bg-indigo-400 text-white shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:scale-[1.02]"
+                                : "bg-white/[0.04] text-slate-500 cursor-not-allowed"
                                 }`}
                         >
                             {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}

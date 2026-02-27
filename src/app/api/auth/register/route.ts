@@ -33,129 +33,129 @@ import { runWithRequestContext } from "@/lib/requestContext";
 
 export async function POST(req: NextRequest) {
     return runWithRequestContext(req, async () => {
-    const ip = getClientIp(req);
-    const ua = req.headers.get("user-agent") ?? "unknown";
+        const ip = getClientIp(req);
+        const ua = req.headers.get("user-agent") ?? "unknown";
 
-    // ── Rate limit ─────────────────────────────────────────────────────────────
-    const rl = await rateLimit(`register:ip:${ip}`, AUTH_RATE_LIMIT);
-    if (!rl.allowed) {
-        await writeAuditLog({ action: "RATE_LIMITED", ipAddress: ip, userAgent: ua });
-        return rateLimitResponse(rl.retryAfterMs);
-    }
-
-    // ── Parse & validate body ─────────────────────────────────────────────────
-    let body: unknown;
-    try {
-        body = await req.json();
-    } catch {
-        return errorResponse("BAD_REQUEST", "Request body must be valid JSON", 400);
-    }
-
-    let input;
-    try {
-        input = RegisterSchema.parse(body);
-    } catch (err) {
-        if (err instanceof ZodError) return validationErrorResponse(err);
-        throw err;
-    }
-
-    try {
-        // ── Check duplicate email ─────────────────────────────────────────────
-        const existing = await prisma.user.findUnique({
-            where: { email: input.email },
-            select: { id: true },
-        });
-
-        if (existing) {
-            return errorResponse(
-                "CONFLICT",
-                "An account with that email already exists. Try signing in with Google if you used it before.",
-                409
-            );
+        // ── Rate limit ─────────────────────────────────────────────────────────────
+        const rl = await rateLimit(`register:ip:${ip}`, AUTH_RATE_LIMIT);
+        if (!rl.allowed) {
+            writeAuditLog({ action: "RATE_LIMITED", ipAddress: ip, userAgent: ua }).catch(err => logError("[register] Delayed audit failed", err));
+            return rateLimitResponse(rl.retryAfterMs);
         }
 
-        // ── Create user ───────────────────────────────────────────────────────
-        let user;
-        const passwordHash = await hashPassword(input.password);
-        user = await prisma.user.create({
-            data: {
-                email: input.email,
-                passwordHash,
-                name: input.name,
-            },
-            select: {
-                id: true,
-                email: true,
-                name: true,
-                role: true,
-                hasOnboarded: true,
-                createdAt: true,
-            },
-        });
+        // ── Parse & validate body ─────────────────────────────────────────────────
+        let body: unknown;
+        try {
+            body = await req.json();
+        } catch {
+            return errorResponse("BAD_REQUEST", "Request body must be valid JSON", 400);
+        }
 
-        // ── Issue tokens ──────────────────────────────────────────────────────
-        const accessToken = signAccessToken({
-            sub: user.id,
-            email: user.email,
-            role: user.role,
-        });
+        let input;
+        try {
+            input = RegisterSchema.parse(body);
+        } catch (err) {
+            if (err instanceof ZodError) return validationErrorResponse(err);
+            throw err;
+        }
 
-        const family = newTokenFamily();
-        const { rawToken, tokenHash, expiresAt } = signRefreshToken(user.id, family);
+        try {
+            // ── Check duplicate email ─────────────────────────────────────────────
+            const existing = await prisma.user.findUnique({
+                where: { email: input.email },
+                select: { id: true },
+            });
 
-        await prisma.refreshToken.create({
-            data: {
-                userId: user.id,
-                tokenHash,
-                family,
-                expiresAt,
-                userAgent: ua,
-                ipAddress: ip,
-            },
-        });
+            if (existing) {
+                return errorResponse(
+                    "CONFLICT",
+                    "An account with that email already exists. Try signing in with Google if you used it before.",
+                    409
+                );
+            }
 
-        const csrfToken = generateCsrfToken();
-
-        await writeAuditLog({
-            action: "REGISTER",
-            userId: user.id,
-            ipAddress: ip,
-            userAgent: ua,
-        });
-
-        // ── Response ──────────────────────────────────────────────────────────
-        const response = successResponse(
-            {
-                user: {
-                    id: user.id,
-                    email: user.email,
-                    name: user.name,
-                    image: null,
-                    role: user.role,
-                    hasOnboarded: user.hasOnboarded,
-                    createdAt: user.createdAt,
+            // ── Create user ───────────────────────────────────────────────────────
+            let user;
+            const passwordHash = await hashPassword(input.password);
+            user = await prisma.user.create({
+                data: {
+                    email: input.email,
+                    passwordHash,
+                    name: input.name,
                 },
-                accessToken,
-            },
-            201
-        );
+                select: {
+                    id: true,
+                    email: true,
+                    name: true,
+                    role: true,
+                    hasOnboarded: true,
+                    createdAt: true,
+                },
+            });
 
-        response.headers.append("Set-Cookie", serializeAccessTokenCookie(accessToken));
-        response.headers.append("Set-Cookie", serializeRefreshTokenCookie(rawToken));
-        response.headers.append("Set-Cookie", serializeCsrfCookie(csrfToken));
+            // ── Issue tokens ──────────────────────────────────────────────────────
+            const accessToken = signAccessToken({
+                sub: user.id,
+                email: user.email,
+                role: user.role,
+            });
 
-        return response;
-    } catch (err: unknown) {
-        const prismaErr = err as { code?: string };
-        if (prismaErr?.code === "P2002") {
-            return errorResponse(
-                "CONFLICT",
-                "An account with that email already exists. Try signing in with Google if you used it before.",
-                409
+            const family = newTokenFamily();
+            const { rawToken, tokenHash, expiresAt } = signRefreshToken(user.id, family);
+
+            await prisma.refreshToken.create({
+                data: {
+                    userId: user.id,
+                    tokenHash,
+                    family,
+                    expiresAt,
+                    userAgent: ua,
+                    ipAddress: ip,
+                },
+            });
+
+            const csrfToken = generateCsrfToken();
+
+            writeAuditLog({
+                action: "REGISTER",
+                userId: user.id,
+                ipAddress: ip,
+                userAgent: ua,
+            }).catch(err => logError("[register] Delayed audit failed", err));
+
+            // ── Response ──────────────────────────────────────────────────────────
+            const response = successResponse(
+                {
+                    user: {
+                        id: user.id,
+                        email: user.email,
+                        name: user.name,
+                        image: null,
+                        role: user.role,
+                        hasOnboarded: user.hasOnboarded,
+                        createdAt: user.createdAt,
+                    },
+                    accessToken,
+                },
+                201
             );
+
+            response.headers.append("Set-Cookie", serializeAccessTokenCookie(accessToken));
+            response.headers.append("Set-Cookie", serializeRefreshTokenCookie(rawToken));
+            response.headers.append("Set-Cookie", serializeCsrfCookie(csrfToken));
+
+            return response;
+        } catch (err: unknown) {
+            const prismaErr = err as { code?: string };
+            if (prismaErr?.code === "P2002") {
+                return errorResponse(
+                    "CONFLICT",
+                    "An account with that email already exists. Try signing in with Google if you used it before.",
+                    409
+                );
+            }
+            logError("[register] DB error", err);
+            return internalErrorResponse();
         }
-        logError("[register] DB error", err);
-        return internalErrorResponse();
-    }
     });
 }
