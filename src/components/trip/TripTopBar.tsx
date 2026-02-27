@@ -49,7 +49,7 @@ export function TripTopBar({ trip, onTripUpdate }: TripTopBarProps) {
     const symbol = (trip.budget?.currency ?? "USD") === "USD" ? "$" : (trip.budget?.currency ?? "USD") + " ";
 
     return (
-        <div className="bg-[#0B0F14]/80 backdrop-blur-xl border-b border-white/5 p-4 flex items-center justify-between sticky top-0 z-40">
+        <div className="bg-[#0B0F14]/65 backdrop-blur-lg border-b border-white/[0.06] p-4 flex items-center justify-between sticky top-0 z-40 shadow-[0_1px_0_rgba(255,255,255,0.04),0_8px_28px_-8px_rgba(0,0,0,0.45)]">
             <div className="flex items-center gap-4">
                 <Link href="/dashboard" className="w-10 h-10 rounded-xl bg-white/[0.02] border border-white/5 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/5 hover:border-white/10 transition-all duration-200 ease-out">
                     <ArrowLeft className="w-4 h-4" />
@@ -63,7 +63,7 @@ export function TripTopBar({ trip, onTripUpdate }: TripTopBarProps) {
             </div>
 
             <div className="flex items-center gap-2 md:gap-6">
-                <div className="hidden md:flex items-center gap-2.5 bg-white/[0.02] backdrop-blur-sm px-4 py-2 rounded-xl border border-white/5">
+                <div className="hidden md:flex items-center gap-2.5 bg-black/[0.28] backdrop-blur-sm px-4 py-2 rounded-xl border border-white/[0.07] hover:bg-black/[0.38] hover:-translate-y-px transition-all duration-150 ease-out">
                     {isHighFatigue ? <BatteryWarning className="w-4 h-4 text-rose-500" /> : isMedFatigue ? <BatteryMedium className="w-4 h-4 text-amber-500" /> : <Battery className="w-4 h-4 text-[#10B981]" />}
                     <div>
                         <div className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Fatigue Forecast</div>
@@ -73,7 +73,7 @@ export function TripTopBar({ trip, onTripUpdate }: TripTopBarProps) {
                     </div>
                 </div>
 
-                <div className="hidden lg:flex items-center gap-3 bg-white/[0.02] backdrop-blur-sm px-4 py-2 rounded-xl border border-white/5 w-64">
+                <div className="hidden lg:flex items-center gap-3 bg-black/[0.28] backdrop-blur-sm px-4 py-2 rounded-xl border border-white/[0.07] hover:bg-black/[0.38] hover:-translate-y-px transition-all duration-150 ease-out w-64">
                     <div className="w-8 h-8 rounded-lg bg-[#10B981]/10 flex items-center justify-center flex-shrink-0 border border-[#10B981]/20">
                         <Wallet className="w-4 h-4 text-[#10B981]" />
                     </div>

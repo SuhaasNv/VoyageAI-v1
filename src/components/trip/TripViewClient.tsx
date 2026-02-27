@@ -5,7 +5,7 @@ import { TripTopBar } from "@/components/trip/TripTopBar";
 import { TimelineItinerary } from "@/components/trip/TimelineItinerary";
 import { TripMap } from "@/components/trip/TripMap";
 import { AIChatDrawer } from "@/components/trip/AIChatDrawer";
-import type { TripDTO } from "@/lib/services/trips";
+import type { TripDTO, ItineraryEvent } from "@/lib/services/trips";
 import type { Itinerary } from "@/lib/ai/schemas";
 import type { ChatMessageDTO } from "@/app/api/trips/[id]/chat/route";
 
@@ -23,11 +23,17 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
     const [trip, setTrip] = useState<TripDTO>(initialTrip);
     const [rawItinerary, setRawItinerary] = useState<Itinerary | null>(initialRaw);
     const [selectedDay, setSelectedDay] = useState<number | undefined>(undefined);
+    const [focusedActivity, setFocusedActivity] = useState<ItineraryEvent | null>(null);
+    const [eventOrder, setEventOrder] = useState<Record<number, string[]>>({});
     const [showMobileMap, setShowMobileMap] = useState(false);
     const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
         setMounted(true);
+    }, []);
+
+    const handleEventsReorder = useCallback((dayNumber: number, orderedIds: string[]) => {
+        setEventOrder((prev) => ({ ...prev, [dayNumber]: orderedIds }));
     }, []);
 
     const handleItineraryRefresh = useCallback(async () => {
@@ -46,7 +52,7 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
     const mobileMapOverlay = mounted && showMobileMap && createPortal(
         <div className="fixed inset-0 z-[9999] bg-[#0B0F14] flex flex-col md:hidden">
             <div className="flex-1 w-full h-full relative">
-                <TripMap rawItinerary={rawItinerary} selectedDay={selectedDay} />
+                <TripMap rawItinerary={rawItinerary} selectedDay={selectedDay} focusedActivity={focusedActivity} eventOrder={eventOrder} />
             </div>
 
             {/* Close button for mobile map overlay */}
@@ -68,17 +74,22 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
 
             <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
                 {/* Timeline panel */}
-                <div className={`w-full md:w-[450px] lg:w-[550px] shrink-0 flex flex-col bg-white/[0.02] backdrop-blur-sm border-r border-white/5 h-full overflow-hidden relative z-20 hide-scrollbar`}>
+                <div className="w-full md:w-[450px] lg:w-[550px] shrink-0 flex flex-col bg-white/[0.04] backdrop-blur-md border-r border-white/[0.08] h-full overflow-hidden relative z-20 hide-scrollbar shadow-[inset_-1px_0_0_rgba(255,255,255,0.03),inset_0_0_40px_rgba(0,0,0,0.18)]">
                     <TimelineItinerary
                         trip={trip}
                         onRefresh={handleItineraryRefresh}
                         onDayChange={setSelectedDay}
+                        onActivityFocus={setFocusedActivity}
+                        onEventsReorder={handleEventsReorder}
                     />
+                    {/* Soft gradient fades for depth */}
+                    <div className="absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-[#0B0F14]/30 to-transparent pointer-events-none z-30" />
+                    <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#0B0F14]/50 to-transparent pointer-events-none z-30" />
                 </div>
 
                 {/* Map panel (Desktop only) */}
                 <div className="flex-1 h-full relative z-10 hidden md:block">
-                    <TripMap rawItinerary={rawItinerary} selectedDay={selectedDay} />
+                    <TripMap rawItinerary={rawItinerary} selectedDay={selectedDay} focusedActivity={focusedActivity} eventOrder={eventOrder} />
                 </div>
 
                 {/* Mobile Map Portal Trigger */}
