@@ -112,7 +112,9 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
                 rawItinerary={rawItinerary}
                 budgetTotal={trip.budget.total}
                 initialMessages={initialMessages}
+                currentDay={selectedDay}
                 onItineraryRefresh={handleItineraryRefresh}
+                onMapFocus={(lat, lng, title) => setFocusedActivity({ lat, lng, title } as any)}
             />
         </div>
     );

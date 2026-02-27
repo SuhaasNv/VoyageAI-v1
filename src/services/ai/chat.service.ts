@@ -48,9 +48,12 @@ export async function chatCompanion(
 
     const context = contextBundle ? contextBundle : "";
     const schema = SCHEMA_INSTRUCTIONS.CHAT;
+    const currentDay = (parsedReq as { currentDay?: number }).currentDay;
+
     const task = `
 ## Task
 Respond to the user's query using the provided context. Follow these rules:
+- Current Selected Day: ${currentDay ?? 'Not specified (default to Day 1 or general overview)'}
 - Return ONLY a JSON object matching the ChatResponse schema.
 - Include a short, helpful message.
 - Detect the user's intent and populate the "intent" field.
@@ -66,7 +69,7 @@ Respond to the user's query using the provided context. Follow these rules:
         temperature: 0.7,
         responseFormat: "json" as const,
         maxTokens: 2048,
-        timeoutMs: 12000,
+        timeoutMs: 30000,
         retries: 2,
     };
 

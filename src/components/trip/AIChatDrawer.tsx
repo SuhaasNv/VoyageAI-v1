@@ -27,13 +27,24 @@ interface AIChatDrawerProps {
     rawItinerary: Itinerary | null;
     budgetTotal: number;
     initialMessages: ChatMessageDTO[];
-    /** Called after a reoptimize action succeeds so the timeline can reload */
+    currentDay?: number;
+    /** Called after a reoptimize or itinerary update action succeeds */
     onItineraryRefresh?: () => void;
+    /** Called for map movements */
+    onMapFocus?: (lat: number, lng: number, title: string) => void;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function AIChatDrawer({ tripId, rawItinerary, budgetTotal, initialMessages, onItineraryRefresh }: AIChatDrawerProps) {
+export function AIChatDrawer({
+    tripId,
+    rawItinerary,
+    budgetTotal,
+    initialMessages,
+    currentDay = 1,
+    onItineraryRefresh,
+    onMapFocus
+}: AIChatDrawerProps) {
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState<DisplayMessage[]>(() =>
         initialMessages.map((m) => ({ id: m.id, role: m.role, content: m.content }))
@@ -75,6 +86,8 @@ export function AIChatDrawer({ tripId, rawItinerary, budgetTotal, initialMessage
                 body: JSON.stringify({
                     tripId,
                     messages: [{ role: "user", content: text }],
+                    currentDay,
+                    currentItinerary: rawItinerary,
                 }),
             });
 
@@ -105,8 +118,55 @@ export function AIChatDrawer({ tripId, rawItinerary, budgetTotal, initialMessage
             await handleReoptimize(action.payload);
             return;
         }
+        if (action.action === "apply_itinerary_update") {
+            await handleApplyItineraryUpdate(action.payload);
+            return;
+        }
+        if (action.action === "map_fly_to") {
+            const loc = action.payload?.location as { lat: number, lng: number } | undefined;
+            if (loc && onMapFocus) {
+                onMapFocus(loc.lat, loc.lng, action.label);
+            }
+            return;
+        }
         // For other action types: treat as a new user chat message
         setInput(action.label);
+    }
+
+    async function handleApplyItineraryUpdate(payload?: Record<string, unknown>) {
+        const newItinerary = payload?.itinerary;
+        if (!newItinerary) return;
+
+        setIsReoptimizing(true);
+        try {
+            const res = await fetch(`/api/trips/${tripId}/itinerary`, {
+                method: "POST",
+                credentials: "include",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRF-Token": getCsrfToken(),
+                },
+                body: JSON.stringify(newItinerary),
+            });
+
+            const json = await res.json();
+            if (!json?.success) throw new Error("Failed to apply itinerary update");
+
+            setMessages((prev) => [
+                ...prev,
+                {
+                    id: `ai-apply-${Date.now()}`,
+                    role: "assistant",
+                    content: "✅ Itinerary updated successfully!",
+                },
+            ]);
+
+            onItineraryRefresh?.();
+        } catch {
+            setLastFailed({ type: "reoptimize" });
+        } finally {
+            setIsReoptimizing(false);
+        }
     }
 
     async function handleReoptimize(payload?: Record<string, unknown>) {
@@ -236,20 +296,27 @@ export function AIChatDrawer({ tripId, rawItinerary, budgetTotal, initialMessage
                             {/* Suggested actions */}
                             {msg.role === "assistant" && msg.suggestedActions && msg.suggestedActions.length > 0 && (
                                 <div className="mt-2 flex flex-wrap gap-1.5 max-w-[85%]">
-                                    {msg.suggestedActions.map((action, idx) => (
-                                        <button
-                                            key={idx}
-                                            onClick={() => handleAction(action)}
-                                            disabled={isBusy}
-                                            className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full border transition-all duration-200 disabled:opacity-50 ${action.action === "reoptimize"
-                                                ? "bg-indigo-500/10 border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/20"
-                                                : "bg-white/[0.04] border-white/[0.08] text-zinc-300 hover:bg-white/[0.08] hover:text-white"
-                                                }`}
-                                        >
-                                            {action.action === "reoptimize" && <Zap className="w-3 h-3" />}
-                                            {action.label}
-                                        </button>
-                                    ))}
+                                    {msg.suggestedActions.map((action, idx) => {
+                                        const isApply = action.action === "apply_itinerary_update" || action.action === "reoptimize";
+                                        const isMap = action.action === "map_fly_to";
+
+                                        return (
+                                            <button
+                                                key={idx}
+                                                onClick={() => handleAction(action)}
+                                                disabled={isBusy}
+                                                className={`flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold px-3 py-1.5 rounded-lg border transition-all duration-200 disabled:opacity-50 ${isApply
+                                                    ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/30"
+                                                    : isMap
+                                                        ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/30"
+                                                        : "bg-white/[0.04] border-white/[0.08] text-zinc-300 hover:bg-white/[0.08] hover:text-white"
+                                                    }`}
+                                            >
+                                                {isApply && <Zap className="w-3 h-3" />}
+                                                {action.label}
+                                            </button>
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>

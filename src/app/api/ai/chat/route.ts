@@ -22,6 +22,8 @@ import { checkRateLimit } from "@/lib/rateLimiter";
 import { unauthorizedResponse } from "@/lib/api/response";
 import { prisma } from "@/lib/prisma";
 import { getTravelPreferenceContext } from "@/lib/ai/contextStore";
+import { assembleContext } from "@/lib/ai/context";
+import { buildTravelDNARules } from "@/lib/ai/travelDNARules";
 
 // Extend base schema: tripId is required for persistence.
 const ChatRouteSchema = ChatRequestSchema.extend({
@@ -38,8 +40,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
         const { tripId, ...chatPayload } = validation.data;
 
-        // Verify trip ownership before persisting anything.
-        const trip = await prisma.trip.findUnique({ where: { id: tripId } });
+        // Verify trip ownership and get full context.
+        const trip = await prisma.trip.findUnique({
+            where: { id: tripId },
+            include: { itineraries: { orderBy: { createdAt: "desc" }, take: 1 } }
+        });
         if (!trip || trip.userId !== auth.user.sub) {
             return unauthorizedResponse("Trip not found");
         }
@@ -50,8 +55,31 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         try {
             await checkRateLimit(`ai:${auth.user.sub}:chat`);
 
-            const dnaContext = await getTravelPreferenceContext(auth.user.sub);
-            const result = await chatCompanion({ ...chatPayload, tripId }, dnaContext || undefined);
+            const preferences = await prisma.travelPreference.findUnique({ where: { userId: auth.user.sub } });
+            const dna = preferences?.data as any;
+
+            // Assemble rich context bundle
+            const latestItinerary = trip.itineraries[0]?.rawJson as any;
+            const contextString = assembleContext({
+                travelDNA: dna,
+                itinerary: latestItinerary,
+                trip: {
+                    destination: trip.destination,
+                    startDate: trip.startDate.toISOString().split('T')[0],
+                    endDate: trip.endDate.toISOString().split('T')[0],
+                    budget: {
+                        total: trip.budgetTotal,
+                        spent: 0,
+                        currency: trip.budgetCurrency,
+                    }
+                },
+                chatHistory: chatPayload.messages as any,
+                additionalContext: {
+                    currentDay: String(chatPayload.currentDay ?? 1)
+                }
+            });
+
+            const result = await chatCompanion(chatPayload, contextString);
 
             await prisma.$transaction([
                 ...(latestUserMessage

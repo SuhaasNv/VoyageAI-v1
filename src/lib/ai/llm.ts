@@ -644,13 +644,13 @@ class MockLLMClient implements LLMClient {
 }
 
 // ─────────────────────────────────────────
-//  Groq Client (llama-3.3-70b-versatile via OpenAI-compatible endpoint)
+//  Groq Client (llama-3.1-8b-instant via OpenAI-compatible endpoint)
 // ─────────────────────────────────────────
 
 class GroqLLMClient implements LLMClient {
     private readonly apiKey: string;
     private readonly baseUrl = "https://api.groq.com/openai/v1";
-    private readonly defaultModel = "llama-3.3-70b-versatile";
+    private readonly defaultModel = "llama-3.1-8b-instant";
 
     constructor(apiKey: string) {
         this.apiKey = apiKey;
@@ -909,7 +909,7 @@ export async function executeWithRetry(
             logLLMUsage(response, {
                 requestId: getRequestId(),
                 endpoint: getRequestPathname() ?? undefined,
-            }).catch(() => {});
+            }).catch(() => { });
             return response;
         } catch (err) {
             lastError = err as Error;

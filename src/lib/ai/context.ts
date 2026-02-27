@@ -133,6 +133,15 @@ export function buildItinerarySummaryContext(itinerary: Itinerary): string {
 }
 
 /**
+ * Builds a full-detail itinerary context block (JSON-like).
+ */
+export function buildFullItineraryJSONContext(itinerary: Itinerary): string {
+    return `### FULL ITINERARY JSON STRUCTURE (STRICT)
+${JSON.stringify(itinerary, null, 2)}
+`;
+}
+
+/**
  * Builds chat history context (last N messages).
  */
 export function buildChatHistoryContext(
@@ -208,10 +217,10 @@ export function buildTripContext(trip: TripContext): string {
  * Assembles context with optional RAG enrichment (fetches stored Travel DNA when userId provided).
  */
 export async function assembleContextWithRAG(bundle: FullContextBundle, userId?: string): Promise<string> {
-  const enriched: FullContextBundle = userId && !bundle.travelDNA
-    ? { ...bundle, travelDNA: (await getTravelDNA(userId)) ?? undefined }
-    : bundle;
-  return assembleContext(enriched);
+    const enriched: FullContextBundle = userId && !bundle.travelDNA
+        ? { ...bundle, travelDNA: (await getTravelDNA(userId)) ?? undefined }
+        : bundle;
+    return assembleContext(enriched);
 }
 
 /**
@@ -232,6 +241,7 @@ export function assembleContext(bundle: FullContextBundle): string {
 
     if (bundle.itinerary) {
         sections.push(buildItinerarySummaryContext(bundle.itinerary));
+        sections.push(buildFullItineraryJSONContext(bundle.itinerary));
     }
 
     if (bundle.location) {
@@ -253,13 +263,13 @@ export function assembleContext(bundle: FullContextBundle): string {
 
     // Enforce token budget
     const estimatedTokens = estimateTokenCount(assembled);
-    if (estimatedTokens > MAX_CONTEXT_TOKENS * 0.4) {
+    if (estimatedTokens > MAX_CONTEXT_TOKENS * 0.8) {
         // Context taking up too many tokens; truncate
         logInfo("[Context] Estimated tokens in context, truncating", {
             estimatedTokens,
             level: "warn",
         });
-        return truncateContext(assembled, MAX_CONTEXT_TOKENS * 4 * 0.4);
+        return truncateContext(assembled, MAX_CONTEXT_TOKENS * 4 * 0.8);
     }
 
     return assembled;

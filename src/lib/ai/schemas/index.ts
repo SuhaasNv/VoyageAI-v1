@@ -238,6 +238,7 @@ export const ChatRequestSchema = z.object({
             "local_tips",
         ])
         .default("general_query"),
+    currentDay: z.number().int().positive().optional(),
 });
 
 export type ChatRequest = z.infer<typeof ChatRequestSchema>;
@@ -254,6 +255,7 @@ export const ChatResponseSchema = z.object({
             })
         )
         .default([]),
+    riskWarnings: z.array(z.string()).default([]),
     relatedTips: z.array(z.string()).default([]),
     confidenceScore: z.number().min(0).max(1),
     modelVersion: z.string(),

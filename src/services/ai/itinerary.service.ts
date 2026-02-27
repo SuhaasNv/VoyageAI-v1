@@ -73,7 +73,7 @@ Generate a complete day‑by‑day travel itinerary for **${parsedReq.destinatio
         temperature: 0.7,
         responseFormat: "json" as const,
         maxTokens: 4096,
-        timeoutMs: 15000,
+        timeoutMs: 60000,
         retries: 2,
     };
 
