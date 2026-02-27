@@ -373,8 +373,23 @@ export function TimelineItinerary({ trip, onRefresh, onDayChange, onActivityFocu
                     },
                 }),
             });
-            const json = await res.json();
-            if (!json?.success) throw new Error(json?.error?.message ?? "Generation failed");
+
+            const json = await res.json().catch(() => null);
+
+            if (!res.ok || !json?.success) {
+                // Map HTTP status to a user-friendly message.
+                // Only call it "AI is busy" for actual provider failures (503).
+                if (res.status === 503) {
+                    setGenError("AI is busy, try again");
+                } else if (res.status === 429) {
+                    setGenError("Too many requests — please wait a moment and try again");
+                } else if (res.status === 401 || res.status === 403) {
+                    setGenError("Session expired — please refresh the page");
+                } else {
+                    setGenError(json?.error?.message ?? "Generation failed — please try again");
+                }
+                return;
+            }
 
             if (onRefresh) {
                 onRefresh();
@@ -386,7 +401,8 @@ export function TimelineItinerary({ trip, onRefresh, onDayChange, onActivityFocu
                 }
             }
         } catch {
-            setGenError("AI is busy, try again");
+            // Only network-level failures (offline, DNS, etc.) reach here.
+            setGenError("Network error — check your connection and try again");
         } finally {
             setIsGenerating(false);
         }

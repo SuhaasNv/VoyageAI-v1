@@ -22,6 +22,118 @@ import {
 } from "../../lib/ai/cache";
 import { logError } from "@/lib/logger";
 
+// ─────────────────────────────────────────
+//  LLM Output Sanitizer
+// ─────────────────────────────────────────
+
+/** Valid activity types accepted by ActivityTypeSchema. */
+const VALID_ACTIVITY_TYPES = new Set([
+    "sightseeing", "dining", "adventure", "cultural",
+    "shopping", "relaxation", "transport", "accommodation",
+]);
+
+/**
+ * Maps common LLM activity-type aliases → the closest valid schema value.
+ * LLMs frequently invent types like "entertainment", "leisure", "museum", etc.
+ */
+const ACTIVITY_TYPE_ALIASES: Record<string, string> = {
+    entertainment:  "cultural",
+    event:          "cultural",
+    arts:           "cultural",
+    history:        "cultural",
+    museum:         "cultural",
+    gallery:        "cultural",
+    festival:       "cultural",
+    performance:    "cultural",
+    leisure:        "relaxation",
+    wellness:       "relaxation",
+    spa:            "relaxation",
+    beach:          "relaxation",
+    rest:           "relaxation",
+    nightlife:      "dining",
+    bar:            "dining",
+    cafe:           "dining",
+    coffee:         "dining",
+    breakfast:      "dining",
+    lunch:          "dining",
+    dinner:         "dining",
+    food:           "dining",
+    drinks:         "dining",
+    recreation:     "adventure",
+    fitness:        "adventure",
+    sports:         "adventure",
+    outdoor:        "adventure",
+    hiking:         "adventure",
+    nature:         "sightseeing",
+    landmark:       "sightseeing",
+    tour:           "sightseeing",
+    visit:          "sightseeing",
+    excursion:      "sightseeing",
+    experience:     "sightseeing",
+    market:         "shopping",
+    retail:         "shopping",
+    hotel:          "accommodation",
+    hostel:         "accommodation",
+    flight:         "transport",
+    train:          "transport",
+    bus:            "transport",
+    taxi:           "transport",
+    transfer:       "transport",
+    cruise:         "transport",
+};
+
+function normalizeActivityType(raw: unknown): string {
+    if (typeof raw !== "string") return "sightseeing";
+    const lower = raw.toLowerCase().trim();
+    if (VALID_ACTIVITY_TYPES.has(lower)) return lower;
+    return ACTIVITY_TYPE_ALIASES[lower] ?? "sightseeing";
+}
+
+const clamp010 = (v: unknown): number =>
+    typeof v === "number" ? Math.max(0, Math.min(10, v)) : 0;
+
+/**
+ * Sanitizes raw LLM itinerary JSON before Zod validation.
+ *
+ * Fixes the two most common LLM deviations:
+ *  - Fatigue / pacing scores that exceed the 0-10 range
+ *  - Activity type values that use aliases not in the strict enum
+ *
+ * Runs in-place on the parsed object; Zod still validates the final shape.
+ */
+function sanitizeLLMItinerary(raw: unknown): unknown {
+    if (typeof raw !== "object" || raw === null) return raw;
+    const obj = raw as Record<string, unknown>;
+
+    if (Array.isArray(obj.days)) {
+        obj.days = (obj.days as unknown[]).map((day) => {
+            if (typeof day !== "object" || day === null) return day;
+            const d = day as Record<string, unknown>;
+
+            d.dailyFatigueScore = clamp010(d.dailyFatigueScore);
+
+            if (Array.isArray(d.activities)) {
+                d.activities = (d.activities as unknown[]).map((act) => {
+                    if (typeof act !== "object" || act === null) return act;
+                    const a = act as Record<string, unknown>;
+                    a.type = normalizeActivityType(a.type);
+                    a.fatigueScore = clamp010(a.fatigueScore);
+                    return a;
+                });
+            }
+
+            return d;
+        });
+    }
+
+    if (typeof obj.pacingAnalysis === "object" && obj.pacingAnalysis !== null) {
+        const p = obj.pacingAnalysis as Record<string, unknown>;
+        p.overallScore = clamp010(p.overallScore);
+    }
+
+    return obj;
+}
+
 /**
  * Generates a full itinerary based on the request and optional context.
  *
@@ -67,20 +179,23 @@ Generate a complete day‑by‑day travel itinerary for **${parsedReq.destinatio
 
     const client = getLLMClient();
 
-    // LLM request options – we request JSON format and a moderate temperature
+    // LLM request options – we request JSON format and a moderate temperature.
+    // maxTokens set to 8192: a multi-day itinerary with full location, notes, and
+    // pacing fields easily exceeds 5k tokens — 4096 caused mid-object truncation.
     const llmOptions = {
         model: undefined, // let the client decide (env var or default mock)
         temperature: 0.7,
         responseFormat: "json" as const,
-        maxTokens: 4096,
+        maxTokens: 8192,
         timeoutMs: 60000,
         retries: 2,
     };
 
     try {
         const llmResponse = await executeWithRetry(client, [{ role: "user", content: fullPrompt }], llmOptions);
-        const itinerary = parseJSONResponse<Itinerary>(llmResponse.content);
-        const finalItinerary = (await import("../../lib/ai/schemas")).ItinerarySchema.parse(itinerary);
+        const rawItinerary = parseJSONResponse<unknown>(llmResponse.content);
+        const sanitized = sanitizeLLMItinerary(rawItinerary);
+        const finalItinerary = (await import("../../lib/ai/schemas")).ItinerarySchema.parse(sanitized);
         validateItineraryStructure(finalItinerary, {
             maxBudget: parsedReq.budget.total,
             flexibility: parsedReq.budget.flexibility,
