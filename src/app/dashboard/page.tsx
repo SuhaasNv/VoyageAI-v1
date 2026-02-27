@@ -6,7 +6,7 @@ import { UpcomingTripsGrid } from "@/components/dashboard/UpcomingTripsGrid";
 import { BudgetOverviewCard } from "@/components/dashboard/BudgetOverviewCard";
 import { AISuggestionsCard } from "@/components/dashboard/AISuggestionsCard";
 import { CreateTripModal } from "@/components/dashboard/CreateTripModal";
-import { MapSimulationPanel } from "@/components/dashboard/MapSimulationPanel";
+import { TripIntelligencePanel } from "@/components/dashboard/TripIntelligencePanel";
 import { CalendarWidget } from "@/components/dashboard/CalendarWidget";
 import { DashboardAIAssistant } from "@/components/dashboard/DashboardAIAssistant";
 import { TravelDNAOnboardingModal } from "@/components/dashboard/TravelDNAOnboardingModal";
@@ -91,7 +91,7 @@ export default function DashboardPage() {
                             onTripsChange={setTrips}
                             onNewTripClick={() => setIsModalOpen(true)}
                         />
-                        <MapSimulationPanel />
+                        <TripIntelligencePanel trips={trips} isLoading={isLoading} />
                     </div>
 
                     <div className="space-y-8 order-2">

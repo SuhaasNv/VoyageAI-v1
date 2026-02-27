@@ -1,7 +1,10 @@
 /**
  * GET /api/suggestions
  *
- * Returns contextual suggestions for each upcoming trip.
+ * Returns:
+ *   tripSuggestions — per-trip AI suggestions (existing behaviour)
+ *   destinations    — curated destination recommendations scored against
+ *                     the user's Travel DNA and trip history (new)
  */
 
 import { NextRequest } from "next/server";
@@ -18,6 +21,8 @@ import {
     setSuggestionsCached,
 } from "@/lib/ai/cache";
 import { generateSuggestionsForTrip } from "@/services/ai/dashboard-suggestions.service";
+import { rankSuggestions } from "@/lib/ai/travelDNARules";
+import { generateSuggestions } from "@/lib/ai/destinationSuggestions";
 
 interface TripSuggestion {
     tripId: string;
@@ -32,6 +37,13 @@ export async function GET(req: NextRequest) {
         try {
             await checkRateLimit(`ai:${auth.user.sub}:suggestions`);
 
+            // Fetch Travel DNA once — used for both trip-level ranking and destination scoring.
+            const preference = await prisma.travelPreference.findUnique({
+                where: { userId: auth.user.sub },
+                select: { data: true },
+            });
+            const dnaData = (preference?.data ?? null) as Record<string, unknown> | null;
+
             const now = new Date();
             const trips = await prisma.trip.findMany({
                 where: {
@@ -41,36 +53,55 @@ export async function GET(req: NextRequest) {
                 orderBy: { startDate: "asc" },
             });
 
-            const results: TripSuggestion[] = [];
+            // ── Trip-level AI suggestions ─────────────────────────────────────
+            const tripSuggestions: TripSuggestion[] = [];
 
             for (const trip of trips) {
                 const cacheKey = suggestionsCacheKey(trip.id);
                 const cached = await getSuggestionsCached(cacheKey);
                 if (cached && Array.isArray((cached as { suggestions: unknown[] }).suggestions)) {
-                    results.push({
+                    const raw = (cached as { suggestions: unknown[] }).suggestions as TripSuggestion["suggestions"];
+                    tripSuggestions.push({
                         tripId: trip.id,
-                        suggestions: (cached as { suggestions: unknown[] }).suggestions as TripSuggestion["suggestions"],
+                        suggestions: rankSuggestions(raw, dnaData),
                     });
                     continue;
                 }
 
                 try {
-                    const output = await generateSuggestionsForTrip({
-                        tripId: trip.id,
-                        destination: trip.destination,
-                        style: trip.style,
-                        budgetTotal: trip.budgetTotal,
-                        budgetCurrency: trip.budgetCurrency,
-                    });
+                    const output = await generateSuggestionsForTrip(
+                        {
+                            tripId: trip.id,
+                            destination: trip.destination,
+                            style: trip.style,
+                            budgetTotal: trip.budgetTotal,
+                            budgetCurrency: trip.budgetCurrency,
+                        },
+                        dnaData
+                    );
                     await setSuggestionsCached(cacheKey, output);
-                    results.push({ tripId: trip.id, suggestions: output.suggestions });
+                    tripSuggestions.push({ tripId: trip.id, suggestions: output.suggestions });
                 } catch (err) {
                     logError(`[GET /api/suggestions] Failed for trip ${trip.id}`, err);
-                    results.push({ tripId: trip.id, suggestions: [] });
+                    tripSuggestions.push({ tripId: trip.id, suggestions: [] });
                 }
             }
 
-            return successResponse<TripSuggestion[]>(results);
+            // ── Destination recommendations ────────────────────────────────────
+            // Pass all user trips (past + upcoming) for visited-country detection.
+            const allTrips = await prisma.trip.findMany({
+                where: { userId: auth.user.sub },
+                select: { destination: true },
+            });
+
+            let destinations = [];
+            try {
+                destinations = await generateSuggestions(allTrips, dnaData, 5);
+            } catch (err) {
+                logError("[GET /api/suggestions] Destination suggestions failed", err);
+            }
+
+            return successResponse({ tripSuggestions, destinations });
         } catch (err) {
             logError("[GET /api/suggestions] Error", err);
             return formatErrorResponse(err);
