@@ -21,6 +21,8 @@ export interface ItineraryEvent {
     type: string;
     location: string;
     cost: number;
+    lat?: number;
+    lng?: number;
 }
 
 export interface ItineraryDay {
@@ -168,6 +170,8 @@ export function adaptAIItinerary(raw: AIItinerary): ItineraryDay[] {
             type: activity.type,
             location: activity.location.name,
             cost: activity.estimatedCost.amount,
+            lat: activity.location.lat,
+            lng: activity.location.lng,
         })),
     }));
 }

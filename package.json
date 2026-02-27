@@ -11,6 +11,9 @@
     "measure-perf": "npx tsx scripts/measure-dashboard-perf.ts"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@prisma/adapter-pg": "^7.4.1",
     "@prisma/client": "^7.4.1",
     "@upstash/redis": "^1.36.2",

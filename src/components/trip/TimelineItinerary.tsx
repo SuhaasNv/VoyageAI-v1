@@ -1,17 +1,95 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Clock, MapPin, DollarSign, GripVertical, CheckCircle2, Sparkles, Loader2, AlertCircle, RefreshCw } from "lucide-react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import {
+    motion,
+    AnimatePresence,
+    useReducedMotion,
+} from "framer-motion";
+import {
+    DndContext,
+    closestCenter,
+    PointerSensor,
+    TouchSensor,
+    useSensor,
+    useSensors,
+    type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+    SortableContext,
+    useSortable,
+    arrayMove,
+    verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
+    Clock,
+    MapPin,
+    DollarSign,
+    GripVertical,
+    CheckCircle2,
+    Sparkles,
+    Loader2,
+    AlertCircle,
+    RefreshCw,
+} from "lucide-react";
 import { getCsrfToken } from "@/lib/api";
-import type { TripDTO, ItineraryDay } from "@/lib/services/trips";
+import type { TripDTO, ItineraryDay, ItineraryEvent } from "@/lib/services/trips";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface TimelineItineraryProps {
     trip: TripDTO;
-    /** Called after a successful generation / reoptimization to reload itinerary from DB */
     onRefresh?: () => void;
-    /** Called when the user switches to a different day tab */
     onDayChange?: (day: number) => void;
+    onActivityFocus?: (event: ItineraryEvent) => void;
+    onEventsReorder?: (dayNumber: number, orderedIds: string[]) => void;
 }
+
+// ─── Motion Variants ─────────────────────────────────────────────────────────
+
+const dayContainerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+        opacity: 1,
+        transition: { duration: 0.15, when: "beforeChildren" },
+    },
+    exit: {
+        opacity: 0,
+        transition: { duration: 0.18, ease: "easeIn" },
+    },
+};
+
+const timelineLineVariants = {
+    hidden: { scaleY: 0, opacity: 0 },
+    visible: {
+        scaleY: 1,
+        opacity: 1,
+        transition: { duration: 0.55, ease: [0.22, 1, 0.36, 1] },
+    },
+};
+
+const cardListVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+        opacity: 1,
+        transition: {
+            delayChildren: 0.2,
+            staggerChildren: 0.18,
+        },
+    },
+};
+
+const cardVariants = {
+    hidden: { opacity: 0, y: 14 },
+    visible: {
+        opacity: 1,
+        y: 0,
+        transition: { duration: 0.38, ease: [0.22, 1, 0.36, 1] },
+    },
+};
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function getEventIconColor(type: string) {
     switch (type) {
@@ -28,13 +106,227 @@ function getEventIconColor(type: string) {
     }
 }
 
-export function TimelineItinerary({ trip, onRefresh, onDayChange }: TimelineItineraryProps) {
+// ─── Sortable Card ────────────────────────────────────────────────────────────
+
+interface SortableCardProps {
+    event: ItineraryEvent;
+    index: number;
+    isFirst: boolean;
+    isMobile: boolean;
+    onFocus?: (event: ItineraryEvent) => void;
+}
+
+function SortableCard({ event, index, isFirst, isMobile, onFocus }: SortableCardProps) {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+        useSortable({ id: event.id });
+
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition: isDragging ? "none" : transition ?? undefined,
+        zIndex: isDragging ? 50 : undefined,
+    };
+
+    return (
+        <motion.div
+            ref={setNodeRef}
+            style={style}
+            variants={cardVariants}
+            layout="position"
+            layoutId={event.id}
+            className="relative flex items-center gap-3 group"
+            whileHover={isMobile ? undefined : { y: -2 }}
+        >
+            {/* Timeline node */}
+            <div
+                className={`flex items-center justify-center w-8 h-8 rounded-full border shadow shrink-0 z-10 transition-transform duration-200 ${
+                    isFirst
+                        ? "bg-[#10B981]/20 text-[#10B981] border-[#10B981]/40 shadow-[0_0_15px_rgba(16,185,129,0.3)] scale-110"
+                        : getEventIconColor(event.type)
+                }`}
+            >
+                {isFirst ? <CheckCircle2 className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
+            </div>
+
+            {/* Card */}
+            <div
+                onClick={() => !isDragging && onFocus?.(event)}
+                className={`flex-1 p-4 rounded-2xl backdrop-blur-sm border transition-all duration-200 ease-out cursor-pointer ${
+                    isFirst
+                        ? "border-[#10B981]/20 bg-[#10B981]/5"
+                        : "bg-white/[0.02] border-white/5 hover:border-white/15 hover:bg-white/[0.04]"
+                } ${isDragging ? "opacity-60 scale-[0.99] shadow-2xl border-white/20 bg-white/[0.06] cursor-grabbing" : ""}`}
+            >
+                <div className="flex items-center justify-between mb-2">
+                    <span
+                        className={`text-xs font-bold px-2 py-0.5 rounded-md border ${
+                            isFirst
+                                ? "text-[#10B981] bg-[#10B981]/10 border-[#10B981]/20"
+                                : "text-zinc-400 bg-white/5 border-white/5"
+                        }`}
+                    >
+                        {event.time}
+                    </span>
+                    <div
+                        {...attributes}
+                        {...listeners}
+                        className="touch-none p-1 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                        <GripVertical className="w-4 h-4 text-zinc-500" />
+                    </div>
+                </div>
+
+                <h4 className="text-base font-bold text-white mb-2 leading-tight">{event.title}</h4>
+
+                <div className="flex items-center justify-between mt-4">
+                    <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                        <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
+                        <span className="truncate max-w-[140px]">{event.location}</span>
+                    </div>
+                    {event.cost > 0 && (
+                        <div className="flex items-center gap-1 text-xs font-semibold text-slate-300 bg-white/[0.06] border border-white/[0.06] px-2 py-1 rounded-lg shrink-0 ml-2">
+                            <DollarSign className="w-3 h-3 text-emerald-400" />
+                            {event.cost}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </motion.div>
+    );
+}
+
+// ─── Animated Day View ────────────────────────────────────────────────────────
+
+interface DayViewProps {
+    day: ItineraryDay;
+    isMobile: boolean;
+    onActivityFocus?: (event: ItineraryEvent) => void;
+    onEventsReorder?: (dayNumber: number, orderedIds: string[]) => void;
+}
+
+function DayView({ day, isMobile, onActivityFocus, onEventsReorder }: DayViewProps) {
+    const [events, setEvents] = useState<ItineraryEvent[]>(day.events);
+    const eventsRef = useRef(events);
+    eventsRef.current = events;
+
+    useEffect(() => {
+        setEvents(day.events);
+    }, [day.events]);
+
+    const sensors = useSensors(
+        useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+        useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } })
+    );
+
+    const handleDragEnd = useCallback(
+        (e: DragEndEvent) => {
+            const { active, over } = e;
+            if (!over || active.id === over.id) return;
+
+            const prev = eventsRef.current;
+            const oldIdx = prev.findIndex((ev) => ev.id === active.id);
+            const newIdx = prev.findIndex((ev) => ev.id === over.id);
+            const newOrder = arrayMove(prev, oldIdx, newIdx);
+
+            setEvents(newOrder);
+            onEventsReorder?.(day.day, newOrder.map((ev) => ev.id));
+        },
+        [day.day, onEventsReorder]
+    );
+
+    return (
+        <motion.div
+            key={day.day}
+            variants={dayContainerVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+        >
+            {/* Day header */}
+            <div className="mb-8 flex flex-col pt-2">
+                <h2 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white via-white/80 to-white/40 tracking-tight leading-tight mb-3">
+                    {day.title}
+                </h2>
+                <div className="flex items-center gap-3">
+                    <span className="text-[10px] uppercase tracking-widest font-bold text-[#10B981] bg-[#10B981]/10 px-2.5 py-1 rounded-md border border-[#10B981]/20">
+                        {events.length} activities
+                    </span>
+                    <div className="h-px flex-1 bg-gradient-to-r from-white/10 to-transparent" />
+                </div>
+            </div>
+
+            {/* Animated timeline column */}
+            <div className="relative">
+                {/* Vertical glow line */}
+                <motion.div
+                    className="absolute left-4 -translate-x-px top-0 w-px origin-top"
+                    style={{
+                        background: "linear-gradient(to bottom, rgba(16,185,129,0.35), rgba(255,255,255,0.04) 70%, transparent)",
+                        height: "100%",
+                    }}
+                    variants={timelineLineVariants}
+                    initial="hidden"
+                    animate="visible"
+                />
+
+                {/* Subtle line glow overlay — GPU-safe, no filter */}
+                {!isMobile && (
+                    <motion.div
+                        className="absolute left-4 -translate-x-[3px] top-0 w-[7px] origin-top pointer-events-none"
+                        style={{
+                            background: "linear-gradient(to bottom, rgba(16,185,129,0.12), transparent)",
+                            height: "100%",
+                        }}
+                        variants={timelineLineVariants}
+                        initial="hidden"
+                        animate="visible"
+                    />
+                )}
+
+                {/* Drag + staggered reveal */}
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                    <SortableContext items={events.map((e) => e.id)} strategy={verticalListSortingStrategy}>
+                        <motion.div
+                            className="space-y-5 pl-11"
+                            variants={cardListVariants}
+                            initial="hidden"
+                            animate="visible"
+                        >
+                            {events.map((event, i) => (
+                                <SortableCard
+                                    key={event.id}
+                                    event={event}
+                                    index={i}
+                                    isFirst={i === 0}
+                                    isMobile={isMobile}
+                                    onFocus={onActivityFocus}
+                                />
+                            ))}
+                        </motion.div>
+                    </SortableContext>
+                </DndContext>
+            </div>
+        </motion.div>
+    );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
+export function TimelineItinerary({ trip, onRefresh, onDayChange, onActivityFocus, onEventsReorder }: TimelineItineraryProps) {
     const [activeDay, setActiveDay] = useState(1);
     const [itinerary, setItinerary] = useState<ItineraryDay[]>(trip.itinerary);
     const [isGenerating, setIsGenerating] = useState(false);
     const [genError, setGenError] = useState<string | null>(null);
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const prefersReduced = useReducedMotion();
+    const [isMobile, setIsMobile] = useState(false);
 
-    // Sync when parent passes fresh data; avoid unnecessary updates from new array refs
+    useEffect(() => {
+        const check = () => setIsMobile(window.innerWidth < 768);
+        check();
+        window.addEventListener("resize", check, { passive: true });
+        return () => window.removeEventListener("resize", check);
+    }, []);
+
     useEffect(() => {
         const next = trip.itinerary;
         setItinerary((prev) => {
@@ -44,11 +336,23 @@ export function TimelineItinerary({ trip, onRefresh, onDayChange }: TimelineItin
         });
     }, [trip.id, trip.itinerary]);
 
+    const handleDaySwitch = useCallback(
+        (day: number) => {
+            if (day === activeDay) return;
+            setActiveDay(day);
+            onDayChange?.(day);
+            // Scroll content area back to top on day switch
+            requestAnimationFrame(() => {
+                scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+            });
+        },
+        [activeDay, onDayChange]
+    );
+
     // ── Itinerary generation ──────────────────────────────────────────────────
     async function handleGenerate() {
         setIsGenerating(true);
         setGenError(null);
-
         try {
             const res = await fetch("/api/ai/itinerary", {
                 method: "POST",
@@ -69,15 +373,12 @@ export function TimelineItinerary({ trip, onRefresh, onDayChange }: TimelineItin
                     },
                 }),
             });
-
             const json = await res.json();
             if (!json?.success) throw new Error(json?.error?.message ?? "Generation failed");
 
-            // Reload itinerary from DB via parent refresh or local fetch
             if (onRefresh) {
                 onRefresh();
             } else {
-                // Fetch updated trip itinerary directly
                 const tripRes = await fetch(`/api/trips/${trip.id}`, { credentials: "include" });
                 const tripJson = await tripRes.json();
                 if (tripJson?.success && tripJson.data?.itinerary) {
@@ -91,7 +392,7 @@ export function TimelineItinerary({ trip, onRefresh, onDayChange }: TimelineItin
         }
     }
 
-    // ── Cinematic empty state ──────────────────────────────────────────────────
+    // ── Empty state ───────────────────────────────────────────────────────────
     if (itinerary.length === 0) {
         return (
             <div className="flex flex-col h-full items-center justify-center gap-8 p-10 text-center relative overflow-hidden">
@@ -129,14 +430,26 @@ export function TimelineItinerary({ trip, onRefresh, onDayChange }: TimelineItin
                         </div>
                     )}
 
-                    <button
-                        onClick={handleGenerate}
-                        disabled={isGenerating}
-                        className="flex items-center gap-2 px-6 py-3 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:bg-white/[0.06] disabled:text-zinc-500 text-white text-sm font-semibold transition-all duration-200 shadow-[0_0_24px_rgba(99,102,241,0.35)] hover:shadow-[0_0_32px_rgba(99,102,241,0.4)] disabled:shadow-none"
-                    >
-                        {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                        {isGenerating ? "Generating…" : "Generate itinerary"}
-                    </button>
+                    <div className="relative flex items-center justify-center">
+                        <div
+                            className="absolute w-56 h-14 rounded-full bg-indigo-500/[0.13] blur-2xl pointer-events-none"
+                            style={{ animation: "voyage-glow-pulse 3.6s ease-in-out infinite" }}
+                        />
+                        <button
+                            onClick={handleGenerate}
+                            disabled={isGenerating}
+                            className="relative flex items-center gap-2 px-6 py-3 rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:bg-white/[0.06] disabled:text-zinc-500 text-white text-sm font-semibold transition-all duration-200 shadow-[0_0_24px_rgba(99,102,241,0.35)] hover:shadow-[0_0_32px_rgba(99,102,241,0.4)] disabled:shadow-none"
+                        >
+                            {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                            {isGenerating ? "Generating…" : "Generate itinerary"}
+                        </button>
+                    </div>
+                    <style dangerouslySetInnerHTML={{ __html: `
+                        @keyframes voyage-glow-pulse {
+                            0%, 100% { opacity: 0.6; transform: scale(1); }
+                            50%       { opacity: 1;   transform: scale(1.08); }
+                        }
+                    ` }} />
                 </div>
             </div>
         );
@@ -147,6 +460,8 @@ export function TimelineItinerary({ trip, onRefresh, onDayChange }: TimelineItin
         ? activeDay
         : itinerary[0].day;
 
+    const activeDayData = itinerary.find((d) => d.day === currentActiveDay)!;
+
     return (
         <div className="flex flex-col h-full z-10">
             {/* Day selector */}
@@ -154,18 +469,18 @@ export function TimelineItinerary({ trip, onRefresh, onDayChange }: TimelineItin
                 {itinerary.map((day) => (
                     <button
                         key={day.day}
-                        onClick={() => { setActiveDay(day.day); onDayChange?.(day.day); }}
-                        className={`flex flex-col items-center min-w-[70px] px-3 py-2 rounded-xl transition-all duration-200 ease-out border ${currentActiveDay === day.day
-                            ? "bg-[#10B981]/10 text-[#10B981] border-[#10B981]/20 shadow-[0_0_12px_rgba(16,185,129,0.1)]"
-                            : "bg-white/[0.02] text-zinc-500 border-white/5 hover:text-white hover:bg-white/[0.04]"
-                            }`}
+                        onClick={() => handleDaySwitch(day.day)}
+                        className={`flex flex-col items-center min-w-[70px] px-3 py-2 rounded-xl transition-all duration-200 ease-out border ${
+                            currentActiveDay === day.day
+                                ? "bg-[#10B981]/10 text-[#10B981] border-[#10B981]/20 shadow-[0_0_12px_rgba(16,185,129,0.1)]"
+                                : "bg-white/[0.02] text-zinc-500 border-white/5 hover:text-white hover:bg-white/[0.04]"
+                        }`}
                     >
                         <span className="text-[10px] font-bold uppercase tracking-wider mb-0.5 opacity-80">Day {day.day}</span>
                         <span className="text-sm font-semibold">{day.date.split("-")[2] ?? day.date}</span>
                     </button>
                 ))}
 
-                {/* Regenerate button */}
                 <button
                     onClick={handleGenerate}
                     disabled={isGenerating}
@@ -179,7 +494,7 @@ export function TimelineItinerary({ trip, onRefresh, onDayChange }: TimelineItin
                 </button>
             </div>
 
-            {/* Generation error — friendly toast + retry */}
+            {/* Generation error */}
             {genError && (
                 <div className="mx-4 mt-3 flex flex-col gap-2 text-xs bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-3">
                     <div className="flex items-center gap-2 text-amber-300">
@@ -197,56 +512,27 @@ export function TimelineItinerary({ trip, onRefresh, onDayChange }: TimelineItin
             )}
 
             {/* Events */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-8 scroll-smooth z-10 hide-scrollbar">
-                {itinerary.map((day) => (
-                    currentActiveDay === day.day && (
-                        <div key={day.day} className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                            <div className="mb-8 flex flex-col pt-2">
-                                <h2 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white via-white/80 to-white/40 tracking-tight leading-tight mb-3">
-                                    {day.title}
-                                </h2>
-                                <div className="flex items-center gap-3">
-                                    <span className="text-[10px] uppercase tracking-widest font-bold text-[#10B981] bg-[#10B981]/10 px-2.5 py-1 rounded-md border border-[#10B981]/20">
-                                        {day.events.length} activities
-                                    </span>
-                                    <div className="h-px flex-1 bg-gradient-to-r from-white/10 to-transparent"></div>
-                                </div>
-                            </div>
-
-                            <div className="relative space-y-6 before:absolute before:inset-0 before:ml-4 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-px before:bg-gradient-to-b before:from-[#10B981]/30 before:via-white/[0.04] before:to-transparent">
-                                {day.events.map((event, i) => (
-                                    <div key={event.id} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-
-                                        <div className={`flex items-center justify-center w-8 h-8 rounded-full border shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10 transition-transform duration-200 ${i === 0 ? "bg-[#10B981]/20 text-[#10B981] border-[#10B981]/40 shadow-[0_0_15px_rgba(16,185,129,0.3)] scale-110" : getEventIconColor(event.type)}`}>
-                                            {i === 0 ? <CheckCircle2 className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
-                                        </div>
-
-                                        <div className={`w-[calc(100%-2.5rem)] md:w-[calc(50%-1.5rem)] p-4 rounded-2xl bg-white/[0.02] backdrop-blur-sm border border-white/5 transition-all duration-200 ease-out ml-4 md:ml-0 ${i === 0 ? "border-[#10B981]/20 bg-[#10B981]/5" : "hover:border-white/15 hover:bg-white/[0.04]"}`}>
-                                            <div className="flex items-center justify-between mb-2">
-                                                <span className={`text-xs font-bold px-2 py-0.5 rounded-md border ${i === 0 ? "text-[#10B981] bg-[#10B981]/10 border-[#10B981]/20" : "text-zinc-400 bg-white/5 border-white/5"}`}>{event.time}</span>
-                                                <GripVertical className="w-4 h-4 text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                            </div>
-                                            <h4 className="text-base font-bold text-white mb-2 leading-tight">{event.title}</h4>
-
-                                            <div className="flex items-center justify-between mt-4">
-                                                <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                                                    <MapPin className="w-3.5 h-3.5" />
-                                                    {event.location}
-                                                </div>
-                                                {event.cost > 0 && (
-                                                    <div className="flex items-center gap-1 text-xs font-semibold text-slate-300 bg-white/[0.06] border border-white/[0.06] px-2 py-1 rounded-lg">
-                                                        <DollarSign className="w-3 h-3 text-emerald-400" />
-                                                        {event.cost}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
+            <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 scroll-smooth z-10 hide-scrollbar">
+                <AnimatePresence mode="wait" initial={false}>
+                    {prefersReduced ? (
+                        <div key={currentActiveDay}>
+                            <DayView
+                                day={activeDayData}
+                                isMobile={isMobile}
+                                onActivityFocus={onActivityFocus}
+                                onEventsReorder={onEventsReorder}
+                            />
                         </div>
-                    )
-                ))}
+                    ) : (
+                        <DayView
+                            key={currentActiveDay}
+                            day={activeDayData}
+                            isMobile={isMobile}
+                            onActivityFocus={onActivityFocus}
+                            onEventsReorder={onEventsReorder}
+                        />
+                    )}
+                </AnimatePresence>
             </div>
         </div>
     );
