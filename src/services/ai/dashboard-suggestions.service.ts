@@ -9,6 +9,7 @@ import {
     DashboardSuggestionsOutputSchema,
     type DashboardSuggestionsOutput,
 } from "@/lib/ai/schemas";
+import { rankSuggestions } from "@/lib/ai/travelDNARules";
 
 interface TripContext {
     tripId: string;
@@ -19,7 +20,8 @@ interface TripContext {
 }
 
 export async function generateSuggestionsForTrip(
-    trip: TripContext
+    trip: TripContext,
+    dnaData?: Record<string, unknown> | null
 ): Promise<DashboardSuggestionsOutput> {
     const system = SYSTEM_PROMPTS.DASHBOARD_SUGGESTIONS;
     const schema = SCHEMA_INSTRUCTIONS.DASHBOARD_SUGGESTIONS;
@@ -40,5 +42,9 @@ export async function generateSuggestionsForTrip(
     });
 
     const raw = parseJSONResponse<unknown>(llmResponse.content);
-    return DashboardSuggestionsOutputSchema.parse(raw);
+    const parsed = DashboardSuggestionsOutputSchema.parse(raw);
+
+    return {
+        suggestions: rankSuggestions(parsed.suggestions, dnaData),
+    };
 }
