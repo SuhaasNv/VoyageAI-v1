@@ -1,12 +1,11 @@
-import { Home, Settings } from "lucide-react";
-import Link from "next/link";
 import React from "react";
+import Link from "next/link";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { DashboardSidebarFooter } from "@/components/dashboard/DashboardSidebarFooter";
 import { AuthHydrator } from "@/components/dashboard/AuthHydrator";
 import { DashboardTripsProvider } from "@/components/dashboard/DashboardTripsProvider";
 import { DashboardUserProvider } from "@/components/dashboard/DashboardUserProvider";
+import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { LogoutOverlay } from "@/components/dashboard/LogoutOverlay";
 import { OnboardingGuard } from "@/components/dashboard/OnboardingGuard";
 import { Logo } from "@/components/Logo";
@@ -22,9 +21,10 @@ export default async function DashboardLayout({
     children: React.ReactNode;
 }) {
     const [cookieStore, headersList] = await Promise.all([cookies(), headers()]);
-    const token = cookieStore.get(ACCESS_TOKEN_COOKIE)?.value;
+    const token    = cookieStore.get(ACCESS_TOKEN_COOKIE)?.value;
     const pathname = headersList.get("x-pathname") ?? "/dashboard";
     if (!token) redirect(`/login?from=${encodeURIComponent(pathname)}`);
+
     let payload;
     try {
         payload = verifyAccessToken(token);
@@ -45,19 +45,19 @@ export default async function DashboardLayout({
     ]);
     if (!dbUser) redirect(`/login?from=${encodeURIComponent(pathname)}`);
 
-    const initialTrips: TripDTO[] = dbTrips.map((trip) => {
+    const initialTrips: TripDTO[] = dbTrips.map(trip => {
         const rawJson = trip.itineraries[0]?.rawJson;
         return serializeTrip({ ...trip, imageUrl: trip.imageUrl ?? null }, [], rawJson);
     });
 
     const user = {
-        id: dbUser.id,
-        email: dbUser.email,
-        name: dbUser.name,
-        image: dbUser.image,
-        role: dbUser.role,
+        id:          dbUser.id,
+        email:       dbUser.email,
+        name:        dbUser.name,
+        image:       dbUser.image,
+        role:        dbUser.role,
         hasOnboarded: dbUser.hasOnboarded ?? false,
-        createdAt: dbUser.createdAt.toISOString(),
+        createdAt:   dbUser.createdAt.toISOString(),
     };
 
     return (
@@ -67,7 +67,7 @@ export default async function DashboardLayout({
             <DashboardTripsProvider initialTrips={initialTrips}>
                 <AuthHydrator />
                 <OnboardingGuard>
-                    {/* Mobile Header */}
+                    {/* Mobile header */}
                     <header className="md:hidden flex items-center justify-between px-6 py-4 border-b border-white/5 bg-[#0B0F14]/80 backdrop-blur-xl sticky top-0 z-30">
                         <Link href="/dashboard" className="flex items-center gap-2">
                             <Logo size="sm" className="shrink-0 text-white" />
@@ -77,26 +77,10 @@ export default async function DashboardLayout({
                     </header>
 
                     <div className="flex flex-1 w-full h-full relative z-10 overflow-hidden">
-                        {/* Desktop Sidebar Navigation */}
-                        <aside className="hidden md:flex relative z-20 w-64 bg-[#0B0F14] flex-col justify-between p-6 border-r border-white/5 shadow-2xl">
-                            <div>
-                                <Link href="/dashboard" className="flex items-center gap-2 mb-10 text-white hover:opacity-90 transition-opacity duration-200">
-                                    <Logo size="md" className="shrink-0 text-white" />
-                                    <span className="text-xl font-bold tracking-tight uppercase">VoyageAI</span>
-                                </Link>
+                        {/* Collapsible sidebar */}
+                        <DashboardSidebar />
 
-                                <nav className="space-y-1.5">
-                                    <SidebarLink href="/dashboard" icon={<Home className="w-4 h-4" />} label="Dashboard" active />
-                                </nav>
-                            </div>
-
-                            <div className="space-y-1.5">
-                                <SidebarLink href="/dashboard/settings" icon={<Settings className="w-4 h-4" />} label="Settings" />
-                                <DashboardSidebarFooter />
-                            </div>
-                        </aside>
-
-                        {/* Main Content */}
+                        {/* Main content */}
                         <main className="relative z-10 flex-1 flex flex-col min-h-0 bg-transparent h-full overflow-hidden">
                             <div className="flex-1 flex flex-col min-h-0">
                                 {children}
@@ -106,32 +90,5 @@ export default async function DashboardLayout({
                 </OnboardingGuard>
             </DashboardTripsProvider>
         </div>
-    );
-}
-
-function MobileNavLink({ href, icon, label, active }: { href: string; icon: React.ReactNode; label: string; active?: boolean }) {
-    return (
-        <Link
-            href={href}
-            className={`flex flex-col items-center gap-1 transition-all duration-300 ${active ? "text-[#10B981]" : "text-zinc-500"}`}
-        >
-            {icon}
-            <span className="text-[10px] font-medium uppercase tracking-wider">{label}</span>
-        </Link>
-    );
-}
-
-function SidebarLink({ href, icon, label, active }: { href: string; icon: React.ReactNode; label: string; active?: boolean }) {
-    return (
-        <Link
-            href={href}
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-300 ease-out text-sm font-medium border ${active
-                ? "bg-[#10B981]/10 text-[#10B981] border-[#10B981]/20 shadow-[0_0_12px_rgba(16,185,129,0.1)]"
-                : "border-transparent text-zinc-500 hover:text-white hover:bg-white/5"
-                }`}
-        >
-            {icon}
-            {label}
-        </Link>
     );
 }

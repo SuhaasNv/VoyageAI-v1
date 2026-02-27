@@ -8,43 +8,43 @@ import { AISuggestionsCard } from "@/components/dashboard/AISuggestionsCard";
 import { CreateTripModal } from "@/components/dashboard/CreateTripModal";
 import { TripIntelligencePanel } from "@/components/dashboard/TripIntelligencePanel";
 import { CalendarWidget } from "@/components/dashboard/CalendarWidget";
-import { DashboardAIAssistant } from "@/components/dashboard/DashboardAIAssistant";
 import { TravelDNAOnboardingModal } from "@/components/dashboard/TravelDNAOnboardingModal";
+import { AICommandPalette } from "@/components/dashboard/AICommandPalette";
 import { useTrips } from "@/hooks/useTrips";
 import type { Trip } from "@/lib/api";
 
 export default function DashboardPage() {
     const { trips, isLoading, setTrips } = useTrips();
-    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isModalOpen,        setIsModalOpen]        = useState(false);
     const [showOnboardingModal, setShowOnboardingModal] = useState(false);
 
     useEffect(() => {
-        fetch('/api/preferences')
+        fetch("/api/preferences")
             .then(res => res.json())
             .then(data => {
-                if (data.success && data.data && data.data.preference === null) {
+                if (data.success && data.data?.preference === null) {
                     setShowOnboardingModal(true);
                 }
             })
             .catch(console.error);
     }, []);
 
-    const totalBudget = trips.reduce((sum, t) => sum + (t.budget?.total ?? 0), 0);
-    const totalSpent = trips.reduce((sum, t) => sum + (t.budget?.spent ?? 0), 0);
+    const totalBudget    = trips.reduce((s, t) => s + (t.budget?.total ?? 0), 0);
+    const totalSpent     = trips.reduce((s, t) => s + (t.budget?.spent ?? 0), 0);
     const budgetCurrency = trips[0]?.budget?.currency ?? "USD";
 
-    const handleTripCreated = (newTrip: Trip) => {
-        setTrips((prev) =>
+    const handleTripCreated = (newTrip: Trip) =>
+        setTrips(prev =>
             [...prev, newTrip].sort(
                 (a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
             )
         );
-    };
 
     return (
         <div className="h-full overflow-y-auto scroll-smooth hide-scrollbar">
-            <div className="min-h-full p-6 md:p-8 lg:p-10 max-w-7xl mx-auto space-y-8 relative mobile-container">
-                {/* Top Bar matching Minimal Premium OS */}
+            <div className="min-h-full p-6 md:p-8 lg:p-10 max-w-[1440px] mx-auto space-y-8 relative mobile-container">
+
+                {/* ── Top bar ───────────────────────────────────────────────── */}
                 <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-2">
                     <div className="flex items-center gap-2 overflow-x-auto pb-2 md:pb-0 hide-scrollbar scroll-smooth">
                         <button className="flex items-center gap-2 bg-white/5 border border-white/10 px-4 py-2 rounded-full text-xs font-semibold text-zinc-300 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all whitespace-nowrap shrink-0">
@@ -65,9 +65,10 @@ export default function DashboardPage() {
                                 placeholder="Search destinations..."
                                 className="w-full bg-white/5 border border-white/10 text-sm text-white placeholder-zinc-500 rounded-full py-2.5 px-12 focus:outline-none focus:border-[#10B981]/40 focus:ring-1 focus:ring-[#10B981]/40 transition-all font-medium"
                             />
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+                            </svg>
                         </div>
-
                         <div className="flex items-center gap-3">
                             <button className="w-11 h-11 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition-colors">
                                 <Bell className="w-5 h-5" />
@@ -82,40 +83,43 @@ export default function DashboardPage() {
                     </div>
                 </header>
 
-                {/* Main Grid: Discover Places + Map (left), Calendar + Budget + Suggestions (right) */}
-                <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-8">
-                    <div className="space-y-8 order-1">
-                        <UpcomingTripsGrid
-                            trips={trips}
-                            isLoading={isLoading}
-                            onTripsChange={setTrips}
-                            onNewTripClick={() => setIsModalOpen(true)}
-                        />
-                        <TripIntelligencePanel trips={trips} isLoading={isLoading} />
-                    </div>
+                {/* ── Row 1: Active trips — full width ─────────────────────── */}
+                <UpcomingTripsGrid
+                    trips={trips}
+                    isLoading={isLoading}
+                    onTripsChange={setTrips}
+                    onNewTripClick={() => setIsModalOpen(true)}
+                />
 
-                    <div className="space-y-8 order-2">
-                        <DashboardAIAssistant onTripCreated={handleTripCreated} />
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-8">
-                            <CalendarWidget trips={trips} />
-                            <BudgetOverviewCard totalBudget={totalBudget} totalSpent={totalSpent} currency={budgetCurrency} />
-                            <div className="md:col-span-2 lg:col-span-1">
-                                <AISuggestionsCard />
-                            </div>
-                        </div>
-                    </div>
+                {/* ── Row 2: Trip Intelligence + Budget ────────────────────── */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <TripIntelligencePanel trips={trips} isLoading={isLoading} />
+                    <BudgetOverviewCard
+                        totalBudget={totalBudget}
+                        totalSpent={totalSpent}
+                        currency={budgetCurrency}
+                    />
                 </div>
 
-                {/* Modal Overlay */}
-                {isModalOpen && (
-                    <CreateTripModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
-                )}
-
-                <TravelDNAOnboardingModal
-                    isOpen={showOnboardingModal}
-                    onClose={() => setShowOnboardingModal(false)}
-                />
+                {/* ── Row 3: Calendar + Suggestions ────────────────────────── */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <CalendarWidget trips={trips} />
+                    <AISuggestionsCard />
+                </div>
             </div>
+
+            {/* ── Modals ────────────────────────────────────────────────────── */}
+            {isModalOpen && (
+                <CreateTripModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
+            )}
+
+            <TravelDNAOnboardingModal
+                isOpen={showOnboardingModal}
+                onClose={() => setShowOnboardingModal(false)}
+            />
+
+            {/* ── Floating AI command button ─────────────────────────────── */}
+            <AICommandPalette onTripCreated={handleTripCreated} />
         </div>
     );
 }
