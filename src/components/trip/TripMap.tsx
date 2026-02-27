@@ -204,7 +204,7 @@ export function TripMap({ rawItinerary, selectedDay }: TripMapProps) {
             const startTime = performance.now();
             const duration = 2000;
             const animateLine = (timestamp: number) => {
-                const progress = Math.min((timestamp - startTime) / duration, 1);
+                const progress = Math.max(0, Math.min((timestamp - startTime) / duration, 1));
                 const easeProgress = 1 - Math.pow(1 - progress, 3); // easeOutCubic
 
                 const totalSegments = coords.length - 1;
@@ -354,10 +354,21 @@ export function TripMap({ rawItinerary, selectedDay }: TripMapProps) {
                     const stopIdle = () => {
                         if (idleAnimRef.current) cancelAnimationFrame(idleAnimRef.current);
                         if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
+
+                        // Hide markers when interacting
+                        if (mapRef.current) {
+                            mapRef.current.getContainer().classList.add("hide-markers");
+                        }
                     };
 
                     const startIdle = () => {
                         stopIdle();
+
+                        // Show markers when preparing to drift / drifting
+                        if (mapRef.current) {
+                            mapRef.current.getContainer().classList.remove("hide-markers");
+                        }
+
                         if (isMobile || prefersReducedMotion) return;
                         idleTimeoutRef.current = setTimeout(() => {
                             const drift = () => {
@@ -519,6 +530,18 @@ export function TripMap({ rawItinerary, selectedDay }: TripMapProps) {
 
             {/* Vignette overlay */}
             <div className="absolute inset-0 pointer-events-none z-[1] bg-[radial-gradient(ellipse_at_center,_transparent_55%,_rgba(0,0,0,0.6)_100%)]" />
+
+            <style dangerouslySetInnerHTML={{
+                __html: `
+                .hide-markers .mapboxgl-marker {
+                    opacity: 0 !important;
+                    pointer-events: none !important;
+                    transform: scale(0.5) !important;
+                }
+                .mapboxgl-marker {
+                    transition: opacity 0.4s ease, transform 0.4s ease !important;
+                }
+            `}} />
         </div>
     );
 }
