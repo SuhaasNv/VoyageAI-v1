@@ -10,6 +10,7 @@ import { formatErrorResponse } from "@/lib/errors";
 import { serializeTrip, type TripDTO } from "@/lib/services/trips";
 import { getDestinationImage } from "@/lib/services/image.service";
 import { getLLMClient, executeWithRetry, parseJSONResponse } from "@/lib/ai/llm";
+import { getTravelPreferenceContext } from "@/lib/ai/contextStore";
 
 const CreateTripAIChema = z.object({
     text: z.string().min(5).max(1000)
@@ -36,8 +37,11 @@ export async function POST(req: NextRequest) {
         try {
             await checkRateLimit(`ai:${auth.user.sub}:create-trip`);
 
+            const dnaContext = await getTravelPreferenceContext(auth.user.sub);
+
             const prompt = `Extract structured travel data from this text. Return strict JSON only.
 Assume the current year is ${new Date().getFullYear()} if the year is not specified.
+${dnaContext ? `\n${dnaContext}\n` : ""}
 Schema:
 {
   "destination": "string",

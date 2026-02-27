@@ -23,6 +23,7 @@ import { runWithRequestContext } from "@/lib/requestContext";
 import { checkRateLimit } from "@/lib/rateLimiter";
 import { unauthorizedResponse, errorResponse } from "@/lib/api/response";
 import { prisma } from "@/lib/prisma";
+import { getTravelPreferenceContext } from "@/lib/ai/contextStore";
 
 // Extend the base schema to require a tripId for persistence.
 const ItineraryRouteSchema = GenerateItineraryRequestSchema.extend({
@@ -51,7 +52,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         try {
             await checkRateLimit(`ai:${auth.user.sub}:itinerary`);
 
-            const result = await generateItinerary({ ...aiPayload, tripId });
+            const dnaContext = await getTravelPreferenceContext(auth.user.sub);
+            const result = await generateItinerary({ ...aiPayload, tripId }, dnaContext || undefined);
 
             // ── Persist: replace itinerary and update trip budget in one transaction ──
             await prisma.$transaction([

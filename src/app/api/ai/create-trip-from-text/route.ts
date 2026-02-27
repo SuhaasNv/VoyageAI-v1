@@ -20,6 +20,7 @@ import { serializeTrip, type TripDTO } from "@/lib/services/trips";
 import { getDestinationImage } from "@/lib/services/image.service";
 import { extractTripFromText } from "@/services/ai/create-trip-from-text.service";
 import { CreateTripFromTextInputSchema } from "@/lib/ai/schemas";
+import { getTravelPreferenceContext } from "@/lib/ai/contextStore";
 
 export async function POST(req: NextRequest) {
     return runWithRequestContext(req, async () => {
@@ -34,7 +35,8 @@ export async function POST(req: NextRequest) {
         try {
             await checkRateLimit(`ai:${auth.user.sub}:create-trip`);
 
-            const extracted = await extractTripFromText(text);
+            const dnaContext = await getTravelPreferenceContext(auth.user.sub);
+            const extracted = await extractTripFromText(text, dnaContext || undefined);
 
             let imageUrl: string | null = null;
             try {

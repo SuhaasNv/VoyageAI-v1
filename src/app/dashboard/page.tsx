@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Plus, Bell } from "lucide-react";
 import { UpcomingTripsGrid } from "@/components/dashboard/UpcomingTripsGrid";
 import { BudgetOverviewCard } from "@/components/dashboard/BudgetOverviewCard";
@@ -9,12 +9,25 @@ import { CreateTripModal } from "@/components/dashboard/CreateTripModal";
 import { MapSimulationPanel } from "@/components/dashboard/MapSimulationPanel";
 import { CalendarWidget } from "@/components/dashboard/CalendarWidget";
 import { DashboardAIAssistant } from "@/components/dashboard/DashboardAIAssistant";
+import { TravelDNAOnboardingModal } from "@/components/dashboard/TravelDNAOnboardingModal";
 import { useTrips } from "@/hooks/useTrips";
 import type { Trip } from "@/lib/api";
 
 export default function DashboardPage() {
     const { trips, isLoading, setTrips } = useTrips();
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [showOnboardingModal, setShowOnboardingModal] = useState(false);
+
+    useEffect(() => {
+        fetch('/api/preferences')
+            .then(res => res.json())
+            .then(data => {
+                if (data.success && data.data && data.data.preference === null) {
+                    setShowOnboardingModal(true);
+                }
+            })
+            .catch(console.error);
+    }, []);
 
     const totalBudget = trips.reduce((sum, t) => sum + (t.budget?.total ?? 0), 0);
     const totalSpent = trips.reduce((sum, t) => sum + (t.budget?.spent ?? 0), 0);
@@ -97,6 +110,11 @@ export default function DashboardPage() {
                 {isModalOpen && (
                     <CreateTripModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
                 )}
+
+                <TravelDNAOnboardingModal
+                    isOpen={showOnboardingModal}
+                    onClose={() => setShowOnboardingModal(false)}
+                />
             </div>
         </div>
     );

@@ -20,6 +20,7 @@ import { runWithRequestContext } from "@/lib/requestContext";
 import { checkRateLimit } from "@/lib/rateLimiter";
 import { unauthorizedResponse, errorResponse } from "@/lib/api/response";
 import { prisma } from "@/lib/prisma";
+import { getTravelPreferenceContext } from "@/lib/ai/contextStore";
 
 // Extend schema to require tripId at the route level for ownership check + persistence.
 const ReoptimizeRouteSchema = ReoptimizeRequestSchema.extend({
@@ -44,7 +45,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         try {
             await checkRateLimit(`ai:${auth.user.sub}:reoptimize`);
 
-            const result = await reoptimizeTrip(validation.data);
+            const dnaContext = await getTravelPreferenceContext(auth.user.sub);
+            const result = await reoptimizeTrip(validation.data, dnaContext || undefined);
 
             // ── Persist reoptimized itinerary + update budget ──────────────────
             const reoptimized = result.reoptimizedItinerary;
