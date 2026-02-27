@@ -6,10 +6,16 @@
  */
 
 import { logError } from "@/lib/logger";
+import jwt from "jsonwebtoken";
+import dns from "node:dns";
+
+// Fix Node fetch IPv6 latency issue where it stalls for 3 seconds before falling back mapping to IPv4.
+if (typeof dns.setDefaultResultOrder === "function") {
+    dns.setDefaultResultOrder("ipv4first");
+}
 
 const GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token";
-const GOOGLE_USERINFO_URI = "https://www.googleapis.com/oauth2/v2/userinfo";
 
 const SCOPES = ["openid", "email", "profile"];
 
@@ -46,7 +52,8 @@ export function getGoogleAuthUrl(redirectUri: string, state: string): string {
 }
 
 /**
- * Exchange authorization code for tokens, then fetch user info.
+ * Exchange authorization code for tokens, then extract user info from the id_token.
+ * This avoids an extra network request to the userinfo endpoint, reducing latency.
  */
 export async function exchangeCodeForUserInfo(
     code: string,
@@ -79,26 +86,26 @@ export async function exchangeCodeForUserInfo(
         error?: string;
     };
 
-    const accessToken = tokens.access_token;
-    if (!accessToken) {
-        logError("[google] No access_token in response", { tokens });
+    const idToken = tokens.id_token;
+    if (!idToken) {
+        logError("[google] No id_token in response", { tokens });
         throw new Error("Google sign-in failed. Please try again.");
     }
 
-    const userRes = await fetch(GOOGLE_USERINFO_URI, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    // Since we just fetched this from Google's secure token endpoint, 
+    // we can safely decode it without full signature verification to save time.
+    const decoded = jwt.decode(idToken) as any;
 
-    if (!userRes.ok) {
-        logError("[google] Userinfo fetch failed", { status: userRes.status });
+    if (!decoded || !decoded.sub || !decoded.email) {
+        logError("[google] Invalid id_token payload", { idToken, decoded });
         throw new Error("Google sign-in failed. Please try again.");
     }
 
-    const user = (await userRes.json()) as GoogleUserInfo;
-    if (!user.id || !user.email) {
-        logError("[google] Invalid userinfo", { user });
-        throw new Error("Google sign-in failed. Please try again.");
-    }
-
-    return user;
+    return {
+        id: decoded.sub,
+        email: decoded.email,
+        name: decoded.name,
+        picture: decoded.picture,
+        verified_email: decoded.email_verified ?? true,
+    };
 }

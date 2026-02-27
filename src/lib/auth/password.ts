@@ -7,7 +7,8 @@
 
 import bcrypt from "bcryptjs";
 
-const SALT_ROUNDS = 12;
+// 10 rounds is the industry standard for production (fast enough for snappy UI, slow enough for security).
+const SALT_ROUNDS = 10;
 
 /**
  * Hash a plaintext password.
