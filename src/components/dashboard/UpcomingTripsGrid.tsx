@@ -13,6 +13,7 @@ interface UpcomingTripsGridProps {
     isLoading?: boolean;
     onTripsChange?: (trips: Trip[]) => void;
     onNewTripClick?: () => void;
+    isSearching?: boolean;
 }
 
 interface TripCardProps {
@@ -125,7 +126,7 @@ function TripCard({
     );
 }
 
-export function UpcomingTripsGrid({ trips, isLoading, onTripsChange, onNewTripClick }: UpcomingTripsGridProps) {
+export function UpcomingTripsGrid({ trips, isLoading, onTripsChange, onNewTripClick, isSearching }: UpcomingTripsGridProps) {
     const [menuTripId, setMenuTripId] = useState<string | null>(null);
     const [editTrip, setEditTrip] = useState<Trip | null>(null);
     const [deleteTrip, setDeleteTrip] = useState<Trip | null>(null);
@@ -180,9 +181,11 @@ export function UpcomingTripsGrid({ trips, isLoading, onTripsChange, onNewTripCl
                     <h2 className="text-xl font-bold text-white tracking-tight">Active Trips</h2>
                     <p className="text-xs text-zinc-500 font-medium">Your upcoming scheduled travels</p>
                 </div>
-                <button className="text-xs font-semibold text-zinc-400 hover:text-white transition-colors flex items-center gap-1 bg-white/[0.02] border border-white/10 px-3 py-1.5 rounded-full hover:bg-white/5">
-                    View all <ChevronRight className="w-3 h-3" />
-                </button>
+                {!isSearching && (
+                    <button className="text-xs font-semibold text-zinc-400 hover:text-white transition-colors flex items-center gap-1 bg-white/[0.02] border border-white/10 px-3 py-1.5 rounded-full hover:bg-white/5">
+                        View all <ChevronRight className="w-3 h-3" />
+                    </button>
+                )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -196,21 +199,31 @@ export function UpcomingTripsGrid({ trips, isLoading, onTripsChange, onNewTripCl
                         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] h-[350px] rounded-full bg-[#10B981]/5 blur-[60px] pointer-events-none" />
                         <div className="relative z-10 flex flex-col items-center gap-6">
                             <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#10B981]/20 to-indigo-500/20 border border-white/10 flex items-center justify-center shadow-[0_0_40px_rgba(16,185,129,0.12)]">
-                                <Plane className="w-9 h-9 text-[#10B981]" />
+                                {isSearching ? (
+                                    <MapPin className="w-9 h-9 text-[#10B981]" />
+                                ) : (
+                                    <Plane className="w-9 h-9 text-[#10B981]" />
+                                )}
                             </div>
                             <div className="space-y-3">
-                                <h3 className="text-xl font-bold text-white tracking-tight">No trips yet</h3>
+                                <h3 className="text-xl font-bold text-white tracking-tight">
+                                    {isSearching ? "No matching trips" : "No trips yet"}
+                                </h3>
                                 <p className="text-sm text-zinc-400 max-w-sm leading-relaxed">
-                                    Create your first — plan smarter with AI itineraries, budget tracking, and more.
+                                    {isSearching
+                                        ? "We couldn't find any trips matching your search. Try a different destination or trip title."
+                                        : "Create your first — plan smarter with AI itineraries, budget tracking, and more."}
                                 </p>
                             </div>
-                            <button
-                                onClick={onNewTripClick}
-                                className="flex items-center gap-2 px-6 py-3 rounded-xl bg-[#10B981] hover:bg-[#10B981]/90 text-white text-sm font-semibold transition-all shadow-[0_0_24px_rgba(16,185,129,0.3)] hover:shadow-[0_0_32px_rgba(16,185,129,0.4)]"
-                            >
-                                <Plus className="w-4 h-4" />
-                                Create your first trip
-                            </button>
+                            {!isSearching && (
+                                <button
+                                    onClick={onNewTripClick}
+                                    className="flex items-center gap-2 px-6 py-3 rounded-xl bg-[#10B981] hover:bg-[#10B981]/90 text-white text-sm font-semibold transition-all shadow-[0_0_24px_rgba(16,185,129,0.3)] hover:shadow-[0_0_32px_rgba(16,185,129,0.4)]"
+                                >
+                                    <Plus className="w-4 h-4" />
+                                    Create your first trip
+                                </button>
+                            )}
                         </div>
                     </div>
                 ) : (

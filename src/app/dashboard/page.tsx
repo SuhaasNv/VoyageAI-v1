@@ -11,12 +11,32 @@ import { CalendarWidget } from "@/components/dashboard/CalendarWidget";
 import { TravelDNAOnboardingModal } from "@/components/dashboard/TravelDNAOnboardingModal";
 import { AICommandPalette } from "@/components/dashboard/AICommandPalette";
 import { useTrips } from "@/hooks/useTrips";
+import { NotificationBell } from "@/components/dashboard/NotificationBell";
 import type { Trip } from "@/lib/api";
+import { useMemo } from "react";
 
 export default function DashboardPage() {
     const { trips, isLoading, setTrips } = useTrips();
-    const [isModalOpen,        setIsModalOpen]        = useState(false);
+    const [isModalOpen, setIsModalOpen] = useState(false);
     const [showOnboardingModal, setShowOnboardingModal] = useState(false);
+    const [searchQuery, setSearchQuery] = useState("");
+    const [debouncedQuery, setDebouncedQuery] = useState("");
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedQuery(searchQuery);
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [searchQuery]);
+
+    const filteredTrips = useMemo(() => {
+        if (!debouncedQuery.trim()) return trips;
+        const q = debouncedQuery.toLowerCase();
+        return trips.filter(
+            t => t.title.toLowerCase().includes(q) ||
+                t.destination.toLowerCase().includes(q)
+        );
+    }, [trips, debouncedQuery]);
 
     useEffect(() => {
         fetch("/api/preferences")
@@ -29,8 +49,8 @@ export default function DashboardPage() {
             .catch(console.error);
     }, []);
 
-    const totalBudget    = trips.reduce((s, t) => s + (t.budget?.total ?? 0), 0);
-    const totalSpent     = trips.reduce((s, t) => s + (t.budget?.spent ?? 0), 0);
+    const totalBudget = trips.reduce((s, t) => s + (t.budget?.total ?? 0), 0);
+    const totalSpent = trips.reduce((s, t) => s + (t.budget?.spent ?? 0), 0);
     const budgetCurrency = trips[0]?.budget?.currency ?? "USD";
 
     const handleTripCreated = (newTrip: Trip) =>
@@ -46,22 +66,12 @@ export default function DashboardPage() {
 
                 {/* ── Top bar ───────────────────────────────────────────────── */}
                 <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-2">
-                    <div className="flex items-center gap-2 overflow-x-auto pb-2 md:pb-0 hide-scrollbar scroll-smooth">
-                        <button className="flex items-center gap-2 bg-white/5 border border-white/10 px-4 py-2 rounded-full text-xs font-semibold text-zinc-300 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all whitespace-nowrap shrink-0">
-                            <span className="text-lg">🏕️</span> Experiences
-                        </button>
-                        <button className="flex items-center gap-2 bg-white/5 border border-white/10 px-4 py-2 rounded-full text-xs font-semibold text-zinc-300 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all whitespace-nowrap shrink-0">
-                            <span className="text-lg">✈️</span> Trips
-                        </button>
-                        <button className="flex items-center gap-2 bg-white/5 border border-white/10 px-4 py-2 rounded-full text-xs font-semibold text-zinc-300 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all whitespace-nowrap shrink-0">
-                            <span className="text-lg">🛡️</span> Services
-                        </button>
-                    </div>
-
                     <div className="flex items-center gap-4 flex-1 justify-end">
                         <div className="relative max-w-xs w-full ml-8 hidden lg:block">
                             <input
                                 type="text"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
                                 placeholder="Search destinations..."
                                 className="w-full bg-white/5 border border-white/10 text-sm text-white placeholder-zinc-500 rounded-full py-2.5 px-12 focus:outline-none focus:border-[#10B981]/40 focus:ring-1 focus:ring-[#10B981]/40 transition-all font-medium"
                             />
@@ -70,9 +80,7 @@ export default function DashboardPage() {
                             </svg>
                         </div>
                         <div className="flex items-center gap-3">
-                            <button className="w-11 h-11 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition-colors">
-                                <Bell className="w-5 h-5" />
-                            </button>
+                            <NotificationBell />
                             <button
                                 onClick={() => setIsModalOpen(true)}
                                 className="w-11 h-11 rounded-full bg-[#10B981]/10 border border-[#10B981]/30 flex items-center justify-center text-[#10B981] hover:bg-[#10B981]/20 transition-all shadow-[0_0_12px_rgba(16,185,129,0.15)] group"
@@ -85,10 +93,11 @@ export default function DashboardPage() {
 
                 {/* ── Row 1: Active trips — full width ─────────────────────── */}
                 <UpcomingTripsGrid
-                    trips={trips}
+                    trips={filteredTrips}
                     isLoading={isLoading}
                     onTripsChange={setTrips}
                     onNewTripClick={() => setIsModalOpen(true)}
+                    isSearching={debouncedQuery.trim().length > 0}
                 />
 
                 {/* ── Row 2: Trip Intelligence + Budget ────────────────────── */}
