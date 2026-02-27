@@ -21,6 +21,7 @@ import { runWithRequestContext } from "@/lib/requestContext";
 import { checkRateLimit } from "@/lib/rateLimiter";
 import { unauthorizedResponse } from "@/lib/api/response";
 import { prisma } from "@/lib/prisma";
+import { getTravelPreferenceContext } from "@/lib/ai/contextStore";
 
 // Extend base schema: tripId is required for persistence.
 const ChatRouteSchema = ChatRequestSchema.extend({
@@ -49,7 +50,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         try {
             await checkRateLimit(`ai:${auth.user.sub}:chat`);
 
-            const result = await chatCompanion({ ...chatPayload, tripId });
+            const dnaContext = await getTravelPreferenceContext(auth.user.sub);
+            const result = await chatCompanion({ ...chatPayload, tripId }, dnaContext || undefined);
 
             await prisma.$transaction([
                 ...(latestUserMessage

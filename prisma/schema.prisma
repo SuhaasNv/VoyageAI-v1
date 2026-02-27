@@ -29,28 +29,29 @@ enum TokenFamily {
 // ─────────────────────────────────────────
 
 model User {
-  id             String    @id @default(cuid())
-  email          String    @unique
-  passwordHash   String?   // null for OAuth-only users (e.g. Google)
-  name           String?
-  image          String?   // profile picture URL (e.g. from Google)
-  role           Role      @default(USER)
-  emailVerified  Boolean   @default(false)
-  isActive       Boolean   @default(true)
+  id            String  @id @default(cuid())
+  email         String  @unique
+  passwordHash  String? // null for OAuth-only users (e.g. Google)
+  name          String?
+  image         String? // profile picture URL (e.g. from Google)
+  role          Role    @default(USER)
+  emailVerified Boolean @default(false)
+  isActive      Boolean @default(true)
 
   // OAuth provider (e.g. "google") – when set, passwordHash is null
-  provider       String?
-  providerId     String?   // provider's unique user id (e.g. Google sub)
+  provider   String?
+  providerId String? // provider's unique user id (e.g. Google sub)
 
-  hasOnboarded   Boolean   @default(false)
-  preferences    Json?     // travel preferences from onboarding
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  lastLoginAt    DateTime?
+  hasOnboarded Boolean   @default(false)
+  preferences  Json? // travel preferences from onboarding
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  lastLoginAt  DateTime?
 
-  refreshTokens  RefreshToken[]
-  auditLogs      AuditLog[]
-  trips          Trip[]
+  refreshTokens    RefreshToken[]
+  auditLogs        AuditLog[]
+  trips            Trip[]
+  travelPreference TravelPreference?
 
   @@index([email])
   @@index([provider, providerId])
@@ -62,19 +63,19 @@ model User {
 // ─────────────────────────────────────────
 
 model RefreshToken {
-  id          String      @id @default(cuid())
-  tokenHash   String      @unique          // SHA-256 of the raw token (never store raw)
-  userId      String
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String @id @default(cuid())
+  tokenHash String @unique // SHA-256 of the raw token (never store raw)
+  userId    String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  family      String                       // rotation family – revoke on reuse
-  isRevoked   Boolean     @default(false)
-  expiresAt   DateTime
-  createdAt   DateTime    @default(now())
-  replacedBy  String?                      // cuid of the token that superseded this one
+  family     String // rotation family – revoke on reuse
+  isRevoked  Boolean  @default(false)
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  replacedBy String? // cuid of the token that superseded this one
 
-  userAgent   String?
-  ipAddress   String?
+  userAgent String?
+  ipAddress String?
 
   @@index([userId])
   @@index([family])
@@ -89,7 +90,7 @@ model AuditLog {
   id        String   @id @default(cuid())
   userId    String?
   user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  action    String                         // e.g. LOGIN, LOGOUT, REFRESH, REGISTER
+  action    String // e.g. LOGIN, LOGOUT, REFRESH, REGISTER
   ipAddress String?
   userAgent String?
   metadata  Json?
@@ -106,7 +107,7 @@ model AuditLog {
 
 model RateLimitEntry {
   id        String   @id @default(cuid())
-  key       String   @unique              // e.g. "ratelimit:login:ip:1.2.3.4"
+  key       String   @unique // e.g. "ratelimit:login:ip:1.2.3.4"
   count     Int      @default(0)
   resetAt   DateTime
   createdAt DateTime @default(now())
@@ -144,17 +145,17 @@ model AiUsageLog {
 // ─────────────────────────────────────────
 
 model Trip {
-  id             String       @id @default(cuid())
+  id             String   @id @default(cuid())
   userId         String
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   destination    String
   startDate      DateTime
   endDate        DateTime
-  budgetTotal    Float        @default(0)
-  budgetCurrency String       @default("USD")
-  style          String?      // relaxed | creative | exciting | luxury | budget
+  budgetTotal    Float    @default(0)
+  budgetCurrency String   @default("USD")
+  style          String? // relaxed | creative | exciting | luxury | budget
   imageUrl       String?
-  createdAt      DateTime     @default(now())
+  createdAt      DateTime @default(now())
 
   itineraries  Itinerary[]
   chatMessages ChatMessage[]
@@ -192,4 +193,19 @@ model ChatMessage {
 
   @@index([tripId])
   @@map("chat_messages")
+}
+
+// ─────────────────────────────────────────
+//  TravelPreference
+// ─────────────────────────────────────────
+
+model TravelPreference {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  data      Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("travel_preferences")
 }
