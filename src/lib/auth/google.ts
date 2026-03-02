@@ -94,7 +94,7 @@ export async function exchangeCodeForUserInfo(
 
     // Since we just fetched this from Google's secure token endpoint, 
     // we can safely decode it without full signature verification to save time.
-    const decoded = jwt.decode(idToken) as any;
+    const decoded = jwt.decode(idToken) as { sub?: string; email?: string; name?: string; picture?: string; email_verified?: boolean } | null;
 
     if (!decoded || !decoded.sub || !decoded.email) {
         logError("[google] Invalid id_token payload", { idToken, decoded });

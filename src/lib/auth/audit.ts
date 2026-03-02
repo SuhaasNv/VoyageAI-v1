@@ -35,7 +35,7 @@ export async function writeAuditLog(opts: AuditOptions): Promise<void> {
                 userId: opts.userId,
                 ipAddress: opts.ipAddress,
                 userAgent: opts.userAgent,
-                metadata: opts.metadata as any,
+                metadata: opts.metadata as unknown as object,
             },
         });
     } catch (err) {

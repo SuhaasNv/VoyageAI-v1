@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
             return errorResponse("UNAUTHORIZED", "You must be signed in to update preferences", 401);
         }
 
-        let body: any;
+        let body: Record<string, unknown>;
         try {
             body = await req.json();
         } catch {

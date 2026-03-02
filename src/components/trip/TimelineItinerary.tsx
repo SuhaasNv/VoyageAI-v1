@@ -5,6 +5,7 @@ import {
     motion,
     AnimatePresence,
     useReducedMotion,
+    type Variants,
 } from "framer-motion";
 import {
     DndContext,
@@ -48,7 +49,7 @@ interface TimelineItineraryProps {
 
 // ─── Motion Variants ─────────────────────────────────────────────────────────
 
-const dayContainerVariants = {
+const dayContainerVariants: Variants = {
     hidden: { opacity: 0 },
     visible: {
         opacity: 1,
@@ -60,7 +61,7 @@ const dayContainerVariants = {
     },
 };
 
-const timelineLineVariants = {
+const timelineLineVariants: Variants = {
     hidden: { scaleY: 0, opacity: 0 },
     visible: {
         scaleY: 1,
@@ -80,7 +81,7 @@ const cardListVariants = {
     },
 };
 
-const cardVariants = {
+const cardVariants: Variants = {
     hidden: { opacity: 0, y: 14 },
     visible: {
         opacity: 1,
@@ -116,7 +117,7 @@ interface SortableCardProps {
     onFocus?: (event: ItineraryEvent) => void;
 }
 
-function SortableCard({ event, index, isFirst, isMobile, onFocus }: SortableCardProps) {
+function SortableCard({ event, index: _index, isFirst, isMobile, onFocus }: SortableCardProps) {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
         useSortable({ id: event.id });
 
@@ -206,6 +207,7 @@ interface DayViewProps {
 function DayView({ day, isMobile, onActivityFocus, onEventsReorder }: DayViewProps) {
     const [events, setEvents] = useState<ItineraryEvent[]>(day.events);
     const eventsRef = useRef(events);
+    // eslint-disable-next-line react-hooks/refs
     eventsRef.current = events;
 
     useEffect(() => {

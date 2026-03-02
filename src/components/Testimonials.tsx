@@ -63,7 +63,7 @@ export function Testimonials() {
                             </div>
 
                             <p className="text-xs text-slate-400 leading-relaxed">
-                                "Our AI Travel Planner made my honeymoon trip flawless! It even adjusted our schedule when it started raining."
+                                &ldquo;Our AI Travel Planner made my honeymoon trip flawless! It even adjusted our schedule when it started raining.&rdquo;
                             </p>
                         </MotionDiv>
                     </div>
@@ -90,7 +90,7 @@ export function Testimonials() {
                             </div>
 
                             <p className="text-xs text-slate-400 leading-relaxed">
-                                "Planning a family trip can be stressful, but the AI made it effortless. It created a balanced plan with kid-friendly activities and enough downtime."
+                                &ldquo;Planning a family trip can be stressful, but the AI made it effortless. It created a balanced plan with kid-friendly activities and enough downtime.&rdquo;
                             </p>
 
                             <div className="mt-auto">
@@ -124,7 +124,7 @@ export function Testimonials() {
                             </div>
 
                             <p className="text-xs text-slate-400 leading-relaxed">
-                                "As a solo traveler, I was truly amazed by how the AI uncovered hidden coffee shops, charming local spots, and unique experiences I would have never found on my own."
+                                &ldquo;As a solo traveler, I was truly amazed by how the AI uncovered hidden coffee shops, charming local spots, and unique experiences I would have never found on my own.&rdquo;
                             </p>
 
                             <div className="flex gap-2 justify-center mt-2">

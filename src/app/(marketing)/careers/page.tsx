@@ -51,7 +51,7 @@ export default function CareersPage() {
                 </div>
                 <div className="mt-10 p-6 rounded-xl bg-white/[0.03] border border-white/5">
                     <p className="text-slate-300 mb-4">
-                        Don&apos;t see a role that fits? We're always interested in meeting talented people.
+                        Don&apos;t see a role that fits? We&apos;re always interested in meeting talented people.
                     </p>
                     <Link
                         href="/contact"

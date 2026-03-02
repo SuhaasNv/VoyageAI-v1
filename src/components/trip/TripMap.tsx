@@ -154,7 +154,7 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
                 className: "voyage-popup pointer-events-none",
                 anchor: "bottom",
                 focusAfterOpen: false,
-                // @ts-ignore
+                // @ts-expect-error — autoPan is not in mapbox-gl Popup type definitions
                 autoPan: false,
             }).setHTML(`
                 <div style="pointer-events:none; padding:8px 10px;font-family:ui-sans-serif,system-ui;background:#0E1318;border:1px solid rgba(255,255,255,0.08);border-radius:10px;color:#fff;box-shadow:0 8px 24px rgba(0,0,0,0.5);">
@@ -167,12 +167,12 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
                 .addTo(map);
 
             el.addEventListener("mouseenter", () => {
-                const inner = (el as any)._inner;
+                const inner = (el as HTMLElement & { _inner?: HTMLElement })._inner;
                 if (inner) inner.style.transform = "scale(1.2)";
                 if (!popup.isOpen()) popup.setLngLat([pt.lng, pt.lat]).addTo(map);
             });
             el.addEventListener("mouseleave", () => {
-                const inner = (el as any)._inner;
+                const inner = (el as HTMLElement & { _inner?: HTMLElement })._inner;
                 if (inner) inner.style.transform = "scale(1)";
                 if (popup.isOpen()) popup.remove();
             });
@@ -272,8 +272,9 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
         }
 
         if (cameraTimeoutRef.current) clearTimeout(cameraTimeoutRef.current);
-        if (!prefersReducedMotion && !(map as any)._introDone) {
-            (map as any)._introDone = true;
+        type MapWithIntro = typeof map & { _introDone?: boolean };
+        if (!prefersReducedMotion && !(map as MapWithIntro)._introDone) {
+            (map as MapWithIntro)._introDone = true;
             cameraTimeoutRef.current = setTimeout(() => {
                 if (!map) return;
                 const isMobile = window.innerWidth < 768;

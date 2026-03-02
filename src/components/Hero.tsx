@@ -70,6 +70,15 @@ function AILandingPrompt() {
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const submittingRef = useRef(false);
 
+    // ── Session identity ───────────────────────────────────────────────────
+    // Stable UUID for the lifetime of this page visit. Sent with every landing
+    // request so the server can maintain short-term conversational memory
+    // (follow-up questions reference the same session context).
+    const sessionIdRef = useRef<string>("");
+    useEffect(() => {
+        sessionIdRef.current = crypto.randomUUID();
+    }, []);
+
     // ── Typewriter engine refs ─────────────────────────────────────────────
     // incomingRef accumulates every character received from the server.
     // displayedLenRef tracks how many of those chars are currently on screen.
@@ -209,7 +218,10 @@ function AILandingPrompt() {
                         ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
                         ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
                     },
-                    body: JSON.stringify({ prompt: finalPrompt.slice(0, 500) }),
+                    body: JSON.stringify({
+                        prompt: finalPrompt.slice(0, 500),
+                        sessionId: sessionIdRef.current,
+                    }),
                 });
 
                 if (!res.ok && res.status !== 200) {

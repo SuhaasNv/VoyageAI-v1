@@ -28,7 +28,7 @@ export async function POST(
                 prisma.itinerary.create({
                     data: {
                         tripId: id,
-                        rawJson: updatedItinerary as any,
+                        rawJson: updatedItinerary as unknown as object,
                     },
                 }),
                 prisma.trip.update({

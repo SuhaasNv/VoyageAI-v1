@@ -22,7 +22,7 @@ import {
 } from "@/lib/ai/cache";
 import { generateSuggestionsForTrip } from "@/services/ai/dashboard-suggestions.service";
 import { rankSuggestions } from "@/lib/ai/travelDNARules";
-import { generateSuggestions } from "@/lib/ai/destinationSuggestions";
+import { generateSuggestions, type DestinationSuggestion } from "@/lib/ai/destinationSuggestions";
 
 interface TripSuggestion {
     tripId: string;
@@ -94,7 +94,7 @@ export async function GET(req: NextRequest) {
                 select: { destination: true },
             });
 
-            let destinations = [];
+            let destinations: DestinationSuggestion[] = [];
             try {
                 destinations = await generateSuggestions(allTrips, dnaData, 5);
             } catch (err) {

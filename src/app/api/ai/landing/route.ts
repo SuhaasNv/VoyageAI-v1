@@ -29,6 +29,7 @@ import { serializeTrip } from "@/lib/services/trips";
 import { logInfo, logError } from "@/lib/logger";
 import { generateItinerary } from "@/services/ai/itinerary.service";
 import type { Itinerary, ItineraryDay } from "@/lib/ai/schemas";
+import { updateMemory, buildMemoryContext } from "@/lib/ai/memory";
 
 export const runtime = "nodejs";
 
@@ -169,15 +170,26 @@ export async function POST(req: NextRequest) {
 
         // ── Parse body ────────────────────────────────────────────────────────
         let rawPrompt: string;
+        let rawSessionId: string | undefined;
         try {
             const body = await req.json();
             rawPrompt = typeof body?.prompt === "string" ? body.prompt : "";
+            // Optional client-supplied session key (stable UUID per page visit).
+            // Falls back to IP-scoped key when absent.
+            rawSessionId =
+                typeof body?.sessionId === "string" && body.sessionId.length > 0
+                    ? body.sessionId.slice(0, 64)
+                    : undefined;
         } catch {
             return NextResponse.json(
                 { success: false, error: { code: "BAD_REQUEST", message: "Request body must be valid JSON." } },
                 { status: 400 }
             );
         }
+
+        // Session identifier: client-supplied UUID preferred over IP fallback.
+        // IP fallback is good enough for dev/demo; in production the client always sends sessionId.
+        const sessionId = rawSessionId ?? `ip:${ip}`;
 
         // ── Sanitize ──────────────────────────────────────────────────────────
         const prompt = sanitizePrompt(rawPrompt);
@@ -198,8 +210,10 @@ export async function POST(req: NextRequest) {
         // ── Intent: CREATE_TRIP ───────────────────────────────────────────────
         if (intent === "CREATE_TRIP") {
             if (!auth) {
-                // Unauthenticated: stream a capped itinerary preview
-                return buildPreviewStream(req, prompt);
+                // Unauthenticated: stream a capped itinerary preview.
+                // Record the user turn now; the preview stream saves the assistant turn.
+                updateMemory(sessionId, "user", prompt);
+                return buildPreviewStream(req, prompt, sessionId);
             }
 
             // Authenticated — extract trip params and create
@@ -248,6 +262,14 @@ Text: ${prompt}`;
                     },
                 });
 
+                // Record the completed exchange so follow-up questions carry context.
+                updateMemory(sessionId, "user", prompt);
+                updateMemory(
+                    sessionId,
+                    "assistant",
+                    `Trip created for ${extracted.destination} (${extracted.startDate} to ${extracted.endDate}).`
+                );
+
                 return NextResponse.json(
                     { success: true, data: { action: "redirect", tripId: trip.id, trip: serializeTrip(trip) } },
                     { status: 201 }
@@ -274,6 +296,10 @@ Text: ${prompt}`;
         }
 
         // ── Intent: QUESTION → streaming text response ────────────────────────
+        // Capture prior context BEFORE recording the new user turn so the
+        // injected block only contains previous exchanges, not the current one.
+        const memCtx = buildMemoryContext(sessionId);
+
         const encoder = new TextEncoder();
         const abort = new AbortController();
         const generationTimeout = setTimeout(() => abort.abort(), GENERATION_TIMEOUT_MS);
@@ -283,6 +309,9 @@ Text: ${prompt}`;
             abort.abort();
             clearTimeout(generationTimeout);
         });
+
+        // Accumulate the full response so we can save it to memory after streaming.
+        let accumulated = "";
 
         const stream = new ReadableStream({
             async start(controller) {
@@ -298,40 +327,59 @@ Text: ${prompt}`;
                             generationConfig: { temperature: 0.7, maxOutputTokens: 800 },
                         });
 
-                        const fullPrompt = `System: ${TRAVEL_QA_SYSTEM}\n\nUser: ${prompt}`;
+                        // Prepend session context when available so the model can
+                        // reference what was discussed earlier in the same session.
+                        const fullPrompt =
+                            `System: ${TRAVEL_QA_SYSTEM}` +
+                            (memCtx ? `\n\n${memCtx}` : "") +
+                            `\n\nUser: ${prompt}`;
                         const result = await model.generateContentStream(fullPrompt);
 
                         for await (const chunk of result.stream) {
                             if (abort.signal.aborted) break;
                             const text = chunk.text();
-                            if (text) controller.enqueue(encoder.encode(text));
+                            if (text) {
+                                accumulated += text;
+                                controller.enqueue(encoder.encode(text));
+                            }
                         }
                     } else if (provider === "mock") {
                         // ── Mock streaming (dev/CI) ───────────────────────────
                         const mockText = buildMockQAResponse(prompt);
                         for (let i = 0; i < mockText.length; i++) {
                             if (abort.signal.aborted) break;
+                            accumulated += mockText[i];
                             controller.enqueue(encoder.encode(mockText[i]));
                             await sleep(12);
                         }
                     } else {
                         // ── Groq / other non-streaming provider ───────────────
-                        // Obtain full response then simulate chunked delivery
                         const client = getLLMClient();
                         const response = await executeWithRetry(
                             client,
                             [
-                                { role: "system", content: TRAVEL_QA_SYSTEM },
+                                {
+                                    role: "system",
+                                    content:
+                                        TRAVEL_QA_SYSTEM + (memCtx ? `\n\n${memCtx}` : ""),
+                                },
                                 { role: "user", content: prompt },
                             ],
                             { temperature: 0.7, maxTokens: 600, timeoutMs: 20_000 }
                         );
+                        accumulated = response.content;
                         for (let i = 0; i < response.content.length; i++) {
                             if (abort.signal.aborted) break;
                             controller.enqueue(encoder.encode(response.content[i]));
                             // Flush every 25 chars to keep streaming feel
                             if (i % 25 === 0) await sleep(0);
                         }
+                    }
+
+                    // Persist both turns only on successful, non-aborted generation.
+                    if (!abort.signal.aborted && accumulated) {
+                        updateMemory(sessionId, "user", prompt);
+                        updateMemory(sessionId, "assistant", accumulated);
                     }
 
                     controller.close();
@@ -448,7 +496,7 @@ function formatPreviewMarkdown(itinerary: Itinerary): string {
  *  6. Appends CTA text
  *  7. Ends with \x00ACTION:AUTH_REQUIRED_CREATE sentinel
  */
-async function buildPreviewStream(req: NextRequest, prompt: string): Promise<Response> {
+async function buildPreviewStream(req: NextRequest, prompt: string, sessionId: string): Promise<Response> {
     const encoder = new TextEncoder();
     const abort = new AbortController();
     const timeout = setTimeout(() => abort.abort(), PREVIEW_TIMEOUT_MS);
@@ -510,6 +558,8 @@ Text: ${prompt}`;
                         flexibility: "flexible",
                     },
                     groupSize: 1,
+                    mustSeeAttractions: [],
+                    avoidAttractions: [],
                 });
 
                 if (abort.signal.aborted) { controller.close(); return; }
@@ -528,6 +578,14 @@ Text: ${prompt}`;
                 }
 
                 if (abort.signal.aborted) { controller.close(); return; }
+
+                // Save a compact assistant turn so follow-up questions know
+                // which destination was previewed.
+                updateMemory(
+                    sessionId,
+                    "assistant",
+                    `Itinerary preview: ${extracted.destination}, ${extracted.startDate} to ${previewEndDate}. ${capped.days.length} day(s) shown.`
+                );
 
                 // ── Step 5: CTA text + action sentinel ────────────────────────
                 emit(

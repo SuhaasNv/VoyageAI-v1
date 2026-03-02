@@ -29,6 +29,7 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
     const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setMounted(true);
     }, []);
 
@@ -114,7 +115,7 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
                 initialMessages={initialMessages}
                 currentDay={selectedDay}
                 onItineraryRefresh={handleItineraryRefresh}
-                onMapFocus={(lat, lng, title) => setFocusedActivity({ lat, lng, title } as any)}
+                onMapFocus={(lat, lng, title) => setFocusedActivity({ lat, lng, title } as unknown as ItineraryEvent)}
             />
         </div>
     );

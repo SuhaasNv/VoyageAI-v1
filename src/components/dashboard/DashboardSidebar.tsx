@@ -50,7 +50,9 @@ export function DashboardSidebar() {
 
     useEffect(() => {
         const stored = localStorage.getItem(STORAGE_KEY);
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         if (stored === "true") setCollapsed(true);
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setHydrated(true);
     }, []);
 
@@ -119,7 +121,7 @@ export function DashboardSidebar() {
                         href="/dashboard/settings"
                         icon={<Settings className="w-4 h-4" />}
                         label="Settings"
-                        active={pathname.startsWith("/dashboard/settings")}
+                        active={pathname?.startsWith("/dashboard/settings") ?? false}
                         collapsed={collapsed}
                     />
                 </nav>
