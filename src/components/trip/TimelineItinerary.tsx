@@ -49,16 +49,22 @@ interface TimelineItineraryProps {
 
 // ─── Motion Variants ─────────────────────────────────────────────────────────
 
+// dir > 0 = navigating forward (higher day), dir < 0 = backward
 const dayContainerVariants: Variants = {
-    hidden: { opacity: 0 },
+    hidden: (dir: number = 0) => ({
+        opacity: 0,
+        x: dir * 40,
+    }),
     visible: {
         opacity: 1,
-        transition: { duration: 0.15, when: "beforeChildren" },
+        x: 0,
+        transition: { duration: 0.24, ease: [0.22, 1, 0.36, 1], when: "beforeChildren" },
     },
-    exit: {
+    exit: (dir: number = 0) => ({
         opacity: 0,
-        transition: { duration: 0.18, ease: "easeIn" },
-    },
+        x: dir * -28,
+        transition: { duration: 0.16, ease: "easeIn" },
+    }),
 };
 
 const timelineLineVariants: Variants = {
@@ -70,23 +76,25 @@ const timelineLineVariants: Variants = {
     },
 };
 
+// Tighter stagger — snappier on long days
 const cardListVariants = {
     hidden: { opacity: 0 },
     visible: {
         opacity: 1,
         transition: {
-            delayChildren: 0.2,
-            staggerChildren: 0.18,
+            delayChildren: 0.05,
+            staggerChildren: 0.07,
         },
     },
 };
 
 const cardVariants: Variants = {
-    hidden: { opacity: 0, y: 14 },
+    hidden: { opacity: 0, y: 10, x: -8 },
     visible: {
         opacity: 1,
         y: 0,
-        transition: { duration: 0.38, ease: [0.22, 1, 0.36, 1] },
+        x: 0,
+        transition: { duration: 0.3, ease: [0.22, 1, 0.36, 1] },
     },
 };
 
@@ -114,10 +122,11 @@ interface SortableCardProps {
     index: number;
     isFirst: boolean;
     isMobile: boolean;
+    isActive: boolean;
     onFocus?: (event: ItineraryEvent) => void;
 }
 
-function SortableCard({ event, index: _index, isFirst, isMobile, onFocus }: SortableCardProps) {
+function SortableCard({ event, index: _index, isFirst, isMobile, isActive, onFocus }: SortableCardProps) {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
         useSortable({ id: event.id });
 
@@ -136,14 +145,15 @@ function SortableCard({ event, index: _index, isFirst, isMobile, onFocus }: Sort
             layoutId={event.id}
             className="relative flex items-center gap-3 group"
             whileHover={isMobile ? undefined : { y: -2 }}
+            whileTap={{ scale: 0.985 }}
         >
             {/* Timeline node */}
             <div
-                className={`flex items-center justify-center w-8 h-8 rounded-full border shadow shrink-0 z-10 transition-transform duration-200 ${
+                className={`flex items-center justify-center w-8 h-8 rounded-full border shadow shrink-0 z-10 transition-all duration-200 ${
                     isFirst
                         ? "bg-[#10B981]/20 text-[#10B981] border-[#10B981]/40 shadow-[0_0_15px_rgba(16,185,129,0.3)] scale-110"
                         : getEventIconColor(event.type)
-                }`}
+                } ${isActive && !isFirst ? "scale-110 shadow-[0_0_12px_rgba(16,185,129,0.25)]" : ""}`}
             >
                 {isFirst ? <CheckCircle2 className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
             </div>
@@ -155,7 +165,8 @@ function SortableCard({ event, index: _index, isFirst, isMobile, onFocus }: Sort
                     isFirst
                         ? "border-[#10B981]/20 bg-[#10B981]/5"
                         : "bg-white/[0.02] border-white/5 hover:border-white/15 hover:bg-white/[0.04]"
-                } ${isDragging ? "opacity-60 scale-[0.99] shadow-2xl border-white/20 bg-white/[0.06] cursor-grabbing" : ""}`}
+                } ${isDragging ? "opacity-60 scale-[0.99] shadow-2xl border-white/20 bg-white/[0.06] cursor-grabbing" : ""
+                } ${isActive ? "ring-1 ring-[#10B981]/35 shadow-[0_0_18px_rgba(16,185,129,0.12)]" : ""}`}
             >
                 <div className="flex items-center justify-between mb-2">
                     <span
@@ -199,20 +210,30 @@ function SortableCard({ event, index: _index, isFirst, isMobile, onFocus }: Sort
 
 interface DayViewProps {
     day: ItineraryDay;
+    direction: number;
     isMobile: boolean;
     onActivityFocus?: (event: ItineraryEvent) => void;
     onEventsReorder?: (dayNumber: number, orderedIds: string[]) => void;
 }
 
-function DayView({ day, isMobile, onActivityFocus, onEventsReorder }: DayViewProps) {
+function DayView({ day, direction, isMobile, onActivityFocus, onEventsReorder }: DayViewProps) {
     const [events, setEvents] = useState<ItineraryEvent[]>(day.events);
     const eventsRef = useRef(events);
     // eslint-disable-next-line react-hooks/refs
     eventsRef.current = events;
 
+    // Track which card was last clicked for map-focus visual feedback.
+    const [activeCardId, setActiveCardId] = useState<string | null>(null);
+    const activeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
     useEffect(() => {
         setEvents(day.events);
     }, [day.events]);
+
+    // Clear active-card timer on unmount (day switch).
+    useEffect(() => {
+        return () => { if (activeTimerRef.current) clearTimeout(activeTimerRef.current); };
+    }, []);
 
     const sensors = useSensors(
         useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -235,9 +256,18 @@ function DayView({ day, isMobile, onActivityFocus, onEventsReorder }: DayViewPro
         [day.day, onEventsReorder]
     );
 
+    // Wraps the upstream focus callback to momentarily highlight the card.
+    const handleCardFocus = useCallback((event: ItineraryEvent) => {
+        if (activeTimerRef.current) clearTimeout(activeTimerRef.current);
+        setActiveCardId(event.id);
+        onActivityFocus?.(event);
+        activeTimerRef.current = setTimeout(() => setActiveCardId(null), 1100);
+    }, [onActivityFocus]);
+
     return (
         <motion.div
             key={day.day}
+            custom={direction}
             variants={dayContainerVariants}
             initial="hidden"
             animate="visible"
@@ -300,7 +330,8 @@ function DayView({ day, isMobile, onActivityFocus, onEventsReorder }: DayViewPro
                                     index={i}
                                     isFirst={i === 0}
                                     isMobile={isMobile}
-                                    onFocus={onActivityFocus}
+                                    isActive={activeCardId === event.id}
+                                    onFocus={handleCardFocus}
                                 />
                             ))}
                         </motion.div>
@@ -315,6 +346,7 @@ function DayView({ day, isMobile, onActivityFocus, onEventsReorder }: DayViewPro
 
 export function TimelineItinerary({ trip, onRefresh, onDayChange, onActivityFocus, onEventsReorder }: TimelineItineraryProps) {
     const [activeDay, setActiveDay] = useState(1);
+    const [direction, setDirection] = useState(0); // +1 = forward, -1 = backward
     const [itinerary, setItinerary] = useState<ItineraryDay[]>(trip.itinerary);
     const [isGenerating, setIsGenerating] = useState(false);
     const [genError, setGenError] = useState<string | null>(null);
@@ -341,6 +373,7 @@ export function TimelineItinerary({ trip, onRefresh, onDayChange, onActivityFocu
     const handleDaySwitch = useCallback(
         (day: number) => {
             if (day === activeDay) return;
+            setDirection(day > activeDay ? 1 : -1);
             setActiveDay(day);
             onDayChange?.(day);
             // Scroll content area back to top on day switch
@@ -531,11 +564,12 @@ export function TimelineItinerary({ trip, onRefresh, onDayChange, onActivityFocu
 
             {/* Events */}
             <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 scroll-smooth z-10 hide-scrollbar">
-                <AnimatePresence mode="wait" initial={false}>
+                <AnimatePresence mode="wait" initial={false} custom={direction}>
                     {prefersReduced ? (
                         <div key={currentActiveDay}>
                             <DayView
                                 day={activeDayData}
+                                direction={0}
                                 isMobile={isMobile}
                                 onActivityFocus={onActivityFocus}
                                 onEventsReorder={onEventsReorder}
@@ -544,6 +578,7 @@ export function TimelineItinerary({ trip, onRefresh, onDayChange, onActivityFocu
                     ) : (
                         <DayView
                             key={currentActiveDay}
+                            direction={direction}
                             day={activeDayData}
                             isMobile={isMobile}
                             onActivityFocus={onActivityFocus}

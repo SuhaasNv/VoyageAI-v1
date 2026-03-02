@@ -20,6 +20,7 @@ import { calculateTravelScore, type TravelScoreResult } from "@/lib/analysis/tra
 import { generateTripExplanation } from "@/lib/analysis/explainTrip";
 
 import { Map as MapIcon, X, Sparkles, Loader2, CheckCircle2, Navigation2, Check, TriangleAlert, ChevronDown, WifiOff } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import { createPortal } from "react-dom";
 
 interface TripViewClientProps {
@@ -495,18 +496,30 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
                                     </div>
 
                                     {/* Expanded alert list */}
-                                    {riskExpanded && (
-                                        <div className="px-3 pb-2.5 space-y-1.5 border-t border-white/[0.06]">
-                                            {all.map((alert, i) => (
-                                                <div key={i} className="flex items-start gap-2 pt-1.5">
-                                                    <span className={`shrink-0 text-[8px] font-bold px-1.5 py-0.5 rounded mt-px ${sevBadge(alert.severity)}`}>
-                                                        {alert.severity.toUpperCase()}
-                                                    </span>
-                                                    <span className="text-white/60 leading-relaxed">{alert.message}</span>
+                                    <AnimatePresence initial={false}>
+                                        {riskExpanded && (
+                                            <motion.div
+                                                key="risk-detail"
+                                                initial={{ height: 0, opacity: 0 }}
+                                                animate={{ height: "auto", opacity: 1 }}
+                                                exit={{ height: 0, opacity: 0 }}
+                                                transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                                                style={{ overflow: "hidden" }}
+                                                className="border-t border-white/[0.06]"
+                                            >
+                                                <div className="px-3 pb-2.5 space-y-1.5">
+                                                    {all.map((alert, i) => (
+                                                        <div key={i} className="flex items-start gap-2 pt-1.5">
+                                                            <span className={`shrink-0 text-[8px] font-bold px-1.5 py-0.5 rounded mt-px ${sevBadge(alert.severity)}`}>
+                                                                {alert.severity.toUpperCase()}
+                                                            </span>
+                                                            <span className="text-white/60 leading-relaxed">{alert.message}</span>
+                                                        </div>
+                                                    ))}
                                                 </div>
-                                            ))}
-                                        </div>
-                                    )}
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
                                 </div>
                             );
                         })()}
@@ -543,16 +556,27 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
                                     <ChevronDown className={`w-3.5 h-3.5 text-white/25 transition-transform duration-200 ${explainOpen ? "rotate-180" : ""}`} />
                                 </button>
 
-                                {explainOpen && explainBullets.length > 0 && (
-                                    <ul className="px-3 pb-3 space-y-1.5 border-t border-white/[0.06]">
-                                        {explainBullets.map((bullet, i) => (
-                                            <li key={i} className="flex items-start gap-2 pt-1.5">
-                                                <span className="shrink-0 text-indigo-400/60 mt-0.5 text-[10px]">•</span>
-                                                <span className="text-[11px] text-white/55 leading-relaxed">{bullet}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                )}
+                                <AnimatePresence initial={false}>
+                                    {explainOpen && explainBullets.length > 0 && (
+                                        <motion.div
+                                            key="explain-detail"
+                                            initial={{ height: 0, opacity: 0 }}
+                                            animate={{ height: "auto", opacity: 1 }}
+                                            exit={{ height: 0, opacity: 0 }}
+                                            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                                            style={{ overflow: "hidden" }}
+                                        >
+                                            <ul className="px-3 pb-3 space-y-1.5 border-t border-white/[0.06]">
+                                                {explainBullets.map((bullet, i) => (
+                                                    <li key={i} className="flex items-start gap-2 pt-1.5">
+                                                        <span className="shrink-0 text-indigo-400/60 mt-0.5 text-[10px]">•</span>
+                                                        <span className="text-[11px] text-white/55 leading-relaxed">{bullet}</span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
                             </div>
                         )}
                     </div>

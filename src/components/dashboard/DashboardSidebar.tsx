@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { Home, Settings, ChevronLeft, ChevronRight, LogOut } from "lucide-react";
+import { Home, Settings, ChevronLeft, ChevronRight, LogOut, ArrowLeftRight } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -115,6 +115,13 @@ export function DashboardSidebar() {
                         icon={<Home className="w-4 h-4" />}
                         label="Dashboard"
                         active={pathname === "/dashboard"}
+                        collapsed={collapsed}
+                    />
+                    <SidebarLink
+                        href="/dashboard/compare"
+                        icon={<ArrowLeftRight className="w-4 h-4" />}
+                        label="Compare Trips"
+                        active={pathname?.startsWith("/dashboard/compare") ?? false}
                         collapsed={collapsed}
                     />
                     <SidebarLink
