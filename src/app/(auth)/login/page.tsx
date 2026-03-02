@@ -65,7 +65,9 @@ export default function LoginPage() {
             }
 
             setAuth(json.data.user, json.data.accessToken);
-            router.replace("/dashboard");
+            const url = new URL(window.location.href);
+            const returnUrl = url.searchParams.get("returnUrl") || "/dashboard";
+            router.replace(returnUrl);
         } catch {
             setError("Network error. Please check your connection.");
         } finally {

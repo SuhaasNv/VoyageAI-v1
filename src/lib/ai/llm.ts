@@ -16,7 +16,8 @@
 import { AIErrorSchema, type AIError } from "./schemas";
 import { logLLMUsage } from "./usageLogger";
 import { getRequestId, getRequestPathname } from "@/lib/requestContext";
-import { logInfo } from "@/lib/logger";
+import { logInfo, logError } from "@/lib/logger";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // ─────────────────────────────────────────
 //  LLM Client Interface
@@ -644,13 +645,13 @@ class MockLLMClient implements LLMClient {
 }
 
 // ─────────────────────────────────────────
-//  Groq Client (llama-3.3-70b-versatile via OpenAI-compatible endpoint)
+//  Groq Client (llama-3.1-8b-instant via OpenAI-compatible endpoint)
 // ─────────────────────────────────────────
 
 class GroqLLMClient implements LLMClient {
     private readonly apiKey: string;
     private readonly baseUrl = "https://api.groq.com/openai/v1";
-    private readonly defaultModel = "llama-3.3-70b-versatile";
+    private readonly defaultModel = "llama-3.1-8b-instant";
 
     constructor(apiKey: string) {
         this.apiKey = apiKey;
@@ -744,11 +745,11 @@ class GroqLLMClient implements LLMClient {
 // ─────────────────────────────────────────
 
 class GeminiLLMClient implements LLMClient {
-    private readonly apiKey: string;
-    private readonly baseUrl = "https://generativelanguage.googleapis.com/v1beta";
+    private readonly genAI: GoogleGenerativeAI;
+    private readonly defaultModel = "gemini-2.5-flash";
 
     constructor(apiKey: string) {
-        this.apiKey = apiKey;
+        this.genAI = new GoogleGenerativeAI(apiKey);
     }
 
     async execute(
@@ -756,76 +757,83 @@ class GeminiLLMClient implements LLMClient {
         options: LLMRequestOptions = {}
     ): Promise<LLMResponse> {
         const startTime = Date.now();
-        const model = options.model ?? "gemini-1.5-flash";
-        const timeoutMs = options.timeoutMs ?? 25000;
-
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
-        // Convert OpenAI-style messages to Gemini format
-        const systemInstruction = messages.find((m) => m.role === "system")?.content;
-        const contents = messages
-            .filter((m) => m.role !== "system")
-            .map((m) => ({
-                role: m.role === "assistant" ? "model" : "user",
-                parts: [{ text: m.content }],
-            }));
+        const modelName = options.model ?? process.env.GEMINI_MODEL ?? this.defaultModel;
 
         try {
-            const response = await fetch(
-                `${this.baseUrl}/models/${model}:generateContent?key=${this.apiKey}`,
-                {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        contents,
-                        systemInstruction: systemInstruction
-                            ? { parts: [{ text: systemInstruction }] }
-                            : undefined,
-                        generationConfig: {
-                            temperature: options.temperature ?? 0.7,
-                            maxOutputTokens: options.maxTokens ?? 4096,
-                            responseMimeType:
-                                options.responseFormat === "json" ? "application/json" : "text/plain",
-                        },
+            const model = this.genAI.getGenerativeModel({
+                model: modelName,
+                generationConfig: {
+                    temperature: options.temperature ?? 0.7,
+                    maxOutputTokens: options.maxTokens ?? 4096,
+                    // Only set responseMimeType when JSON is requested; omitting it
+                    // avoids errors on models that don't support the field.
+                    ...(options.responseFormat === "json" && {
+                        responseMimeType: "application/json",
                     }),
-                    signal: controller.signal,
-                }
-            );
+                },
+            });
 
-            clearTimeout(timeout);
+            const systemInstruction = messages.find((m) => m.role === "system")?.content;
+            const userContent = messages
+                .filter((m) => m.role !== "system")
+                .map((m) => m.content)
+                .join("\n\n");
+            const prompt = systemInstruction
+                ? `System: ${systemInstruction}\n\nUser: ${userContent}`
+                : userContent;
 
-            if (!response.ok) {
-                throw new AIServiceError(
-                    "LLM_ERROR",
-                    `Gemini API error: ${response.status} ${response.statusText}`
-                );
+            // No Promise.race timeout — let the SDK surface its own network/deadline
+            // errors rather than racing against a hard timer that kills valid responses.
+            const result = await model.generateContent(prompt);
+            const text = result.response.text();
+
+            if (!text?.trim()) {
+                throw new AIServiceError("LLM_ERROR", "Gemini returned an empty response");
             }
-
-            const data = await response.json();
-            const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
 
             return {
                 content: text,
-                modelUsed: model,
-                promptTokens: data.usageMetadata?.promptTokenCount ?? 0,
-                completionTokens: data.usageMetadata?.candidatesTokenCount ?? 0,
-                totalTokens: data.usageMetadata?.totalTokenCount ?? 0,
+                modelUsed: modelName,
+                promptTokens: result.response.usageMetadata?.promptTokenCount ?? 0,
+                completionTokens: result.response.usageMetadata?.candidatesTokenCount ?? 0,
+                totalTokens: result.response.usageMetadata?.totalTokenCount ?? 0,
                 latencyMs: Date.now() - startTime,
                 provider: "gemini",
             };
         } catch (err) {
-            clearTimeout(timeout);
+            // Preserve already-classified errors (e.g. empty-response above).
             if (err instanceof AIServiceError) throw err;
-            if ((err as Error).name === "AbortError") {
+
+            const msg = (err as Error).message ?? "";
+
+            // Detect rate-limit (429) from Gemini's error message.
+            if (
+                msg.includes("429") ||
+                /quota|rate.?limit/i.test(msg)
+            ) {
                 throw new AIServiceError(
-                    "TIMEOUT",
-                    `Gemini request timed out after ${timeoutMs}ms`
+                    "RATE_LIMIT_EXCEEDED",
+                    `Gemini rate limit exceeded: ${msg}`,
+                    err
                 );
             }
+
+            // Detect auth failures (401/403 / bad API key).
+            if (
+                msg.includes("403") ||
+                msg.includes("401") ||
+                /api.?key|unauthorized|permission/i.test(msg)
+            ) {
+                throw new AIServiceError(
+                    "LLM_ERROR",
+                    `Gemini authentication error: ${msg}`,
+                    err
+                );
+            }
+
             throw new AIServiceError(
                 "LLM_ERROR",
-                `Gemini request failed: ${(err as Error).message}`,
+                `Gemini request failed: ${msg}`,
                 err
             );
         }
@@ -902,6 +910,7 @@ export async function executeWithRetry(
     const retryDelays = [1000, 2000, 4000]; // Exponential backoff
 
     let lastError: Error | null = null;
+    let shouldFallback = false;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
@@ -909,7 +918,7 @@ export async function executeWithRetry(
             logLLMUsage(response, {
                 requestId: getRequestId(),
                 endpoint: getRequestPathname() ?? undefined,
-            }).catch(() => {});
+            }).catch(() => { });
             return response;
         } catch (err) {
             lastError = err as Error;
@@ -920,9 +929,20 @@ export async function executeWithRetry(
                     "INVALID_INPUT",
                     "SCHEMA_VALIDATION_FAILED",
                     "CONTEXT_TOO_LARGE",
-                    "RATE_LIMIT_EXCEEDED",
                 ];
-                if (nonRetryable.includes(err.code)) throw err;
+                if (nonRetryable.includes(err.code)) {
+                    throw err; // these don't fallback since they are logic/data errors
+                }
+
+                // If rate limited and we have a fallback available, try it instead of retrying
+                if (err.code === "RATE_LIMIT_EXCEEDED") {
+                    if (!(client instanceof GeminiLLMClient) && process.env.GEMINI_API_KEY) {
+                        shouldFallback = true;
+                        break;
+                    } else {
+                        throw err; // if we're already on fallback or it's not available, bubble the 429
+                    }
+                }
             }
 
             if (attempt < maxRetries) {
@@ -934,7 +954,33 @@ export async function executeWithRetry(
                     level: "warn",
                 });
                 await new Promise((resolve) => setTimeout(resolve, delay));
+            } else {
+                if (!(client instanceof GeminiLLMClient) && process.env.GEMINI_API_KEY) {
+                    shouldFallback = true;
+                }
             }
+        }
+    }
+
+    if (shouldFallback && process.env.GEMINI_API_KEY) {
+        logError("Primary LLM failed", lastError);
+        try {
+            // Bypass the singleton so we always get a fresh Gemini client,
+            // regardless of which provider the factory already cached.
+            const fallbackClient = new GeminiLLMClient(process.env.GEMINI_API_KEY);
+            const fallbackOptions = { ...options, timeoutMs: options.timeoutMs ?? 25000 };
+            const fallbackResponse = await fallbackClient.execute(messages, fallbackOptions);
+            logLLMUsage(fallbackResponse, {
+                requestId: getRequestId(),
+                endpoint: getRequestPathname() ?? undefined,
+            }).catch(() => { });
+            return fallbackResponse;
+        } catch (gemErr) {
+            logError("Gemini fallback failed", gemErr);
+            throw new AIServiceError("LLM_ERROR", "All AI providers failed", {
+                primaryError: lastError?.message,
+                fallbackError: (gemErr as Error).message,
+            });
         }
     }
 
@@ -951,17 +997,41 @@ export async function executeWithRetry(
 
 /**
  * Safely parses LLM response content as JSON.
- * Handles markdown code blocks (```json ... ```) and raw JSON.
+ *
+ * Three-strategy extraction handles every common LLM output pattern:
+ *  1. JSON inside a markdown code fence (anywhere in the text, not just at start)
+ *  2. Raw JSON object embedded in surrounding prose — finds first `{` … last `}`
+ *  3. Direct parse of the trimmed string (model obeyed the "JSON only" instruction)
+ *
+ * If all three fail the raw content (first 500 chars) is attached to the error
+ * so it can be inspected in logs without leaking sensitive data.
  */
 export function parseJSONResponse<T = unknown>(content: string): T {
-    // Strip markdown code blocks if present
-    const cleaned = content
-        .replace(/^```(?:json)?\s*/m, "")
-        .replace(/\s*```\s*$/m, "")
-        .trim();
+    // Strategy 1 — extract from ```json … ``` or ``` … ``` fences anywhere in response.
+    const fenceMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fenceMatch?.[1]) {
+        try {
+            return JSON.parse(fenceMatch[1].trim()) as T;
+        } catch {
+            // fall through
+        }
+    }
 
+    // Strategy 2 — find the outermost JSON object by locating first `{` and last `}`.
+    // Handles responses like: "Here is the itinerary:\n\n{ … }"
+    const firstBrace = content.indexOf("{");
+    const lastBrace = content.lastIndexOf("}");
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+        try {
+            return JSON.parse(content.slice(firstBrace, lastBrace + 1)) as T;
+        } catch {
+            // fall through
+        }
+    }
+
+    // Strategy 3 — model followed instructions; try the trimmed string directly.
     try {
-        return JSON.parse(cleaned) as T;
+        return JSON.parse(content.trim()) as T;
     } catch {
         throw new AIServiceError(
             "SCHEMA_VALIDATION_FAILED",

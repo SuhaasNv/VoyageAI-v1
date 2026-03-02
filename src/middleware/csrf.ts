@@ -34,12 +34,17 @@ const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 /**
  * Paths exempt from CSRF enforcement.
- * These endpoints issue the token itself, so the token does not yet exist.
+ *
+ * Includes:
+ *  - Auth endpoints that issue the token (token doesn't exist yet)
+ *  - /api/ai/landing — public endpoint; unauthenticated users have no prior
+ *    CSRF cookie and the route never mutates the DB for anonymous callers.
  */
 const EXEMPT_PATHS = new Set([
     "/api/auth/login",
     "/api/auth/register",
     "/api/auth/refresh",
+    "/api/ai/landing",
 ]);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -105,7 +110,8 @@ async function verifyHmacSignature(token: string): Promise<boolean> {
 // Consistent rejection response
 // ─────────────────────────────────────────────────────────────────────────────
 
-function csrfRejected(): NextResponse {
+function csrfRejected(reason?: string): NextResponse {
+    if (reason) console.log(`[CSRF] Rejected: ${reason}`);
     return NextResponse.json(
         { error: "Invalid CSRF token" },
         { status: 403 }
@@ -148,14 +154,15 @@ export async function checkCsrf(req: NextRequest): Promise<NextResponse | null> 
     const csrfCookie = req.cookies.get(CSRF_TOKEN_COOKIE)?.value ?? null;
 
     // Both token sources must be present
-    if (!csrfHeader || !csrfCookie) return csrfRejected();
+    if (!csrfHeader) return csrfRejected("Missing CSRF header");
+    if (!csrfCookie) return csrfRejected("Missing CSRF cookie");
 
     // Token values must match exactly (double-submit cookie pattern)
-    if (csrfHeader !== csrfCookie) return csrfRejected();
+    if (csrfHeader !== csrfCookie) return csrfRejected("CSRF header and cookie mismatch");
 
     // HMAC signature must be cryptographically valid
     const isValid = await verifyHmacSignature(csrfHeader);
-    if (!isValid) return csrfRejected();
+    if (!isValid) return csrfRejected("Invalid HMAC signature");
 
     return null;
 }
