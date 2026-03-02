@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "type-check": "tsc --noEmit",
     "lint": "eslint",
     "clear-image-cache": "npx tsx scripts/clear-image-cache.ts",
     "measure-perf": "npx tsx scripts/measure-dashboard-perf.ts"

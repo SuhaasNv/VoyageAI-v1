@@ -1,0 +1,127 @@
+name: Release
+
+# Triggered only when commits land on main (i.e. after a PR is merged).
+# The CI workflow already validated quality + build, so this job focuses
+# exclusively on migration safety and production deployment.
+on:
+  push:
+    branches: [main]
+
+# Never cancel a running deploy — a half-deployed release is worse than waiting.
+concurrency:
+  group: release-production
+  cancel-in-progress: false
+
+jobs:
+  # ── Job 1: Migrate ─────────────────────────────────────────────────────────
+  # Applies any pending Prisma migrations to the production database BEFORE
+  # the new application code goes live, keeping schema and code in sync.
+  migrate:
+    name: "🗄️ Database Migrate"
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+        env:
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+
+      - name: Apply pending migrations
+        # `migrate deploy` is safe for production: it applies only the SQL
+        # files already committed to the repo and never auto-generates new ones.
+        run: npx prisma migrate deploy
+        env:
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+
+      - name: Write migration summary
+        if: always()
+        run: |
+          {
+            echo "## 🗄️ Database Migration — ${{ job.status == 'success' && '✅ Applied' || '❌ Failed' }}"
+            echo ""
+            echo "All pending Prisma migrations have been deployed to production."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Job 2: Deploy ──────────────────────────────────────────────────────────
+  # Deploys the application to Vercel after the migration job succeeds.
+  # Uses `vercel --prebuilt` to upload an already-verified build rather than
+  # re-running `next build` on Vercel's infra.
+  #
+  # Required GitHub Secrets (set in repo → Settings → Secrets → Actions):
+  #   VERCEL_TOKEN        — Vercel personal access token
+  #   VERCEL_ORG_ID       — from `vercel link` (stored in .vercel/project.json)
+  #   VERCEL_PROJECT_ID   — from `vercel link` (stored in .vercel/project.json)
+  #
+  # All runtime env vars (DATABASE_URL, JWT_*, etc.) should be configured
+  # directly in the Vercel project dashboard, NOT passed here.
+  deploy:
+    name: "🚀 Deploy to Production"
+    needs: migrate
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel environment & project config
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Build for production (Vercel)
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          NEXT_TELEMETRY_DISABLED: "1"
+
+      - name: Deploy prebuilt artifact to Vercel
+        id: deploy
+        run: |
+          DEPLOY_URL=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }} 2>&1 | tail -1)
+          echo "url=${DEPLOY_URL}" >> "$GITHUB_OUTPUT"
+          echo "Deployed to: ${DEPLOY_URL}"
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Write deploy summary
+        if: always()
+        run: |
+          {
+            echo "## 🚀 Production Deploy — ${{ job.status == 'success' && '✅ Live' || '❌ Failed' }}"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| **URL** | ${{ steps.deploy.outputs.url || '_unavailable_' }} |"
+            echo "| **Commit** | \`${{ github.sha }}\` |"
+            echo "| **Author** | @${{ github.actor }} |"
+            echo "| **Triggered by** | ${{ github.event.head_commit.message }} |"
+          } >> "$GITHUB_STEP_SUMMARY"

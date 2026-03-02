@@ -1,0 +1,66 @@
+version: 2
+
+updates:
+  # ── npm packages ────────────────────────────────────────────────────────────
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 8
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "automated"
+    # Group related packages so you get one PR per ecosystem instead of dozens
+    groups:
+      nextjs-ecosystem:
+        patterns:
+          - "next"
+          - "react"
+          - "react-dom"
+          - "@types/react*"
+      prisma:
+        patterns:
+          - "prisma"
+          - "@prisma/*"
+      tailwind:
+        patterns:
+          - "tailwindcss"
+          - "@tailwindcss/*"
+          - "postcss*"
+      ai-sdk:
+        patterns:
+          - "@google/generative-ai"
+          - "@upstash/*"
+          - "groq*"
+      typescript-tooling:
+        dependency-type: "development"
+        patterns:
+          - "typescript"
+          - "@types/*"
+          - "eslint*"
+    ignore:
+      # Major version bumps require manual review — they often include
+      # breaking changes to APIs this project depends on.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # ── GitHub Actions ──────────────────────────────────────────────────────────
+  # Keep workflow action versions up to date separately from npm.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    commit-message:
+      prefix: "chore(actions)"
+    labels:
+      - "dependencies"
+      - "github-actions"
