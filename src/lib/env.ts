@@ -13,7 +13,7 @@ const EnvSchema = z
         NODE_ENV: z.enum(["development", "production", "test"]).optional(),
         ACCESS_TOKEN_EXPIRY_MS: z.coerce.number().optional(),
         REFRESH_TOKEN_EXPIRY_MS: z.coerce.number().optional(),
-        LLM_PROVIDER: z.enum(["groq", "gemini"]).optional(),
+        LLM_PROVIDER: z.enum(["groq", "gemini", "mock"]).optional(),
         GROQ_API_KEY: z.string().optional(),
         GEMINI_API_KEY: z.string().optional(),
         GEMINI_MODEL: z.string().optional(),

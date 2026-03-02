@@ -21,7 +21,7 @@
 
   html,
   body {
-    @apply antialiased bg-[#10141a] text-slate-100 overflow-x-hidden h-full;
+    @apply antialiased bg-[#10141a] text-slate-100 overflow-x-hidden min-h-screen;
     padding-bottom: env(safe-area-inset-bottom);
     scrollbar-width: none;
     -ms-overflow-style: none;

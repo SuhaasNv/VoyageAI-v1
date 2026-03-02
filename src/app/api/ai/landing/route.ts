@@ -18,7 +18,6 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { prisma } from "@/lib/prisma";
 import { getAuthContext, getClientIp } from "@/lib/api/request";
 import { runWithRequestContext } from "@/lib/requestContext";
@@ -31,7 +30,7 @@ import { generateItinerary } from "@/services/ai/itinerary.service";
 import type { Itinerary, ItineraryDay } from "@/lib/ai/schemas";
 import { updateMemory, buildMemoryContext } from "@/lib/ai/memory";
 import { sanitizeUserInput, validateLLMOutput } from "@/lib/ai/safety";
-import { selectModelConfig, selectGeminiStreamConfig } from "@/lib/ai/modelRouter";
+import { selectModelConfig } from "@/lib/ai/modelRouter";
 
 export const runtime = "nodejs";
 
@@ -300,32 +299,7 @@ Text: ${prompt}`;
                     const apiKey = process.env.GEMINI_API_KEY;
                     const provider = process.env.LLM_PROVIDER ?? "mock";
 
-                    if (provider === "gemini" && apiKey) {
-                        // ── Gemini streaming ──────────────────────────────────
-                        const genAI = new GoogleGenerativeAI(apiKey);
-                        const streamCfg = selectGeminiStreamConfig("landing", "QUESTION");
-                        const model = genAI.getGenerativeModel({
-                            model: streamCfg.model,
-                            generationConfig: { temperature: streamCfg.temperature, maxOutputTokens: streamCfg.maxOutputTokens },
-                        });
-
-                        // Prepend session context when available so the model can
-                        // reference what was discussed earlier in the same session.
-                        const fullPrompt =
-                            `System: ${TRAVEL_QA_SYSTEM}` +
-                            (memCtx ? `\n\n${memCtx}` : "") +
-                            `\n\nUser: ${prompt}`;
-                        const result = await model.generateContentStream(fullPrompt);
-
-                        for await (const chunk of result.stream) {
-                            if (abort.signal.aborted) break;
-                            const text = chunk.text();
-                            if (text) {
-                                accumulated += text;
-                                controller.enqueue(encoder.encode(text));
-                            }
-                        }
-                    } else if (provider === "mock") {
+                    if (provider === "mock") {
                         // ── Mock streaming (dev/CI) ───────────────────────────
                         const mockText = buildMockQAResponse(prompt);
                         for (let i = 0; i < mockText.length; i++) {

@@ -936,11 +936,13 @@ export async function executeWithRetry(
 
                 // If rate limited and we have a fallback available, try it instead of retrying
                 if (err.code === "RATE_LIMIT_EXCEEDED") {
-                    if (!(client instanceof GeminiLLMClient) && process.env.GEMINI_API_KEY) {
+                    const hasGeminiFallback = !(client instanceof GeminiLLMClient) && process.env.GEMINI_API_KEY;
+                    const hasGroqFallback = !(client instanceof GroqLLMClient) && process.env.GROQ_API_KEY;
+                    if (hasGeminiFallback || hasGroqFallback) {
                         shouldFallback = true;
                         break;
                     } else {
-                        throw err; // if we're already on fallback or it's not available, bubble the 429
+                        throw err;
                     }
                 }
             }
@@ -955,33 +957,70 @@ export async function executeWithRetry(
                 });
                 await new Promise((resolve) => setTimeout(resolve, delay));
             } else {
-                if (!(client instanceof GeminiLLMClient) && process.env.GEMINI_API_KEY) {
+                const hasGeminiFallback = !(client instanceof GeminiLLMClient) && process.env.GEMINI_API_KEY;
+                const hasGroqFallback = !(client instanceof GroqLLMClient) && process.env.GROQ_API_KEY;
+                if (hasGeminiFallback || hasGroqFallback) {
                     shouldFallback = true;
                 }
             }
         }
     }
 
-    if (shouldFallback && process.env.GEMINI_API_KEY) {
-        logError("Primary LLM failed", lastError);
-        try {
-            // Bypass the singleton so we always get a fresh Gemini client,
-            // regardless of which provider the factory already cached.
-            const fallbackClient = new GeminiLLMClient(process.env.GEMINI_API_KEY);
-            const fallbackOptions = { ...options, timeoutMs: options.timeoutMs ?? 25000 };
-            const fallbackResponse = await fallbackClient.execute(messages, fallbackOptions);
-            logLLMUsage(fallbackResponse, {
-                requestId: getRequestId(),
-                endpoint: getRequestPathname() ?? undefined,
-            }).catch(() => { });
-            return fallbackResponse;
-        } catch (gemErr) {
-            logError("Gemini fallback failed", gemErr);
-            throw new AIServiceError("LLM_ERROR", "All AI providers failed", {
-                primaryError: lastError?.message,
-                fallbackError: (gemErr as Error).message,
-            });
+    // Fallback: Gemini primary → Groq; Groq primary → Gemini
+    if (shouldFallback) {
+        if (!(client instanceof GeminiLLMClient) && process.env.GEMINI_API_KEY) {
+            logError("Primary LLM failed, trying Gemini fallback", lastError);
+            try {
+                const fallbackClient = new GeminiLLMClient(process.env.GEMINI_API_KEY);
+                const fallbackOptions = { ...options, timeoutMs: options.timeoutMs ?? 25000 };
+                const fallbackResponse = await fallbackClient.execute(messages, fallbackOptions);
+                logLLMUsage(fallbackResponse, {
+                    requestId: getRequestId(),
+                    endpoint: getRequestPathname() ?? undefined,
+                }).catch(() => { });
+                return fallbackResponse;
+            } catch (fallbackErr) {
+                logError("Gemini fallback failed", fallbackErr);
+                if (process.env.NODE_ENV !== "production") {
+                    logInfo("[LLM] Both providers failed, using mock fallback (dev only)");
+                    return new MockLLMClient().execute(messages, options);
+                }
+                throw new AIServiceError("LLM_ERROR", "All AI providers failed", {
+                    primaryError: lastError?.message,
+                    fallbackError: (fallbackErr as Error).message,
+                });
+            }
         }
+        if (!(client instanceof GroqLLMClient) && process.env.GROQ_API_KEY) {
+            logError("Primary LLM failed, trying Groq fallback", lastError);
+            try {
+                const fallbackClient = new GroqLLMClient(process.env.GROQ_API_KEY);
+                const fallbackOptions = { ...options, timeoutMs: options.timeoutMs ?? 25000 };
+                const fallbackResponse = await fallbackClient.execute(messages, fallbackOptions);
+                logLLMUsage(fallbackResponse, {
+                    requestId: getRequestId(),
+                    endpoint: getRequestPathname() ?? undefined,
+                }).catch(() => { });
+                return fallbackResponse;
+            } catch (fallbackErr) {
+                logError("Groq fallback failed", fallbackErr);
+                if (process.env.NODE_ENV !== "production") {
+                    logInfo("[LLM] Both providers failed, using mock fallback (dev only)");
+                    return new MockLLMClient().execute(messages, options);
+                }
+                throw new AIServiceError("LLM_ERROR", "All AI providers failed", {
+                    primaryError: lastError?.message,
+                    fallbackError: (fallbackErr as Error).message,
+                });
+            }
+        }
+    }
+
+    // In development, last resort: use mock when both real providers failed
+    if (process.env.NODE_ENV !== "production") {
+        logInfo("[LLM] All providers failed, using mock fallback (dev only)");
+        const mockClient = new MockLLMClient();
+        return mockClient.execute(messages, options);
     }
 
     throw new AIServiceError(

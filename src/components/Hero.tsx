@@ -70,6 +70,12 @@ function AILandingPrompt() {
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const submittingRef = useRef(false);
 
+    // ── Voice transcription state ──────────────────────────────────────────
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const recognitionRef = useRef<any>(null);
+    const [isListening, setIsListening] = useState(false);
+    const [micSupported, setMicSupported] = useState(false);
+
     // ── Session identity ───────────────────────────────────────────────────
     // Stable UUID for the lifetime of this page visit. Sent with every landing
     // request so the server can maintain short-term conversational memory
@@ -88,8 +94,13 @@ function AILandingPrompt() {
     const streamEndedRef = useRef(false);
     const rafRef = useRef<number | null>(null);
 
-    // ── Hydration guard ────────────────────────────────────────────────────
-    useEffect(() => { setIsClient(true); }, []);
+    // ── Hydration guard + mic support detection ────────────────────────────
+    useEffect(() => {
+        setIsClient(true);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const SR = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
+        setMicSupported(!!SR);
+    }, []);
 
     // ── Global cleanup on unmount ──────────────────────────────────────────
     useEffect(() => {
@@ -97,6 +108,7 @@ function AILandingPrompt() {
             abortRef.current?.abort();
             if (debounceRef.current) clearTimeout(debounceRef.current);
             if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+            recognitionRef.current?.abort();
         };
     }, []);
 
@@ -326,6 +338,83 @@ function AILandingPrompt() {
         [isClient, user, accessToken, router, startTypewriter, stopTypewriter]
     );
 
+    // ── Voice recognition ──────────────────────────────────────────────────
+    const stopVoice = useCallback(() => {
+        recognitionRef.current?.stop();
+        recognitionRef.current = null;
+        setIsListening(false);
+    }, []);
+
+    const toggleVoice = useCallback(async () => {
+        if (isListening) { stopVoice(); return; }
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const SR = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
+        if (!SR) return;
+
+        // Check permission state before prompting — catches OS-level blocks early.
+        try {
+            const perm = await navigator.permissions.query({ name: "microphone" as PermissionName });
+            if (perm.state === "denied") {
+                setError("Microphone blocked at system level. On Mac: System Settings → Privacy & Security → Microphone → enable Chrome. Then refresh.");
+                return;
+            }
+        } catch { /* permissions API not available in this browser — continue */ }
+
+        // getUserMedia triggers the browser's native permission dialog.
+        // SpeechRecognition.start() alone does NOT show the popup in Chrome.
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            stream.getTracks().forEach((t) => t.stop());
+        } catch (err: unknown) {
+            const name = (err instanceof Error) ? err.name : "";
+            if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+                setError("Mic blocked. On Mac: System Settings → Privacy & Security → Microphone → enable Chrome. Then refresh and try again.");
+            } else {
+                setError("Could not access microphone. Please check your device settings.");
+            }
+            return;
+        }
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const recognition: any = new SR();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = "en-US";
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        recognition.onresult = (event: any) => {
+            let interim = "";
+            let final = "";
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                const t = event.results[i][0].transcript;
+                if (event.results[i].isFinal) final += t;
+                else interim += t;
+            }
+            const live = final || interim;
+            if (live) setPrompt(live);
+
+            if (final.trim()) {
+                stopVoice();
+                executeSubmit(final.trim());
+            }
+        };
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        recognition.onerror = (event: any) => {
+            if (event.error === "not-allowed") {
+                setError("Microphone access denied. Click the 🔒 icon in your browser address bar to allow mic access.");
+            }
+            stopVoice();
+        };
+
+        recognition.onend = () => setIsListening(false);
+
+        recognitionRef.current = recognition;
+        recognition.start();
+        setIsListening(true);
+    }, [isListening, stopVoice, executeSubmit]);
+
     // ── Debounced submit wrapper ───────────────────────────────────────────
     const handleSubmit = useCallback(
         (e?: React.FormEvent, overridePrompt?: string) => {
@@ -357,17 +446,35 @@ function AILandingPrompt() {
                     onChange={(e) => setPrompt(e.target.value)}
                     maxLength={500}
                     disabled={isBusy}
-                    placeholder="Ask Anything..."
+                    placeholder={isListening ? "" : "Ask Anything..."}
                     className="bg-transparent border-none outline-none flex-1 text-sm text-white placeholder:text-slate-500 disabled:opacity-50"
                 />
+                {isListening && (
+                    <span className="text-xs text-red-400/80 whitespace-nowrap animate-pulse mr-1">
+                        Listening…
+                    </span>
+                )}
                 <div className="flex items-center gap-2">
+                    {/* Mic — active while listening, disabled when unsupported or busy */}
                     <button
                         type="button"
-                        disabled={isBusy}
-                        className="p-2 rounded-full hover:bg-white/10 text-slate-400 transition-colors disabled:opacity-50"
-                        aria-label="Voice input"
+                        onClick={toggleVoice}
+                        disabled={isBusy || !micSupported}
+                        title={!micSupported ? "Voice input not supported in this browser" : isListening ? "Stop listening" : "Voice input"}
+                        aria-label={isListening ? "Stop listening" : "Voice input"}
+                        className={`p-2 rounded-full transition-all duration-200 ${
+                            isListening
+                                ? "bg-red-500/20 text-red-400 shadow-[0_0_12px_rgba(239,68,68,0.4)]"
+                                : "hover:bg-white/10 text-slate-400 disabled:opacity-30"
+                        }`}
                     >
-                        <Mic className="w-4 h-4" />
+                        {isListening
+                            ? <span className="flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+                                <Mic className="w-4 h-4" />
+                              </span>
+                            : <Mic className="w-4 h-4" />
+                        }
                     </button>
 
                     {isBusy ? (
