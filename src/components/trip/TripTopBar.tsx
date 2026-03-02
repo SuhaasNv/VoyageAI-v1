@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Battery, BatteryMedium, BatteryWarning, Wallet, ArrowLeft, MoreVertical, Pencil, Trash2 } from "lucide-react";
+import { Battery, BatteryMedium, BatteryWarning, Wallet, ArrowLeft, MoreVertical, Pencil, Trash2, Share2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { updateTrip, type Trip } from "@/lib/api";
@@ -11,9 +11,10 @@ import { DeleteTripConfirmModal } from "./DeleteTripConfirmModal";
 interface TripTopBarProps {
     trip: Trip;
     onTripUpdate?: (trip: Trip) => void;
+    onShareExport?: () => void;
 }
 
-export function TripTopBar({ trip, onTripUpdate }: TripTopBarProps) {
+export function TripTopBar({ trip, onTripUpdate, onShareExport }: TripTopBarProps) {
     const [menuOpen, setMenuOpen] = useState(false);
     const [editOpen, setEditOpen] = useState(false);
     const [deleteOpen, setDeleteOpen] = useState(false);
@@ -90,6 +91,16 @@ export function TripTopBar({ trip, onTripUpdate }: TripTopBarProps) {
                         </div>
                     </div>
                 </div>
+
+                {/* Share & Export button */}
+                <button
+                    onClick={onShareExport}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 hover:bg-emerald-500/20 hover:text-emerald-300 transition-all text-xs font-semibold"
+                    title="Share & Export"
+                >
+                    <Share2 className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Share</span>
+                </button>
 
                 {/* Trip actions menu */}
                 <div className="relative" ref={menuRef}>

@@ -111,7 +111,8 @@ async function verifyHmacSignature(token: string): Promise<boolean> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function csrfRejected(reason?: string): NextResponse {
-    if (reason) console.log(`[CSRF] Rejected: ${reason}`);
+    // Use console.error (not log) so CSRF rejections appear as errors in edge logs.
+    if (reason) console.error(`[CSRF] Rejected: ${reason}`);
     return NextResponse.json(
         { error: "Invalid CSRF token" },
         { status: 403 }

@@ -25,7 +25,9 @@ import { sanitizeUserInput, validateLLMOutput } from "@/lib/ai/safety";
 
 // Extend schema to require tripId at the route level for ownership check + persistence.
 const ReoptimizeRouteSchema = ReoptimizeRequestSchema.extend({
-    tripId: z.string().cuid("tripId must be a valid CUID"),
+    tripId:       z.string().cuid("tripId must be a valid CUID"),
+    // Explicit opt-in for budget mutation — never inferred from free text.
+    updateBudget: z.boolean().optional().default(false),
 });
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -60,10 +62,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             // ── Persist reoptimized itinerary ──────────────────────────────────
             const reoptimized = result.reoptimizedItinerary;
 
-            // Only update trip budget when the instruction explicitly requests an upgrade.
-            const instruction = safeInstruction.toLowerCase();
-            const shouldUpdateBudget =
-                instruction.includes("increase budget") || instruction.includes("upgrade");
+            // Only mutate the trip budget when the caller explicitly opted in.
+            // Never infer intent from free-text to prevent unintended DB writes.
+            const shouldUpdateBudget = validation.data.updateBudget === true;
 
             await prisma.$transaction([
                 prisma.itinerary.deleteMany({ where: { tripId } }),

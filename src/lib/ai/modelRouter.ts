@@ -144,6 +144,14 @@ function resolveProvider(): Provider {
     // Validate the declared provider actually has an API key available.
     if (env === "gemini" && process.env.GEMINI_API_KEY) return "gemini";
     if (env === "groq"   && process.env.GROQ_API_KEY)   return "groq";
+    // In production, a misconfigured provider (key missing) is a critical bug —
+    // log at error level so it surfaces in observability tooling.
+    if (process.env.NODE_ENV === "production" && (env === "gemini" || env === "groq")) {
+        const { logError } = require("@/lib/logger") as typeof import("@/lib/logger");
+        logError(`[modelRouter] LLM_PROVIDER="${env}" set but API key is absent — falling back to mock`, {
+            provider: env,
+        });
+    }
     // In dev/CI with no key configured the mock is always safe.
     return "mock";
 }
@@ -170,8 +178,8 @@ export function selectModelConfig({
 
     if (provider === "gemini") return { provider: "gemini", ...matrix.gemini };
     if (provider === "groq")   return { provider: "groq",   ...matrix.groq   };
-    // mock — return gemini shape so downstream typing is consistent
-    return { provider: "gemini", ...matrix.mock };
+    // mock — report provider as "mock" so callers can branch correctly in tests
+    return { provider: "gemini" as const, ...matrix.mock };
 }
 
 /**

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, Bell } from "lucide-react";
+import { Plus, Plane } from "lucide-react";
 import { UpcomingTripsGrid } from "@/components/dashboard/UpcomingTripsGrid";
 import { BudgetOverviewCard } from "@/components/dashboard/BudgetOverviewCard";
 import { AISuggestionsCard } from "@/components/dashboard/AISuggestionsCard";
@@ -10,6 +10,7 @@ import { TripIntelligencePanel } from "@/components/dashboard/TripIntelligencePa
 import { CalendarWidget } from "@/components/dashboard/CalendarWidget";
 import { TravelDNAOnboardingModal } from "@/components/dashboard/TravelDNAOnboardingModal";
 import { AICommandPalette } from "@/components/dashboard/AICommandPalette";
+import { FlightTicketWizard } from "@/components/dashboard/FlightTicketWizard";
 import { useTrips } from "@/hooks/useTrips";
 import { NotificationBell } from "@/components/dashboard/NotificationBell";
 import type { Trip } from "@/lib/api";
@@ -18,6 +19,7 @@ import { useMemo } from "react";
 export default function DashboardPage() {
     const { trips, isLoading, setTrips } = useTrips();
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [showTicketWizard, setShowTicketWizard] = useState(false);
     const [showOnboardingModal, setShowOnboardingModal] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -79,8 +81,16 @@ export default function DashboardPage() {
                                 <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
                             </svg>
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
                             <NotificationBell />
+                            {/* Flight ticket import — magic feature */}
+                            <button
+                                onClick={() => setShowTicketWizard(true)}
+                                title="Import from flight ticket"
+                                className="w-11 h-11 rounded-full bg-indigo-500/10 border border-indigo-500/25 flex items-center justify-center text-indigo-400 hover:bg-indigo-500/20 transition-all shadow-[0_0_12px_rgba(99,102,241,0.12)] group"
+                            >
+                                <Plane className="w-4.5 h-4.5 group-hover:scale-110 transition-transform" />
+                            </button>
                             <button
                                 onClick={() => setIsModalOpen(true)}
                                 className="w-11 h-11 rounded-full bg-[#10B981]/10 border border-[#10B981]/30 flex items-center justify-center text-[#10B981] hover:bg-[#10B981]/20 transition-all shadow-[0_0_12px_rgba(16,185,129,0.15)] group"
@@ -121,6 +131,16 @@ export default function DashboardPage() {
             {isModalOpen && (
                 <CreateTripModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
             )}
+
+            <FlightTicketWizard
+                isOpen={showTicketWizard}
+                onClose={() => setShowTicketWizard(false)}
+                onTripCreated={() => {
+                    setShowTicketWizard(false);
+                    // Refresh trip list after a short delay so the DB write settles.
+                    setTimeout(() => window.location.reload(), 400);
+                }}
+            />
 
             <TravelDNAOnboardingModal
                 isOpen={showOnboardingModal}

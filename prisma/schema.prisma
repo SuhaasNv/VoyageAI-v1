@@ -157,6 +157,7 @@ model Trip {
   budgetCurrency String   @default("USD")
   style          String? // relaxed | creative | exciting | luxury | budget
   imageUrl       String?
+  shareToken     String?  @unique // UUID — null means private, set means publicly shareable
   createdAt      DateTime @default(now())
 
   itineraries  Itinerary[]

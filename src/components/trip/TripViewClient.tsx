@@ -22,6 +22,8 @@ import { generateTripExplanation } from "@/lib/analysis/explainTrip";
 import { Map as MapIcon, X, Sparkles, Loader2, CheckCircle2, Navigation2, Check, TriangleAlert, ChevronDown, WifiOff } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { createPortal } from "react-dom";
+import { ScenarioSimulator } from "@/components/trip/ScenarioSimulator";
+import { ExportDrawer } from "@/components/trip/ExportDrawer";
 
 interface TripViewClientProps {
     trip: TripDTO;
@@ -69,6 +71,9 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
 
     // ── Offline state ──────────────────────────────────────────────────────────
     const [isOffline, setIsOffline] = useState(false);
+
+    // ── Export drawer state ────────────────────────────────────────────────────
+    const [showExportDrawer, setShowExportDrawer] = useState(false);
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -315,282 +320,297 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
 
     return (
         <div className="h-full flex flex-col overflow-hidden font-sans bg-[#0B0F14] text-white relative hide-scrollbar">
-            <TripTopBar trip={trip} onTripUpdate={setTrip} />
+            <TripTopBar trip={trip} onTripUpdate={setTrip} onShareExport={() => setShowExportDrawer(true)} />
 
             <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
                 {/* Timeline panel */}
-                <div className="w-full md:w-[450px] lg:w-[550px] shrink-0 flex flex-col bg-white/[0.04] backdrop-blur-md border-r border-white/[0.08] h-full overflow-hidden relative z-20 hide-scrollbar shadow-[inset_-1px_0_0_rgba(255,255,255,0.03),inset_0_0_40px_rgba(0,0,0,0.18)]">
+                <div className="w-full md:w-[450px] lg:w-[550px] shrink-0 flex flex-col bg-white/[0.04] backdrop-blur-md border-r border-white/[0.08] h-full overflow-hidden relative z-20 shadow-[inset_-1px_0_0_rgba(255,255,255,0.03),inset_0_0_40px_rgba(0,0,0,0.18)]">
 
-                    {/* ── Action bar ───────────────────────────────────────── */}
-                    <div className="px-4 pt-3 pb-2 border-b border-white/[0.06] space-y-2 shrink-0">
+                    {/* ── Zone 1: Primary actions — always pinned at top ────── */}
+                    <div className="shrink-0 border-b border-white/[0.06]">
+                        <div className="px-4 pt-3 pb-2 space-y-2">
 
-                        {/* Offline banner */}
-                        {isOffline && (
-                            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs">
-                                <WifiOff className="w-3.5 h-3.5 shrink-0" />
-                                <span>Offline mode — viewing cached data</span>
-                            </div>
-                        )}
-
-                        {/* Trip Intelligence Score badge */}
-                        {travelScore && (() => {
-                            const s = travelScore.score;
-                            const { density, distance, budget, diversity } = travelScore.breakdown;
-                            const pill =
-                                s >= 80 ? "bg-emerald-500/15 border-emerald-500/25 text-emerald-300"
-                                : s >= 60 ? "bg-amber-500/15 border-amber-500/25 text-amber-300"
-                                : "bg-rose-500/15 border-rose-500/25 text-rose-300";
-                            const barClr = (v: number) =>
-                                v >= 80 ? "bg-emerald-400" : v >= 60 ? "bg-amber-400" : "bg-rose-400";
-                            // Tooltip text built as a title attribute — no JS lib needed
-                            const tooltip = [
-                                `Density  ${density}/100`,
-                                `Distance ${distance}/100`,
-                                `Budget   ${budget}/100`,
-                                `Variety  ${diversity}/100`,
-                            ].join("\n");
-                            return (
-                                <div
-                                    title={tooltip}
-                                    className={`flex items-center justify-between gap-3 px-3 py-2 rounded-xl border cursor-default select-none ${pill}`}
-                                >
-                                    <span className="text-[10px] font-medium opacity-70 whitespace-nowrap">
-                                        Trip Intelligence Score
-                                    </span>
-                                    <div className="flex items-center gap-2 shrink-0">
-                                        {/* Mini breakdown bars */}
-                                        {([
-                                            ["D", density],
-                                            ["Km", distance],
-                                            ["$", budget],
-                                            ["✦", diversity],
-                                        ] as [string, number][]).map(([k, v]) => (
-                                            <div key={k} className="flex flex-col items-center gap-0.5">
-                                                <span className="text-[7px] opacity-40">{k}</span>
-                                                <div className="w-5 h-[3px] rounded-full bg-white/[0.08] overflow-hidden">
-                                                    <div className={`h-full rounded-full ${barClr(v)}`} style={{ width: `${v}%` }} />
-                                                </div>
-                                            </div>
-                                        ))}
-                                        <span className="text-sm font-bold ml-1">
-                                            {s}<span className="text-[9px] font-normal opacity-50"> / 100</span>
-                                        </span>
-                                    </div>
+                            {/* Offline banner */}
+                            {isOffline && (
+                                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs">
+                                    <WifiOff className="w-3.5 h-3.5 shrink-0" />
+                                    <span>Offline mode — viewing cached data</span>
                                 </div>
-                            );
-                        })()}
+                            )}
 
-                        {/* Refine Trip */}
-                        <form onSubmit={handleRefine} className="flex gap-2">
-                            <input
-                                type="text"
-                                value={refineInput}
-                                onChange={(e) => setRefineInput(e.target.value)}
-                                placeholder={isOffline ? "Unavailable offline" : "Make this more relaxed…"}
-                                disabled={!rawItinerary || isRefining || isOffline}
-                                className="flex-1 min-w-0 bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-white placeholder-white/25 focus:outline-none focus:border-white/20 disabled:opacity-40 transition-colors"
-                            />
-                            <button
-                                type="submit"
-                                disabled={!refineInput.trim() || !rawItinerary || isRefining || isOffline}
-                                className="shrink-0 px-3 py-2 rounded-xl bg-[#10B981]/20 border border-[#10B981]/30 text-[#10B981] text-sm font-medium hover:bg-[#10B981]/30 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1.5"
-                            >
-                                {isRefining
-                                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                    : <Sparkles className="w-3.5 h-3.5" />}
-                                <span className="hidden sm:inline">
-                                    {isRefining ? "Refining…" : "Refine"}
-                                </span>
-                            </button>
-                        </form>
-
-                        {/* Optimize Route Order */}
-                        {optimizedPreview ? (
-                            <div className="flex items-center gap-2">
-                                <Navigation2 className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                                <span className="flex-1 text-xs text-sky-400/80 truncate">
-                                    Route optimized
-                                    {distanceSavedKm !== null && distanceSavedKm > 0.1
-                                        ? ` · ${distanceSavedKm.toFixed(1)} km saved`
-                                        : " · already optimal"}
-                                </span>
+                            {/* Refine Trip */}
+                            <form onSubmit={handleRefine} className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={refineInput}
+                                    onChange={(e) => setRefineInput(e.target.value)}
+                                    placeholder={isOffline ? "Unavailable offline" : "Make this more relaxed…"}
+                                    disabled={!rawItinerary || isRefining || isOffline}
+                                    className="flex-1 min-w-0 bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-white placeholder-white/25 focus:outline-none focus:border-white/20 disabled:opacity-40 transition-colors"
+                                />
                                 <button
-                                    onClick={handleApplyOptimization}
-                                    disabled={isSavingOptimized}
-                                    className="shrink-0 px-2.5 py-1 rounded-lg bg-sky-500/20 border border-sky-500/30 text-sky-400 text-xs font-medium hover:bg-sky-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1"
+                                    type="submit"
+                                    disabled={!refineInput.trim() || !rawItinerary || isRefining || isOffline}
+                                    className="shrink-0 px-3 py-2 rounded-xl bg-[#10B981]/20 border border-[#10B981]/30 text-[#10B981] text-sm font-medium hover:bg-[#10B981]/30 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1.5"
                                 >
-                                    {isSavingOptimized
-                                        ? <Loader2 className="w-3 h-3 animate-spin" />
-                                        : <Check className="w-3 h-3" />}
-                                    {isSavingOptimized ? "Saving…" : "Apply"}
+                                    {isRefining
+                                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                        : <Sparkles className="w-3.5 h-3.5" />}
+                                    <span className="hidden sm:inline">
+                                        {isRefining ? "Refining…" : "Refine"}
+                                    </span>
                                 </button>
-                                <button
-                                    onClick={handleUndoOptimization}
-                                    disabled={isSavingOptimized}
-                                    className="shrink-0 px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.08] text-white/50 text-xs font-medium hover:bg-white/[0.07] hover:text-white/70 disabled:opacity-40 transition-all"
-                                >
-                                    Undo
-                                </button>
-                            </div>
-                        ) : (
-                            <button
-                                onClick={handleOptimizeRoute}
-                                disabled={!rawItinerary || isOptimizing || isOffline}
-                                className="w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded-xl bg-white/[0.03] border border-white/[0.07] text-white/40 text-xs font-medium hover:bg-sky-500/10 hover:border-sky-500/20 hover:text-sky-400/80 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                            >
-                                {isOptimizing
-                                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                    : <Navigation2 className="w-3.5 h-3.5" />}
-                                {isOptimizing ? "Calculating optimal route…" : "Optimize Route Order"}
-                            </button>
-                        )}
+                            </form>
 
-                        {/* ── Risk Analysis Banner ──────────────────────── */}
-                        {riskAnalysis && !riskDismissed && (() => {
-                            const all     = flattenAlerts(riskAnalysis);
-                            if (!all.length) return null;
-                            const top     = topSeverity(all)!;
-                            const counts  = severityCounts(all);
+                            {/* Inline errors */}
+                            {refineError && (
+                                <p className="text-xs text-rose-400/90 px-1">{refineError}</p>
+                            )}
+                            {optimizeError && (
+                                <p className="text-xs text-rose-400/90 px-1">{optimizeError}</p>
+                            )}
 
-                            const palette = {
-                                high:   { ring: "border-rose-500/25",   bg: "bg-rose-500/8",    icon: "text-rose-400",   badge: "bg-rose-500/20 text-rose-300",   label: "text-rose-300"   },
-                                medium: { ring: "border-amber-500/25",  bg: "bg-amber-500/8",   icon: "text-amber-400",  badge: "bg-amber-500/20 text-amber-300", label: "text-amber-300"  },
-                                low:    { ring: "border-yellow-500/20", bg: "bg-yellow-500/6",  icon: "text-yellow-400", badge: "bg-yellow-500/20 text-yellow-300", label: "text-yellow-300" },
-                            }[top];
+                            {/* Refine success summary */}
+                            {summaryOfChanges && !isRefining && (
+                                <div className="flex gap-2 bg-emerald-500/5 border border-emerald-500/15 rounded-xl px-3 py-2">
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 mt-0.5 shrink-0" />
+                                    <p className="text-xs text-emerald-400/80 whitespace-pre-line leading-relaxed">
+                                        {summaryOfChanges}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
 
-                            const sevBadge = (sev: "low" | "medium" | "high") => ({
-                                high:   "bg-rose-500/25 text-rose-300",
-                                medium: "bg-amber-500/25 text-amber-300",
-                                low:    "bg-yellow-500/20 text-yellow-300",
-                            }[sev]);
+                    {/* ── Zone 2: Intelligence tools — scrollable, capped height ── */}
+                    <div className="shrink-0 border-b border-white/[0.06] overflow-y-auto [&::-webkit-scrollbar]:hidden" style={{ maxHeight: "clamp(160px, 30vh, 260px)", scrollbarWidth: "none" }}>
+                        <div className="px-4 py-2 space-y-2">
 
-                            const summary = [
-                                counts.high   > 0 && `${counts.high} high`,
-                                counts.medium > 0 && `${counts.medium} medium`,
-                                counts.low    > 0 && `${counts.low} low`,
-                            ].filter(Boolean).join(", ");
-
-                            return (
-                                <div className={`rounded-xl border text-xs overflow-hidden ${palette.ring} ${palette.bg}`}>
-                                    {/* Header */}
-                                    <div className="flex items-center gap-2 px-3 py-2">
-                                        <TriangleAlert className={`w-3.5 h-3.5 shrink-0 ${palette.icon}`} />
-                                        <span className={`flex-1 font-medium ${palette.label}`}>
-                                            {all.length} risk alert{all.length > 1 ? "s" : ""}
-                                            <span className="text-white/30 font-normal"> · {summary}</span>
+                            {/* Trip Intelligence Score badge */}
+                            {travelScore && (() => {
+                                const s = travelScore.score;
+                                const { density, distance, budget, diversity } = travelScore.breakdown;
+                                const pill =
+                                    s >= 80 ? "bg-emerald-500/15 border-emerald-500/25 text-emerald-300"
+                                    : s >= 60 ? "bg-amber-500/15 border-amber-500/25 text-amber-300"
+                                    : "bg-rose-500/15 border-rose-500/25 text-rose-300";
+                                const barClr = (v: number) =>
+                                    v >= 80 ? "bg-emerald-400" : v >= 60 ? "bg-amber-400" : "bg-rose-400";
+                                const tooltip = [
+                                    `Density  ${density}/100`,
+                                    `Distance ${distance}/100`,
+                                    `Budget   ${budget}/100`,
+                                    `Variety  ${diversity}/100`,
+                                ].join("\n");
+                                return (
+                                    <div
+                                        title={tooltip}
+                                        className={`flex items-center justify-between gap-3 px-3 py-2 rounded-xl border cursor-default select-none ${pill}`}
+                                    >
+                                        <span className="text-[10px] font-medium opacity-70 whitespace-nowrap">
+                                            Trip Intelligence Score
                                         </span>
-                                        <button
-                                            onClick={() => setRiskExpanded(v => !v)}
-                                            aria-label={riskExpanded ? "Collapse" : "Expand"}
-                                            className="p-0.5 rounded hover:bg-white/10 text-white/40 hover:text-white/70 transition-colors"
-                                        >
-                                            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${riskExpanded ? "rotate-180" : ""}`} />
-                                        </button>
-                                        <button
-                                            onClick={() => setRiskDismissed(true)}
-                                            aria-label="Dismiss"
-                                            className="p-0.5 rounded hover:bg-white/10 text-white/40 hover:text-white/70 transition-colors"
-                                        >
-                                            <X className="w-3 h-3" />
-                                        </button>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            {([
+                                                ["D", density],
+                                                ["Km", distance],
+                                                ["$", budget],
+                                                ["✦", diversity],
+                                            ] as [string, number][]).map(([k, v]) => (
+                                                <div key={k} className="flex flex-col items-center gap-0.5">
+                                                    <span className="text-[7px] opacity-40">{k}</span>
+                                                    <div className="w-5 h-[3px] rounded-full bg-white/[0.08] overflow-hidden">
+                                                        <div className={`h-full rounded-full ${barClr(v)}`} style={{ width: `${v}%` }} />
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            <span className="text-sm font-bold ml-1">
+                                                {s}<span className="text-[9px] font-normal opacity-50"> / 100</span>
+                                            </span>
+                                        </div>
                                     </div>
+                                );
+                            })()}
 
-                                    {/* Expanded alert list */}
+                            {/* Optimize Route Order */}
+                            {optimizedPreview ? (
+                                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-sky-500/8 border border-sky-500/20">
+                                    <Navigation2 className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                                    <span className="flex-1 text-xs text-sky-400/80 truncate">
+                                        Route optimized
+                                        {distanceSavedKm !== null && distanceSavedKm > 0.1
+                                            ? ` · ${distanceSavedKm.toFixed(1)} km saved`
+                                            : " · already optimal"}
+                                    </span>
+                                    <button
+                                        onClick={handleApplyOptimization}
+                                        disabled={isSavingOptimized}
+                                        className="shrink-0 px-2.5 py-1 rounded-lg bg-sky-500/20 border border-sky-500/30 text-sky-400 text-xs font-medium hover:bg-sky-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1"
+                                    >
+                                        {isSavingOptimized
+                                            ? <Loader2 className="w-3 h-3 animate-spin" />
+                                            : <Check className="w-3 h-3" />}
+                                        {isSavingOptimized ? "Saving…" : "Apply"}
+                                    </button>
+                                    <button
+                                        onClick={handleUndoOptimization}
+                                        disabled={isSavingOptimized}
+                                        className="shrink-0 px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.08] text-white/50 text-xs font-medium hover:bg-white/[0.07] hover:text-white/70 disabled:opacity-40 transition-all"
+                                    >
+                                        Undo
+                                    </button>
+                                </div>
+                            ) : (
+                                <button
+                                    onClick={handleOptimizeRoute}
+                                    disabled={!rawItinerary || isOptimizing || isOffline}
+                                    className="w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded-xl bg-white/[0.03] border border-white/[0.07] text-white/40 text-xs font-medium hover:bg-sky-500/10 hover:border-sky-500/20 hover:text-sky-400/80 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                                >
+                                    {isOptimizing
+                                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                        : <Navigation2 className="w-3.5 h-3.5" />}
+                                    {isOptimizing ? "Calculating optimal route…" : "Optimize Route Order"}
+                                </button>
+                            )}
+
+                            {/* ── Risk Analysis Banner ──────────────────────── */}
+                            {riskAnalysis && !riskDismissed && (() => {
+                                const all     = flattenAlerts(riskAnalysis);
+                                if (!all.length) return null;
+                                const top     = topSeverity(all)!;
+                                const counts  = severityCounts(all);
+
+                                const palette = {
+                                    high:   { ring: "border-rose-500/25",   bg: "bg-rose-500/8",   icon: "text-rose-400",   label: "text-rose-300"   },
+                                    medium: { ring: "border-amber-500/25",  bg: "bg-amber-500/8",  icon: "text-amber-400",  label: "text-amber-300"  },
+                                    low:    { ring: "border-yellow-500/20", bg: "bg-yellow-500/6", icon: "text-yellow-400", label: "text-yellow-300" },
+                                }[top];
+
+                                const sevBadge = (sev: "low" | "medium" | "high") => ({
+                                    high:   "bg-rose-500/25 text-rose-300",
+                                    medium: "bg-amber-500/25 text-amber-300",
+                                    low:    "bg-yellow-500/20 text-yellow-300",
+                                }[sev]);
+
+                                const summary = [
+                                    counts.high   > 0 && `${counts.high} high`,
+                                    counts.medium > 0 && `${counts.medium} medium`,
+                                    counts.low    > 0 && `${counts.low} low`,
+                                ].filter(Boolean).join(", ");
+
+                                return (
+                                    <div className={`rounded-xl border text-xs overflow-hidden ${palette.ring} ${palette.bg}`}>
+                                        <div className="flex items-center gap-2 px-3 py-2">
+                                            <TriangleAlert className={`w-3.5 h-3.5 shrink-0 ${palette.icon}`} />
+                                            <span className={`flex-1 font-medium ${palette.label}`}>
+                                                {all.length} risk alert{all.length > 1 ? "s" : ""}
+                                                <span className="text-white/30 font-normal"> · {summary}</span>
+                                            </span>
+                                            <button
+                                                onClick={() => setRiskExpanded(v => !v)}
+                                                aria-label={riskExpanded ? "Collapse" : "Expand"}
+                                                className="p-0.5 rounded hover:bg-white/10 text-white/40 hover:text-white/70 transition-colors"
+                                            >
+                                                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${riskExpanded ? "rotate-180" : ""}`} />
+                                            </button>
+                                            <button
+                                                onClick={() => setRiskDismissed(true)}
+                                                aria-label="Dismiss"
+                                                className="p-0.5 rounded hover:bg-white/10 text-white/40 hover:text-white/70 transition-colors"
+                                            >
+                                                <X className="w-3 h-3" />
+                                            </button>
+                                        </div>
+                                        <AnimatePresence initial={false}>
+                                            {riskExpanded && (
+                                                <motion.div
+                                                    key="risk-detail"
+                                                    initial={{ height: 0, opacity: 0 }}
+                                                    animate={{ height: "auto", opacity: 1 }}
+                                                    exit={{ height: 0, opacity: 0 }}
+                                                    transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                                                    style={{ overflow: "hidden" }}
+                                                    className="border-t border-white/[0.06]"
+                                                >
+                                                    <div className="px-3 pb-2.5 space-y-1.5">
+                                                        {all.map((alert, i) => (
+                                                            <div key={i} className="flex items-start gap-2 pt-1.5">
+                                                                <span className={`shrink-0 text-[8px] font-bold px-1.5 py-0.5 rounded mt-px ${sevBadge(alert.severity)}`}>
+                                                                    {alert.severity.toUpperCase()}
+                                                                </span>
+                                                                <span className="text-white/60 leading-relaxed">{alert.message}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </motion.div>
+                                            )}
+                                        </AnimatePresence>
+                                    </div>
+                                );
+                            })()}
+
+                            {/* ── Scenario Simulator ───────────────────────────── */}
+                            {rawItinerary && (
+                                <ScenarioSimulator
+                                    rawItinerary={rawItinerary}
+                                    tripBudget={trip.budget.total}
+                                    currency={trip.budget.currency}
+                                    onSuggestRefine={(text) => setRefineInput(text)}
+                                />
+                            )}
+
+                            {/* ── Why this itinerary? ──────────────────────────── */}
+                            {rawItinerary && (
+                                <div className="rounded-xl border border-white/[0.07] overflow-hidden">
+                                    <button
+                                        onClick={handleToggleExplain}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/[0.03] transition-colors"
+                                    >
+                                        <Sparkles className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                                        <span className="flex-1 text-xs text-white/50 font-medium">
+                                            Why this itinerary?
+                                        </span>
+                                        <ChevronDown className={`w-3.5 h-3.5 text-white/25 transition-transform duration-200 ${explainOpen ? "rotate-180" : ""}`} />
+                                    </button>
                                     <AnimatePresence initial={false}>
-                                        {riskExpanded && (
+                                        {explainOpen && explainBullets.length > 0 && (
                                             <motion.div
-                                                key="risk-detail"
+                                                key="explain-detail"
                                                 initial={{ height: 0, opacity: 0 }}
                                                 animate={{ height: "auto", opacity: 1 }}
                                                 exit={{ height: 0, opacity: 0 }}
                                                 transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
                                                 style={{ overflow: "hidden" }}
-                                                className="border-t border-white/[0.06]"
                                             >
-                                                <div className="px-3 pb-2.5 space-y-1.5">
-                                                    {all.map((alert, i) => (
-                                                        <div key={i} className="flex items-start gap-2 pt-1.5">
-                                                            <span className={`shrink-0 text-[8px] font-bold px-1.5 py-0.5 rounded mt-px ${sevBadge(alert.severity)}`}>
-                                                                {alert.severity.toUpperCase()}
-                                                            </span>
-                                                            <span className="text-white/60 leading-relaxed">{alert.message}</span>
-                                                        </div>
+                                                <ul className="px-3 pb-3 space-y-1.5 border-t border-white/[0.06]">
+                                                    {explainBullets.map((bullet, i) => (
+                                                        <li key={i} className="flex items-start gap-2 pt-1.5">
+                                                            <span className="shrink-0 text-indigo-400/60 mt-0.5 text-[10px]">•</span>
+                                                            <span className="text-[11px] text-white/55 leading-relaxed">{bullet}</span>
+                                                        </li>
                                                     ))}
-                                                </div>
+                                                </ul>
                                             </motion.div>
                                         )}
                                     </AnimatePresence>
                                 </div>
-                            );
-                        })()}
+                            )}
 
-                        {/* Inline errors */}
-                        {refineError && (
-                            <p className="text-xs text-rose-400/90 px-1">{refineError}</p>
-                        )}
-                        {optimizeError && (
-                            <p className="text-xs text-rose-400/90 px-1">{optimizeError}</p>
-                        )}
-
-                        {/* Refine success summary */}
-                        {summaryOfChanges && !isRefining && (
-                            <div className="flex gap-2 bg-emerald-500/5 border border-emerald-500/15 rounded-xl px-3 py-2">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 mt-0.5 shrink-0" />
-                                <p className="text-xs text-emerald-400/80 whitespace-pre-line leading-relaxed">
-                                    {summaryOfChanges}
-                                </p>
-                            </div>
-                        )}
-
-                        {/* ── Why this itinerary? ──────────────────────────── */}
-                        {rawItinerary && (
-                            <div className="rounded-xl border border-white/[0.07] overflow-hidden">
-                                <button
-                                    onClick={handleToggleExplain}
-                                    className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/[0.03] transition-colors"
-                                >
-                                    <Sparkles className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                                    <span className="flex-1 text-xs text-white/50 font-medium">
-                                        Why this itinerary?
-                                    </span>
-                                    <ChevronDown className={`w-3.5 h-3.5 text-white/25 transition-transform duration-200 ${explainOpen ? "rotate-180" : ""}`} />
-                                </button>
-
-                                <AnimatePresence initial={false}>
-                                    {explainOpen && explainBullets.length > 0 && (
-                                        <motion.div
-                                            key="explain-detail"
-                                            initial={{ height: 0, opacity: 0 }}
-                                            animate={{ height: "auto", opacity: 1 }}
-                                            exit={{ height: 0, opacity: 0 }}
-                                            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-                                            style={{ overflow: "hidden" }}
-                                        >
-                                            <ul className="px-3 pb-3 space-y-1.5 border-t border-white/[0.06]">
-                                                {explainBullets.map((bullet, i) => (
-                                                    <li key={i} className="flex items-start gap-2 pt-1.5">
-                                                        <span className="shrink-0 text-indigo-400/60 mt-0.5 text-[10px]">•</span>
-                                                        <span className="text-[11px] text-white/55 leading-relaxed">{bullet}</span>
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        </motion.div>
-                                    )}
-                                </AnimatePresence>
-                            </div>
-                        )}
+                        </div>
                     </div>
 
-                    <TimelineItinerary
-                        trip={trip}
-                        onRefresh={handleItineraryRefresh}
-                        onDayChange={setSelectedDay}
-                        onActivityFocus={setFocusedActivity}
-                        onEventsReorder={handleEventsReorder}
-                    />
-                    {/* Soft gradient fades for depth */}
-                    <div className="absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-[#0B0F14]/30 to-transparent pointer-events-none z-30" />
-                    <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#0B0F14]/50 to-transparent pointer-events-none z-30" />
+                    {/* ── Zone 3: Timeline — fills all remaining height ────────── */}
+                    <div className="flex-1 min-h-0 overflow-hidden relative">
+                        <TimelineItinerary
+                            trip={trip}
+                            onRefresh={handleItineraryRefresh}
+                            onDayChange={setSelectedDay}
+                            onActivityFocus={setFocusedActivity}
+                            onEventsReorder={handleEventsReorder}
+                        />
+                        {/* Soft gradient fade at the very bottom of the timeline */}
+                        <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-[#0B0F14]/60 to-transparent pointer-events-none z-30" />
+                    </div>
                 </div>
 
                 {/* Map panel (Desktop only) */}
@@ -622,6 +642,17 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
                 onItineraryRefresh={handleItineraryRefresh}
                 onMapFocus={(lat, lng, title) => setFocusedActivity({ lat, lng, title } as unknown as ItineraryEvent)}
             />
+
+            {/* Export / Share drawer */}
+            <AnimatePresence>
+                {showExportDrawer && (
+                    <ExportDrawer
+                        trip={trip}
+                        rawItinerary={rawItinerary}
+                        onClose={() => setShowExportDrawer(false)}
+                    />
+                )}
+            </AnimatePresence>
         </div>
     );
 }

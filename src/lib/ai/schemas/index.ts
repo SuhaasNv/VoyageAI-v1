@@ -440,10 +440,12 @@ export type CreateTripFromTextOutput = z.infer<typeof CreateTripFromTextOutputSc
 
 export const ExtractTripFromTicketOutputSchema = z
     .object({
-        departureCity: z.string().min(2).max(200),
-        destination: z.string().min(2).max(200),
-        departureDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-        returnDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        departureCity:  z.string().min(2).max(200),
+        destination:    z.string().min(2).max(200),
+        departureDate:  z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        returnDate:     z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        airline:        z.string().max(100).optional(),
+        flightNumber:   z.string().max(20).optional(),
     })
     .refine(
         (d) => new Date(d.returnDate) >= new Date(d.departureDate),

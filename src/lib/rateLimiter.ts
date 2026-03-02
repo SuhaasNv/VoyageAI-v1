@@ -14,7 +14,7 @@
  *   RATE_LIMIT_WINDOW_SEC     – Window size in seconds   (default: 60)
  */
 
-import { logInfo } from "@/lib/logger";
+import { logInfo, logError } from "@/lib/logger";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Config
@@ -53,11 +53,16 @@ async function redisCheckRateLimit(key: string): Promise<void> {
 
     const redisKey = `rl:${key}`;
 
-    // Atomic INCR + EXPIRE via pipeline – single round-trip.
+    // INCR returns the new count. Only set the TTL when count === 1 (first request
+    // in this window) so we use a fixed window rather than a sliding one.
     const pipeline = redis.pipeline();
     pipeline.incr(redisKey);
-    pipeline.expire(redisKey, WINDOW_SEC);
     const [count] = (await pipeline.exec()) as [number, ...unknown[]];
+
+    if (count === 1) {
+        // Best-effort: if this fails the window never expires, but the counter still works.
+        await redis.expire(redisKey, WINDOW_SEC).catch(() => {});
+    }
 
     if (count > MAX_REQUESTS) {
         throw new RateLimitError(key, MAX_REQUESTS, WINDOW_SEC);
@@ -124,7 +129,10 @@ export async function checkRateLimit(key: string): Promise<void> {
             return;
         } catch (err) {
             if (err instanceof RateLimitError) throw err;
-            throw err;
+            // Redis infrastructure error — fail open to preserve availability.
+            // Log at error severity so this triggers an external alert.
+            logError("[rateLimiter] Redis unavailable, failing open", err);
+            return;
         }
     }
 

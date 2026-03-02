@@ -125,34 +125,28 @@ export async function GET(req: NextRequest) {
                 }
             });
 
-            // Background revalidation: fire-and-forget for cache misses. Next request gets images.
+            // Await image fetches for cache misses so THIS response includes fresh images.
+            // DB persistence is fire-and-forget (Redis is the primary cache, DB is secondary).
             if (cacheMissDestinations.length > 0) {
-                const tripsNeedingImage = needsImage.filter((t) =>
-                    cacheMissDestinations.includes(t.destination)
-                );
-                const destToTrips = new Map<string, { id: string }[]>();
-                for (const t of tripsNeedingImage) {
-                    const list = destToTrips.get(t.destination) ?? [];
-                    list.push({ id: t.id });
-                    destToTrips.set(t.destination, list);
-                }
                 const requestImageCache = new Map<string, Promise<string | null>>();
-                for (const dest of cacheMissDestinations) {
-                    getDestinationImage(dest, requestImageCache)
-                        .then((url) => {
-                            const tripIds = destToTrips.get(dest) ?? [];
-                            return Promise.all(
-                                tripIds.map(({ id }) =>
-                                    prisma.trip.update({
-                                        where: { id },
-                                        data: { imageUrl: url },
-                                    })
-                                )
-                            );
-                        })
-                        .catch(() => {
-                            // Non-fatal; next request will retry
-                        });
+                const fetchResults = await Promise.allSettled(
+                    cacheMissDestinations.map((dest) =>
+                        getDestinationImage(dest, requestImageCache).then((url) => ({ dest, url }))
+                    )
+                );
+                for (const r of fetchResults) {
+                    if (r.status === "fulfilled") {
+                        destToImage.set(r.value.dest, r.value.url);
+                        // Best-effort DB persistence — fire-and-forget is acceptable here.
+                        const tripIds = needsImage
+                            .filter((t) => t.destination === r.value.dest)
+                            .map((t) => t.id);
+                        void Promise.allSettled(
+                            tripIds.map((id) =>
+                                prisma.trip.update({ where: { id }, data: { imageUrl: r.value.url } })
+                            )
+                        );
+                    }
                 }
             }
 

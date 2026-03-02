@@ -92,16 +92,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
                 }
             });
 
-            // Sanitize the latest user message before it reaches the LLM.
-            let safeUserContent = "";
-            if (latestUserMessage) {
-                safeUserContent = sanitizeUserInput(latestUserMessage.content);
-            }
-            const safeMessages = latestUserMessage
-                ? chatPayload.messages.map((m) =>
-                      m === latestUserMessage ? { ...m, content: safeUserContent } : m
-                  )
-                : chatPayload.messages;
+            // Sanitize ALL user messages to prevent injection via earlier history turns.
+            const safeMessages = chatPayload.messages.map((m) =>
+                m.role === "user" ? { ...m, content: sanitizeUserInput(m.content) } : m
+            );
+            const safeLatest = safeMessages.findLast?.((m) => m.role === "user");
+            const safeUserContent = safeLatest?.content ?? "";
 
             const result = await chatCompanion({ ...chatPayload, messages: safeMessages }, contextString);
 

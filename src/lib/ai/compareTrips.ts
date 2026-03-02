@@ -41,13 +41,16 @@ export async function compareTrips(
     params: CompareTripsParams,
 ): Promise<ComparisonResult> {
     const sharedBase = {
-        startDate: params.startDate,
-        endDate:   params.endDate,
+        startDate:            params.startDate,
+        endDate:              params.endDate,
         budget: {
             total:       params.budget,
             currency:    params.currency ?? "USD",
             flexibility: "flexible" as const,
         },
+        groupSize:            1,
+        mustSeeAttractions:   [] as string[],
+        avoidAttractions:     [] as string[],
     };
 
     // Generate both itineraries concurrently — no tripId = no DB writes.

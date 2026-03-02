@@ -1,13 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  env: {
-    DATABASE_URL: process.env.DATABASE_URL,
-    JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET,
-    JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET,
-    CSRF_SECRET: process.env.CSRF_SECRET,
-    DIRECT_URL: process.env.DIRECT_URL,
-  },
+  // pdf-parse reads test fixtures at require-time; keep it out of the Next.js bundle.
+  serverExternalPackages: ["pdf-parse"],
+  // NOTE: Do NOT add server-only secrets to the `env` block — that injects them
+  // into the client-side JS bundle. Server route handlers read process.env directly.
   images: {
     remotePatterns: [
       {

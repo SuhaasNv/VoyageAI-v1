@@ -87,7 +87,10 @@ export function updateMemory(sessionId: string, role: Role, content: string): vo
     // When over the cap, compress the oldest exchange (user + assistant = 2 messages)
     // into the session preamble and drop them from the live list.
     while (session.messages.length > MAX_MESSAGES) {
-        const oldest = session.messages.splice(0, 2) as [MemoryMessage, MemoryMessage];
+        const pair = session.messages.splice(0, 2);
+        // Guard: splice may return fewer than 2 if messages are somehow unpaired.
+        if (pair.length < 2 || !pair[0] || !pair[1]) break;
+        const oldest = pair as [MemoryMessage, MemoryMessage];
         const snippet = compressPair(oldest[0], oldest[1]);
         const separator = session.preamble ? " … " : "";
         const combined = (session.preamble ?? "") + separator + snippet;

@@ -69,6 +69,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             validateLLMOutput(JSON.stringify(result), "json");
 
             // ── Persist: replace itinerary and update trip budget in one transaction ──
+            const costAmount   = result.totalEstimatedCost?.amount   ?? 0;
+            const costCurrency = result.totalEstimatedCost?.currency ?? trip.budgetCurrency;
+
             await prisma.$transaction([
                 prisma.itinerary.deleteMany({ where: { tripId } }),
                 prisma.itinerary.create({
@@ -80,8 +83,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
                 prisma.trip.update({
                     where: { id: tripId },
                     data: {
-                        budgetTotal: result.totalEstimatedCost.amount,
-                        budgetCurrency: result.totalEstimatedCost.currency,
+                        budgetTotal:    costAmount,
+                        budgetCurrency: costCurrency,
                     },
                 }),
             ]);

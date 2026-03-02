@@ -25,7 +25,6 @@ import {
     signAccessToken,
     signRefreshToken,
     hashToken,
-    newTokenFamily,
 } from "@/lib/auth/tokens";
 import { serializeRefreshTokenCookie, clearRefreshTokenCookie, serializeAccessTokenCookie, serializeCsrfCookie } from "@/lib/auth/cookies";
 import { generateCsrfToken } from "@/lib/auth/csrf";
@@ -156,7 +155,10 @@ export async function POST(req: NextRequest) {
         }
 
         // ── Issue new token pair ──────────────────────────────────────────────────
-        const newFamily = newTokenFamily(); // Rotate the family on each refresh
+        // Propagate the existing family so reuse-detection can revoke the entire
+        // chain if any token in it is replayed. Rotating the family would break the
+        // invariant: replayed old tokens from the same session would orphan new ones.
+        const newFamily = storedToken.family;
         const accessToken = signAccessToken({
             sub: storedToken.user.id,
             email: storedToken.user.email,

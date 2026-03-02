@@ -132,12 +132,15 @@ Rules:
 - Each suggestion: title (concise), description (1 sentence), action (verb, e.g. Review, Add, View), tag (e.g. Alert, Savings, Weather, Local).
 - Return ONLY valid JSON. No markdown, no code fences.`,
 
-  EXTRACT_TRIP_FROM_TICKET: `You are VoyageAI's ticket parser. Extract travel details from flight/travel ticket text.
+  EXTRACT_TRIP_FROM_TICKET: `You are VoyageAI's ticket parser. Extract travel details from flight/travel ticket or booking confirmation text.
 
 Rules:
-- Extract departureCity (origin city/airport), destination (arrival city/airport), departureDate (YYYY-MM-DD), returnDate (YYYY-MM-DD).
-- Parse dates from various formats (e.g. "15 Jan 2025", "01/15/2025", "2025-01-15") into YYYY-MM-DD.
-- Use the first outbound flight for departure, last return flight for return date.
+- Extract departureCity (origin city/airport), destination (arrival city/country), departureDate (YYYY-MM-DD), returnDate (YYYY-MM-DD).
+- Also extract airline (carrier name, e.g. "Singapore Airlines") and flightNumber (e.g. "SQ321") when present.
+- For multi-leg itineraries, use the FIRST outbound leg for departureCity/departureDate, and the LAST return leg for returnDate.
+- Parse dates from any format ("15 Jan 2025", "01/15/2025", "2025-01-15", "Jan 15th 2025") into YYYY-MM-DD.
+- If returnDate cannot be determined, set it to departureDate + 7 days as a reasonable default.
+- airline and flightNumber are optional — omit them if not clearly present in the text.
 - Return ONLY valid JSON. No markdown, no code fences.`,
 
   CREATE_TRIP_FROM_TEXT: `You are VoyageAI's trip creation assistant. Extract structured trip details from natural language.
@@ -360,10 +363,12 @@ Return ONLY a valid JSON object:
 ## Output Schema (STRICT)
 Return ONLY a valid JSON object:
 {
-  "departureCity": "string (origin city/airport, e.g. New York JFK)",
-  "destination": "string (arrival city/airport, e.g. Tokyo Narita)",
+  "departureCity": "string (origin city, e.g. New York)",
+  "destination": "string (destination city/country, e.g. Tokyo, Japan)",
   "departureDate": "YYYY-MM-DD",
-  "returnDate": "YYYY-MM-DD"
+  "returnDate": "YYYY-MM-DD",
+  "airline": "string (optional — carrier name, e.g. Singapore Airlines)",
+  "flightNumber": "string (optional — e.g. SQ321)"
 }`,
 
   DASHBOARD_SUGGESTIONS: `
