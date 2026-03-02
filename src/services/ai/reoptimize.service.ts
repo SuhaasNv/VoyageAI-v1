@@ -7,6 +7,7 @@
  */
 
 import { getLLMClient, executeWithRetry, parseJSONResponse, AIServiceError } from "../../lib/ai/llm";
+import { selectModelConfig } from "../../lib/ai/modelRouter";
 import { buildFullPrompt } from "../../lib/ai/prompts";
 import { SYSTEM_PROMPTS, SCHEMA_INSTRUCTIONS } from "../../lib/ai/prompts";
 import { assembleContext } from "../../lib/ai/context";
@@ -87,10 +88,8 @@ Constraints:
 
     const client = getLLMClient();
     const llmOptions = {
-        temperature: 0.4,
+        ...selectModelConfig({ endpoint: "reoptimize" }),
         responseFormat: "json" as const,
-        maxTokens: 8192,
-        timeoutMs: 25000,
         retries: 2,
     };
 

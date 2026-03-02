@@ -25,6 +25,7 @@ import { getTravelPreferenceContext } from "@/lib/ai/contextStore";
 import { assembleContext } from "@/lib/ai/context";
 import { buildTravelDNARules } from "@/lib/ai/travelDNARules";
 import { updateMemory, buildMemoryContext } from "@/lib/ai/memory";
+import { sanitizeUserInput, validateLLMOutput } from "@/lib/ai/safety";
 
 // Extend base schema: tripId is required for persistence.
 const ChatRouteSchema = ChatRequestSchema.extend({
@@ -91,11 +92,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
                 }
             });
 
-            const result = await chatCompanion(chatPayload, contextString);
+            // Sanitize the latest user message before it reaches the LLM.
+            let safeUserContent = "";
+            if (latestUserMessage) {
+                safeUserContent = sanitizeUserInput(latestUserMessage.content);
+            }
+            const safeMessages = latestUserMessage
+                ? chatPayload.messages.map((m) =>
+                      m === latestUserMessage ? { ...m, content: safeUserContent } : m
+                  )
+                : chatPayload.messages;
+
+            const result = await chatCompanion({ ...chatPayload, messages: safeMessages }, contextString);
+
+            // Validate the LLM text response before persisting.
+            validateLLMOutput(result.message, "text");
 
             // Persist both turns to memory after a successful response.
             if (latestUserMessage) {
-                updateMemory(sessionId, "user", latestUserMessage.content);
+                updateMemory(sessionId, "user", safeUserContent);
             }
             updateMemory(sessionId, "assistant", result.message);
 
@@ -106,7 +121,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
                             data: {
                                 tripId,
                                 role: "user",
-                                content: latestUserMessage.content,
+                                content: safeUserContent,
                             },
                         }),
                     ]

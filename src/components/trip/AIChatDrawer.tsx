@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { X, Send, Sparkles, Loader2, AlertCircle, Zap, RefreshCw } from "lucide-react";
 import { Logo } from "@/components/Logo";
+import { TextShimmer } from "@/components/ui/text-shimmer";
 import { getCsrfToken } from "@/lib/api";
 import type { Itinerary } from "@/lib/ai/schemas";
 import type { ChatMessageDTO } from "@/app/api/trips/[id]/chat/route";
@@ -322,12 +323,18 @@ export function AIChatDrawer({
                         </div>
                     ))}
 
-                    {/* Typing indicator */}
+                    {/* Typing indicator — TextShimmer sweep while AI is generating */}
                     {isSending && (
                         <div className="flex justify-start">
-                            <div className="bg-white/[0.06] border border-white/[0.08] rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-2">
-                                <Loader2 className="w-3.5 h-3.5 text-indigo-400 animate-spin" />
-                                <span className="text-xs text-zinc-400">Thinking…</span>
+                            <div className="bg-white/[0.06] border border-white/[0.08] rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-2.5">
+                                <Sparkles className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                                <TextShimmer
+                                    duration={1.4}
+                                    spread={3}
+                                    className="text-xs font-medium [--base-color:#818cf8] [--base-gradient-color:#e0e7ff] dark:[--base-color:#818cf8] dark:[--base-gradient-color:#e0e7ff]"
+                                >
+                                    Thinking…
+                                </TextShimmer>
                             </div>
                         </div>
                     )}

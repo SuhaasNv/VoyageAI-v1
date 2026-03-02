@@ -24,6 +24,7 @@ import { checkRateLimit } from "@/lib/rateLimiter";
 import { unauthorizedResponse, errorResponse } from "@/lib/api/response";
 import { prisma } from "@/lib/prisma";
 import { getTravelPreferenceContext } from "@/lib/ai/contextStore";
+import { sanitizeUserInput, validateLLMOutput } from "@/lib/ai/safety";
 
 // Extend the base schema to require a tripId for persistence.
 const ItineraryRouteSchema = GenerateItineraryRequestSchema.extend({
@@ -53,7 +54,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             await checkRateLimit(`ai:${auth.user.sub}:itinerary`);
 
             const dnaContext = await getTravelPreferenceContext(auth.user.sub);
-            const result = await generateItinerary({ ...aiPayload, tripId }, dnaContext || undefined);
+
+            // Sanitize user-controlled string fields before they reach the LLM prompt.
+            const safePayload = {
+                ...aiPayload,
+                destination: sanitizeUserInput(aiPayload.destination),
+                mustSeeAttractions: (aiPayload.mustSeeAttractions ?? []).map(sanitizeUserInput),
+                avoidAttractions:   (aiPayload.avoidAttractions   ?? []).map(sanitizeUserInput),
+            };
+
+            const result = await generateItinerary({ ...safePayload, tripId }, dnaContext || undefined);
+
+            // Validate LLM output for injected HTML before persisting.
+            validateLLMOutput(JSON.stringify(result), "json");
 
             // ── Persist: replace itinerary and update trip budget in one transaction ──
             await prisma.$transaction([

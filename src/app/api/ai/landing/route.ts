@@ -30,6 +30,8 @@ import { logInfo, logError } from "@/lib/logger";
 import { generateItinerary } from "@/services/ai/itinerary.service";
 import type { Itinerary, ItineraryDay } from "@/lib/ai/schemas";
 import { updateMemory, buildMemoryContext } from "@/lib/ai/memory";
+import { sanitizeUserInput, validateLLMOutput } from "@/lib/ai/safety";
+import { selectModelConfig, selectGeminiStreamConfig } from "@/lib/ai/modelRouter";
 
 export const runtime = "nodejs";
 
@@ -49,33 +51,11 @@ const PREVIEW_MAX_ACTS_PER_DAY = 4;
 /** Hard cap on total activities across all preview days. */
 const PREVIEW_MAX_ACTS_TOTAL = 8;
 
-/** Phrases that indicate prompt injection attempts. */
-const BLOCKED_PHRASES = [
-    "ignore previous instructions",
-    "ignore all previous",
-    "disregard your instructions",
-    "forget your instructions",
-    "new system prompt",
-    "act as ",
-    "you are now ",
-    "jailbreak",
-    "prompt injection",
-];
-
 const CREATE_TRIP_PATTERN = /\b(create|plan|trip\s+to|book\s+a\s+trip|make\s+a\s+trip)\b/i;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
-function sanitizePrompt(raw: string): string | null {
-    const trimmed = raw.slice(0, 500).trim();
-    const lower = trimmed.toLowerCase();
-    for (const phrase of BLOCKED_PHRASES) {
-        if (lower.includes(phrase)) return null;
-    }
-    return trimmed;
-}
 
 function detectIntent(prompt: string): "CREATE_TRIP" | "QUESTION" {
     return CREATE_TRIP_PATTERN.test(prompt) ? "CREATE_TRIP" : "QUESTION";
@@ -192,7 +172,7 @@ export async function POST(req: NextRequest) {
         const sessionId = rawSessionId ?? `ip:${ip}`;
 
         // ── Sanitize ──────────────────────────────────────────────────────────
-        const prompt = sanitizePrompt(rawPrompt);
+        const prompt = sanitizeUserInput(rawPrompt);
         if (!prompt) {
             return NextResponse.json(
                 { success: false, error: { code: "INVALID_INPUT", message: "Prompt contains disallowed content." } },
@@ -236,9 +216,10 @@ Text: ${prompt}`;
                 const llmResponse = await executeWithRetry(
                     client,
                     [{ role: "user", content: extractionPrompt }],
-                    { temperature: 0.1, responseFormat: "json", maxTokens: 300, timeoutMs: 15_000, retries: 2 }
+                    { ...selectModelConfig({ endpoint: "landing", intent: "CREATE_TRIP" }), responseFormat: "json" as const, retries: 2 }
                 );
 
+                validateLLMOutput(llmResponse.content, "json");
                 const extracted = ExtractedTripSchema.parse(
                     parseJSONResponse<unknown>(llmResponse.content)
                 );
@@ -322,9 +303,10 @@ Text: ${prompt}`;
                     if (provider === "gemini" && apiKey) {
                         // ── Gemini streaming ──────────────────────────────────
                         const genAI = new GoogleGenerativeAI(apiKey);
+                        const streamCfg = selectGeminiStreamConfig("landing", "QUESTION");
                         const model = genAI.getGenerativeModel({
-                            model: process.env.GEMINI_MODEL ?? "gemini-2.5-flash",
-                            generationConfig: { temperature: 0.7, maxOutputTokens: 800 },
+                            model: streamCfg.model,
+                            generationConfig: { temperature: streamCfg.temperature, maxOutputTokens: streamCfg.maxOutputTokens },
                         });
 
                         // Prepend session context when available so the model can
@@ -355,6 +337,7 @@ Text: ${prompt}`;
                     } else {
                         // ── Groq / other non-streaming provider ───────────────
                         const client = getLLMClient();
+                        const qaCfg = selectModelConfig({ endpoint: "landing", intent: "QUESTION" });
                         const response = await executeWithRetry(
                             client,
                             [
@@ -365,7 +348,7 @@ Text: ${prompt}`;
                                 },
                                 { role: "user", content: prompt },
                             ],
-                            { temperature: 0.7, maxTokens: 600, timeoutMs: 20_000 }
+                            { ...qaCfg }
                         );
                         accumulated = response.content;
                         for (let i = 0; i < response.content.length; i++) {
@@ -531,11 +514,12 @@ Text: ${prompt}`;
                 const extractionResp = await executeWithRetry(
                     client,
                     [{ role: "user", content: extractionPrompt }],
-                    { temperature: 0.1, responseFormat: "json", maxTokens: 300, timeoutMs: 15_000, retries: 2 }
+                    { ...selectModelConfig({ endpoint: "landing", intent: "CREATE_TRIP" }), responseFormat: "json" as const, retries: 2 }
                 );
 
                 if (abort.signal.aborted) { controller.close(); return; }
 
+                validateLLMOutput(extractionResp.content, "json");
                 const extracted = ExtractedTripSchema.parse(
                     parseJSONResponse<unknown>(extractionResp.content)
                 );

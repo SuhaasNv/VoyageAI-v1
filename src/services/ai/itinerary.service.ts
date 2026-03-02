@@ -6,6 +6,7 @@
  */
 
 import { getLLMClient, executeWithRetry, parseJSONResponse } from "../../lib/ai/llm";
+import { selectModelConfig } from "../../lib/ai/modelRouter";
 import { buildFullPrompt } from "../../lib/ai/prompts";
 import { SYSTEM_PROMPTS, SCHEMA_INSTRUCTIONS } from "../../lib/ai/prompts";
 import { assembleContext } from "../../lib/ai/context";
@@ -178,16 +179,9 @@ Generate a complete day‑by‑day travel itinerary for **${parsedReq.destinatio
     const fullPrompt = buildFullPrompt({ system, context, schema, task });
 
     const client = getLLMClient();
-
-    // LLM request options – we request JSON format and a moderate temperature.
-    // maxTokens set to 8192: a multi-day itinerary with full location, notes, and
-    // pacing fields easily exceeds 5k tokens — 4096 caused mid-object truncation.
     const llmOptions = {
-        model: undefined, // let the client decide (env var or default mock)
-        temperature: 0.7,
+        ...selectModelConfig({ endpoint: "itinerary" }),
         responseFormat: "json" as const,
-        maxTokens: 8192,
-        timeoutMs: 60000,
         retries: 2,
     };
 

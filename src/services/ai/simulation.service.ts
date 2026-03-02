@@ -6,6 +6,7 @@
  */
 
 import { getLLMClient, executeWithRetry, parseJSONResponse } from "../../lib/ai/llm";
+import { selectModelConfig } from "../../lib/ai/modelRouter";
 import { logError } from "@/lib/logger";
 import { buildFullPrompt } from "../../lib/ai/prompts";
 import { SYSTEM_PROMPTS, SCHEMA_INSTRUCTIONS } from "../../lib/ai/prompts";
@@ -43,10 +44,8 @@ Given the itinerary for **${parsedReq.itinerary.destination}** (${parsedReq.itin
 
     const client = getLLMClient();
     const llmOptions = {
-        temperature: 0.7,
+        ...selectModelConfig({ endpoint: "simulation" }),
         responseFormat: "json" as const,
-        maxTokens: 4096,
-        timeoutMs: 15000,
         retries: 2,
     };
 

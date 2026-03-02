@@ -3,6 +3,7 @@
  */
 
 import { getLLMClient, executeWithRetry, parseJSONResponse } from "@/lib/ai/llm";
+import { selectModelConfig } from "@/lib/ai/modelRouter";
 import { buildFullPrompt } from "@/lib/ai/prompts";
 import { SYSTEM_PROMPTS, SCHEMA_INSTRUCTIONS } from "@/lib/ai/prompts";
 import {
@@ -21,10 +22,8 @@ export async function extractTripFromTicket(
 
     const client = getLLMClient();
     const llmResponse = await executeWithRetry(client, [{ role: "user", content: fullPrompt }], {
-        temperature: 0.2,
-        responseFormat: "json",
-        maxTokens: 512,
-        timeoutMs: 10000,
+        ...selectModelConfig({ endpoint: "ticket" }),
+        responseFormat: "json" as const,
         retries: 2,
     });
 

@@ -9,6 +9,7 @@
  */
 
 import { getLLMClient, executeWithRetry, parseJSONResponse } from "../../lib/ai/llm";
+import { selectModelConfig } from "../../lib/ai/modelRouter";
 import { logError } from "@/lib/logger";
 import { buildFullPrompt } from "../../lib/ai/prompts";
 import { SYSTEM_PROMPTS, SCHEMA_INSTRUCTIONS } from "../../lib/ai/prompts";
@@ -66,10 +67,8 @@ Respond to the user's query using the provided context. Follow these rules:
 
     const client = getLLMClient();
     const llmOptions = {
-        temperature: 0.7,
+        ...selectModelConfig({ endpoint: "chat" }),
         responseFormat: "json" as const,
-        maxTokens: 2048,
-        timeoutMs: 30000,
         retries: 2,
     };
 

@@ -1,0 +1,20 @@
+{
+  "name": "VoyageAI",
+  "short_name": "VoyageAI",
+  "description": "Smart & Simple AI Trip Planning",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#10141a",
+  "theme_color": "#10141a",
+  "orientation": "portrait-primary",
+  "categories": ["travel", "productivity"],
+  "icons": [
+    {
+      "src": "/vercel.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -21,6 +21,7 @@ import { checkRateLimit } from "@/lib/rateLimiter";
 import { unauthorizedResponse, errorResponse } from "@/lib/api/response";
 import { prisma } from "@/lib/prisma";
 import { getTravelPreferenceContext } from "@/lib/ai/contextStore";
+import { sanitizeUserInput, validateLLMOutput } from "@/lib/ai/safety";
 
 // Extend schema to require tripId at the route level for ownership check + persistence.
 const ReoptimizeRouteSchema = ReoptimizeRequestSchema.extend({
@@ -46,13 +47,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             await checkRateLimit(`ai:${auth.user.sub}:reoptimize`);
 
             const dnaContext = await getTravelPreferenceContext(auth.user.sub);
-            const result = await reoptimizeTrip(validation.data, dnaContext || undefined);
+
+            // Sanitize the free-text modification instruction before it reaches the LLM.
+            const safeInstruction = sanitizeUserInput(validation.data.modificationInstruction ?? "");
+            const safeData = { ...validation.data, modificationInstruction: safeInstruction };
+
+            const result = await reoptimizeTrip(safeData, dnaContext || undefined);
+
+            // Validate LLM output for injected HTML before persisting.
+            validateLLMOutput(JSON.stringify(result), "json");
 
             // ── Persist reoptimized itinerary ──────────────────────────────────
             const reoptimized = result.reoptimizedItinerary;
 
             // Only update trip budget when the instruction explicitly requests an upgrade.
-            const instruction = (validation.data.modificationInstruction ?? "").toLowerCase();
+            const instruction = safeInstruction.toLowerCase();
             const shouldUpdateBudget =
                 instruction.includes("increase budget") || instruction.includes("upgrade");
 

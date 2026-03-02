@@ -121,11 +121,15 @@ export default function LoginPage() {
 
                     <form onSubmit={handleSubmit} noValidate className="space-y-4">
                         {/* Email */}
-                        <div>
+                        {/* suppressHydrationWarning: password-manager extensions (e.g. Shark) inject
+                            data-* attributes and child nodes into <input> elements at runtime,
+                            causing an unavoidable server/client HTML mismatch. */}
+                        <div suppressHydrationWarning>
                             <label htmlFor="login-email" className="block text-xs font-medium text-slate-300 mb-1.5">
                                 Email address
                             </label>
                             <input
+                                suppressHydrationWarning
                                 id="login-email"
                                 type="email"
                                 autoComplete="email"
@@ -140,8 +144,8 @@ export default function LoginPage() {
                             ))}
                         </div>
 
-                        {/* Password */}
-                        <div>
+                        {/* Password — same suppressHydrationWarning rationale as email above */}
+                        <div suppressHydrationWarning>
                             <div className="flex items-center justify-between mb-1.5">
                                 <label htmlFor="login-password" className="block text-xs font-medium text-slate-300">
                                     Password
@@ -150,8 +154,9 @@ export default function LoginPage() {
                                     Forgot password?
                                 </Link>
                             </div>
-                            <div className="relative">
+                            <div suppressHydrationWarning className="relative">
                                 <input
+                                    suppressHydrationWarning
                                     id="login-password"
                                     type={showPassword ? "text" : "password"}
                                     autoComplete="current-password"
