@@ -41,6 +41,17 @@
   }
 }
 
+/* ── AI response animations ──────────────────────────────────────────────── */
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0; }
+}
+
+@keyframes shimmer {
+    0%   { background-position: 200% center; }
+    100% { background-position: -200% center; }
+}
+
 @layer utilities {
   .mobile-container {
     @apply px-4 md:px-0;

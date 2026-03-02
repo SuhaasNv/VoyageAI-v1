@@ -3,20 +3,11 @@
 import Link from "next/link";
 import { MoveRight } from "lucide-react";
 import { Logo } from "@/components/Logo";
-import dynamic from "next/dynamic";
-
-const MotionNav = dynamic(
-    () => import("framer-motion").then((m) => m.motion.nav),
-    { ssr: false }
-);
 
 export function Navbar() {
     return (
-        <MotionNav
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-4 lg:px-12 backdrop-blur-md bg-[#10141a]/80 border-b border-white/5"
+        <nav
+            className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-4 lg:px-12 backdrop-blur-md bg-[#10141a]/80 border-b border-white/5 animate-in fade-in slide-in-from-top-4 duration-500"
         >
             <Link href="/" className="flex items-center gap-2 hover:opacity-90 transition-opacity">
                 <Logo size="md" />
@@ -39,6 +30,6 @@ export function Navbar() {
                     Sign Up <MoveRight className="w-4 h-4" />
                 </Link>
             </div>
-        </MotionNav>
+        </nav>
     );
 }

@@ -53,6 +53,7 @@ model User {
   trips            Trip[]
   travelPreference TravelPreference?
   notifications    Notification[]
+  favoriteDestinations FavoriteDestination[]
 
   @@index([email])
   @@index([provider, providerId])
@@ -226,4 +227,21 @@ model Notification {
 
   @@index([userId])
   @@map("notifications")
+}
+
+// ─────────────────────────────────────────
+//  Favorite Destination
+// ─────────────────────────────────────────
+
+model FavoriteDestination {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  destination String
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, destination])
+  @@index([userId])
+  @@index([destination])
+  @@map("favorite_destinations")
 }

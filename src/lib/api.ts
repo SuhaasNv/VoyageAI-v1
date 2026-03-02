@@ -5,7 +5,7 @@
  * All fetch logic lives here; UI components import only from this file.
  */
 
-import { CSRF_TOKEN_COOKIE } from "@/lib/auth/cookies";
+const CSRF_TOKEN_COOKIE = "voyageai_csrf";
 import type { TripDTO } from "@/lib/services/trips";
 
 // Re-export Trip so components can keep their existing import path.
@@ -21,16 +21,27 @@ export function getCsrfToken(): string {
 
 // ─── Fetch options ────────────────────────────────────────────────────────────
 
-function mutatingFetchOptions(
+async function ensureCsrfToken(): Promise<string> {
+  let token = getCsrfToken();
+  if (!token) {
+    if (typeof window !== "undefined") {
+      await fetch("/api/auth/csrf", { credentials: "include" });
+      token = getCsrfToken();
+    }
+  }
+  return token;
+}
+
+async function mutatingFetchOptions(
   method: "POST" | "PUT" | "PATCH" | "DELETE",
   body?: string
-): RequestInit {
+): Promise<RequestInit> {
   return {
     method,
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      "X-CSRF-Token": getCsrfToken(),
+      "X-CSRF-Token": await ensureCsrfToken(),
     },
     ...(body !== undefined && { body }),
   };
@@ -74,10 +85,8 @@ export async function getTripById(id: string): Promise<Trip> {
 }
 
 export async function createTrip(input: CreateTripInput): Promise<Trip> {
-  const res = await fetch(
-    "/api/trips",
-    mutatingFetchOptions("POST", JSON.stringify(input))
-  );
+  const options = await mutatingFetchOptions("POST", JSON.stringify(input));
+  const res = await fetch("/api/trips", options);
   return unwrap<Trip>(res);
 }
 
@@ -89,15 +98,14 @@ export interface UpdateTripInput {
 }
 
 export async function updateTrip(id: string, input: UpdateTripInput): Promise<Trip> {
-  const res = await fetch(
-    `/api/trips/${id}`,
-    mutatingFetchOptions("PATCH", JSON.stringify(input))
-  );
+  const options = await mutatingFetchOptions("PATCH", JSON.stringify(input));
+  const res = await fetch(`/api/trips/${id}`, options);
   return unwrap<Trip>(res);
 }
 
 export async function deleteTrip(id: string): Promise<void> {
-  const res = await fetch(`/api/trips/${id}`, mutatingFetchOptions("DELETE"));
+  const options = await mutatingFetchOptions("DELETE");
+  const res = await fetch(`/api/trips/${id}`, options);
   await unwrap(res);
 }
 
@@ -111,10 +119,8 @@ export interface OnboardPreferences {
 }
 
 export async function completeOnboarding(preferences: OnboardPreferences): Promise<void> {
-  const res = await fetch(
-    "/api/auth/onboard",
-    mutatingFetchOptions("POST", JSON.stringify(preferences))
-  );
+  const options = await mutatingFetchOptions("POST", JSON.stringify(preferences));
+  const res = await fetch("/api/auth/onboard", options);
   await unwrap(res);
 }
 
@@ -128,10 +134,8 @@ export interface ReoptimizeTripPayload {
 }
 
 export async function reoptimizeTrip(payload: ReoptimizeTripPayload) {
-  const res = await fetch(
-    "/api/ai/reoptimize",
-    mutatingFetchOptions("POST", JSON.stringify(payload))
-  );
+  const options = await mutatingFetchOptions("POST", JSON.stringify(payload));
+  const res = await fetch("/api/ai/reoptimize", options);
 
   if (!res.ok) {
     throw new Error("Failed to reoptimize trip");
