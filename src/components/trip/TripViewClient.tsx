@@ -8,6 +8,10 @@ import { AIChatDrawer } from "@/components/trip/AIChatDrawer";
 import type { TripDTO, ItineraryEvent } from "@/lib/services/trips";
 import type { Itinerary } from "@/lib/ai/schemas";
 import type { ChatMessageDTO } from "@/app/api/trips/[id]/chat/route";
+import { getCsrfToken } from "@/lib/api";
+
+import { Map as MapIcon, X, Sparkles, Loader2, CheckCircle2 } from "lucide-react";
+import { createPortal } from "react-dom";
 
 interface TripViewClientProps {
     trip: TripDTO;
@@ -15,9 +19,6 @@ interface TripViewClientProps {
     rawItinerary: Itinerary | null;
     initialMessages: ChatMessageDTO[];
 }
-
-import { Map as MapIcon, X } from "lucide-react";
-import { createPortal } from "react-dom";
 
 export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, initialMessages }: TripViewClientProps) {
     const [trip, setTrip] = useState<TripDTO>(initialTrip);
@@ -27,6 +28,12 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
     const [eventOrder, setEventOrder] = useState<Record<number, string[]>>({});
     const [showMobileMap, setShowMobileMap] = useState(false);
     const [mounted, setMounted] = useState(false);
+
+    // ── Refine Trip state ──────────────────────────────────────────────────────
+    const [refineInput, setRefineInput] = useState("");
+    const [isRefining, setIsRefining] = useState(false);
+    const [refineError, setRefineError] = useState<string | null>(null);
+    const [summaryOfChanges, setSummaryOfChanges] = useState<string | null>(null);
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -49,6 +56,51 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
             // silently ignore — user can reload
         }
     }, [initialTrip.id]);
+
+    const handleRefine = useCallback(
+        async (e: React.FormEvent) => {
+            e.preventDefault();
+            if (!refineInput.trim() || !rawItinerary || isRefining) return;
+
+            setIsRefining(true);
+            setRefineError(null);
+            setSummaryOfChanges(null);
+
+            try {
+                const csrf = await getCsrfToken();
+                const res = await fetch("/api/ai/reoptimize", {
+                    method: "POST",
+                    credentials: "include",
+                    headers: {
+                        "Content-Type": "application/json",
+                        ...(csrf ? { "x-csrf-token": csrf } : {}),
+                    },
+                    body: JSON.stringify({
+                        tripId: initialTrip.id,
+                        currentItinerary: rawItinerary,
+                        reoptimizationReasons: ["preference_change"],
+                        currentDay: selectedDay ?? 1,
+                        remainingBudget: trip.budget.total,
+                        modificationInstruction: refineInput.trim(),
+                    }),
+                });
+
+                const json = await res.json();
+                if (!json.success) {
+                    throw new Error(json.error?.message ?? "Refinement failed. Please try again.");
+                }
+
+                setSummaryOfChanges(json.data.summaryOfChanges as string);
+                setRefineInput("");
+                await handleItineraryRefresh();
+            } catch (err) {
+                setRefineError(err instanceof Error ? err.message : "Something went wrong");
+            } finally {
+                setIsRefining(false);
+            }
+        },
+        [refineInput, rawItinerary, isRefining, initialTrip.id, selectedDay, trip.budget.total, handleItineraryRefresh]
+    );
 
     const mobileMapOverlay = mounted && showMobileMap && createPortal(
         <div className="fixed inset-0 z-[9999] bg-[#0B0F14] flex flex-col md:hidden">
@@ -76,6 +128,45 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
             <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
                 {/* Timeline panel */}
                 <div className="w-full md:w-[450px] lg:w-[550px] shrink-0 flex flex-col bg-white/[0.04] backdrop-blur-md border-r border-white/[0.08] h-full overflow-hidden relative z-20 hide-scrollbar shadow-[inset_-1px_0_0_rgba(255,255,255,0.03),inset_0_0_40px_rgba(0,0,0,0.18)]">
+                    {/* ── Refine Trip bar ──────────────────────────────────── */}
+                    <div className="px-4 pt-3 pb-2 border-b border-white/[0.06] space-y-2 shrink-0">
+                        <form onSubmit={handleRefine} className="flex gap-2">
+                            <input
+                                type="text"
+                                value={refineInput}
+                                onChange={(e) => setRefineInput(e.target.value)}
+                                placeholder="Make this more relaxed…"
+                                disabled={!rawItinerary || isRefining}
+                                className="flex-1 min-w-0 bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-white placeholder-white/25 focus:outline-none focus:border-white/20 disabled:opacity-40 transition-colors"
+                            />
+                            <button
+                                type="submit"
+                                disabled={!refineInput.trim() || !rawItinerary || isRefining}
+                                className="shrink-0 px-3 py-2 rounded-xl bg-[#10B981]/20 border border-[#10B981]/30 text-[#10B981] text-sm font-medium hover:bg-[#10B981]/30 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1.5"
+                            >
+                                {isRefining
+                                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    : <Sparkles className="w-3.5 h-3.5" />}
+                                <span className="hidden sm:inline">
+                                    {isRefining ? "Refining…" : "Refine"}
+                                </span>
+                            </button>
+                        </form>
+
+                        {refineError && (
+                            <p className="text-xs text-rose-400/90 px-1">{refineError}</p>
+                        )}
+
+                        {summaryOfChanges && !isRefining && (
+                            <div className="flex gap-2 bg-emerald-500/5 border border-emerald-500/15 rounded-xl px-3 py-2">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 mt-0.5 shrink-0" />
+                                <p className="text-xs text-emerald-400/80 whitespace-pre-line leading-relaxed">
+                                    {summaryOfChanges}
+                                </p>
+                            </div>
+                        )}
+                    </div>
+
                     <TimelineItinerary
                         trip={trip}
                         onRefresh={handleItineraryRefresh}

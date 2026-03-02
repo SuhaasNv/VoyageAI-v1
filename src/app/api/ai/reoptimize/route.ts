@@ -48,8 +48,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             const dnaContext = await getTravelPreferenceContext(auth.user.sub);
             const result = await reoptimizeTrip(validation.data, dnaContext || undefined);
 
-            // ── Persist reoptimized itinerary + update budget ──────────────────
+            // ── Persist reoptimized itinerary ──────────────────────────────────
             const reoptimized = result.reoptimizedItinerary;
+
+            // Only update trip budget when the instruction explicitly requests an upgrade.
+            const instruction = (validation.data.modificationInstruction ?? "").toLowerCase();
+            const shouldUpdateBudget =
+                instruction.includes("increase budget") || instruction.includes("upgrade");
+
             await prisma.$transaction([
                 prisma.itinerary.deleteMany({ where: { tripId } }),
                 prisma.itinerary.create({
@@ -60,10 +66,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
                 }),
                 prisma.trip.update({
                     where: { id: tripId },
-                    data: {
-                        budgetTotal: reoptimized.totalEstimatedCost.amount,
-                        budgetCurrency: reoptimized.totalEstimatedCost.currency,
-                    },
+                    data: shouldUpdateBudget
+                        ? {
+                              budgetTotal: reoptimized.totalEstimatedCost.amount,
+                              budgetCurrency: reoptimized.totalEstimatedCost.currency,
+                          }
+                        : {},
                 }),
             ]);
 

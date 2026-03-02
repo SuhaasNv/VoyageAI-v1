@@ -66,7 +66,8 @@ export default function LoginPage() {
 
             setAuth(json.data.user, json.data.accessToken);
             const url = new URL(window.location.href);
-            const returnUrl = url.searchParams.get("returnUrl") || "/dashboard";
+            const defaultDest = json.data.user?.role === "ADMIN" ? "/admin" : "/dashboard";
+            const returnUrl = url.searchParams.get("returnUrl") || defaultDest;
             router.replace(returnUrl);
         } catch {
             setError("Network error. Please check your connection.");

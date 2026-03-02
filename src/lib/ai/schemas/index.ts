@@ -177,6 +177,8 @@ export const ReoptimizeRequestSchema = z.object({
     reoptimizationReasons: z.array(ReoptimizationReasonSchema).min(1),
     currentDay: z.number().int().positive(),
     remainingBudget: z.number().nonnegative(),
+    /** Free-text instruction driving the structured diff, e.g. "make day 2 more relaxed". */
+    modificationInstruction: z.string().min(1).max(1000),
     userFeedback: z.string().max(1000).optional(),
     lockedDays: z.array(z.number()).default([]),
     travelDNA: TravelDNASchema.optional(),
@@ -195,6 +197,8 @@ export const ReoptimizeResponseSchema = z.object({
             description: z.string(),
         })
     ),
+    /** Short bullet-point prose summarising what changed — shown directly in the UI. */
+    summaryOfChanges: z.string(),
     budgetDelta: z.number(),
     aiReasoning: z.string(),
     reoptimizedAt: z.string().datetime(),
