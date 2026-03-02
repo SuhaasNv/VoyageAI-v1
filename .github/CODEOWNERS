@@ -1,0 +1,22 @@
+# CODEOWNERS
+# Every PR requires at least one review from the matching owner(s).
+# Patterns follow .gitignore rules; the last matching rule wins.
+
+# Default owner for everything not matched below
+*                              @suhaasnv
+
+# Auth, tokens, and secrets — highest sensitivity
+/src/lib/auth/                 @suhaasnv
+/src/middleware/               @suhaasnv
+/src/app/api/auth/             @suhaasnv
+
+# Database schema and migrations — must be reviewed carefully
+/prisma/                       @suhaasnv
+/prisma.config.ts              @suhaasnv
+
+# AI service layer — prompt engineering + cost impact
+/src/services/ai/              @suhaasnv
+/src/app/api/ai/               @suhaasnv
+
+# CI/CD and deployment config
+/.github/                      @suhaasnv

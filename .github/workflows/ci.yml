@@ -1,0 +1,222 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened]
+
+# Cancel superseded runs on the same branch (but never cancel a main-branch run)
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  NODE_VERSION: "20"
+  NEXT_TELEMETRY_DISABLED: "1"
+  # ── Dummy values — no real services are contacted during CI ──────────────
+  # next build uses these at runtime only; build-time static generation is
+  # not used in this App Router project, so mock values are safe here.
+  DATABASE_URL: "postgresql://ci:ci@localhost:5432/voyageai_ci"
+  DIRECT_URL: "postgresql://ci:ci@localhost:5432/voyageai_ci"
+  JWT_ACCESS_SECRET: "ci-jwt-access-secret-at-least-32-characters-long"
+  JWT_REFRESH_SECRET: "ci-jwt-refresh-secret-at-least-32-characters-long"
+  CSRF_SECRET: "ci-csrf-secret-at-least-32-characters-long-ok"
+  LLM_PROVIDER: "mock"
+  UPSTASH_REDIS_REST_URL: "https://ci.upstash.io"
+  UPSTASH_REDIS_REST_TOKEN: "ci-token"
+
+jobs:
+  # ── Job 1: Quality Gate ──────────────────────────────────────────────────
+  # Runs TypeScript, ESLint, and Prisma schema validation in one job to
+  # share a single `npm ci` + `prisma generate` invocation (saves ~45 s).
+  quality:
+    name: "🔍 Quality Gate"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Validate Prisma schema
+        run: npx prisma validate
+
+      - name: TypeScript — strict no-emit check
+        run: npx tsc --noEmit
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Write quality summary
+        if: always()
+        run: |
+          {
+            echo "## 🔍 Quality Gate — ${{ job.status == 'success' && '✅ Passed' || '❌ Failed' }}"
+            echo ""
+            echo "| Check | Result |"
+            echo "|-------|--------|"
+            echo "| TypeScript strict | ${{ job.status == 'success' && '✅' || '⚠️' }} |"
+            echo "| ESLint (Next.js + TS) | ${{ job.status == 'success' && '✅' || '⚠️' }} |"
+            echo "| Prisma schema | ${{ job.status == 'success' && '✅' || '⚠️' }} |"
+            echo ""
+            echo "_Node ${{ env.NODE_VERSION }} · Commit \`${{ github.sha }}\`_"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Job 2: Build ─────────────────────────────────────────────────────────
+  # Runs only after the quality gate passes. Captures the Next.js build
+  # output, extracts the route-size table, and posts it as a PR comment.
+  build:
+    name: "🏗️ Build"
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Build Next.js
+        # Pipe to tee so we can parse the route-size table afterwards
+        run: npm run build 2>&1 | tee /tmp/build-output.txt
+        env:
+          ANALYZE: "false"
+
+      - name: Extract route-size table
+        id: bundle
+        run: |
+          # Grab everything from "Route (app)" to the first blank line after it
+          REPORT=$(awk '/Route \(app\)/{found=1} found{print} /^$/{if(found){exit}}' /tmp/build-output.txt)
+          # Fallback if pattern not found
+          if [ -z "$REPORT" ]; then
+            REPORT=$(grep -A 60 "Route (app)" /tmp/build-output.txt || echo "_Route table not found in build output._")
+          fi
+          {
+            echo "BUNDLE_REPORT<<BUNDLE_EOF"
+            echo "$REPORT"
+            echo "BUNDLE_EOF"
+          } >> "$GITHUB_ENV"
+
+      - name: Post bundle-size comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const report = process.env.BUNDLE_REPORT?.trim() || '_Build output not available._';
+            const sha = context.sha.slice(0, 7);
+            const body = [
+              '## 📦 Bundle Size Report',
+              '',
+              `> Commit \`${sha}\` on \`${{ github.head_ref }}\``,
+              '',
+              '```',
+              report,
+              '```',
+              '',
+              '<details>',
+              '<summary>Legend</summary>',
+              '',
+              '`○` Static &nbsp; `ƒ` Dynamic (server) &nbsp; `◐` Partially prerendered',
+              '',
+              '</details>',
+            ].join('\n');
+
+            // Upsert: update the existing bot comment rather than spamming new ones
+            const { data: comments } = await github.rest.issues.listComments({
+              ...context.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(
+              c => c.user.login === 'github-actions[bot]' && c.body.includes('Bundle Size Report')
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                ...context.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nextjs-build-${{ github.sha }}
+          path: |
+            .next/
+            !.next/cache/
+          retention-days: 3
+
+      - name: Write build summary
+        if: always()
+        run: |
+          BUILD_SIZE=$(du -sh .next 2>/dev/null | cut -f1 || echo "unknown")
+          {
+            echo "## 🏗️ Build — ${{ job.status == 'success' && '✅ Succeeded' || '❌ Failed' }}"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|--------|-------|"
+            echo "| **.next size** | \`${BUILD_SIZE}\` |"
+            echo "| **Node version** | \`${{ env.NODE_VERSION }}\` |"
+            echo "| **Next.js version** | \`$(node -e "console.log(require('./node_modules/next/package.json').version)")\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Job 3: Security Audit ─────────────────────────────────────────────────
+  # Runs in parallel with the build job. Checks production deps for known
+  # CVEs at "high" severity or above. Dev-only deps are excluded since they
+  # never reach production.
+  security:
+    name: "🔒 Security Audit"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: npm audit — production, high+critical only
+        # --omit=dev ignores devDependencies; --audit-level=high only fails
+        # on HIGH or CRITICAL vulnerabilities to reduce noise.
+        run: npm audit --audit-level=high --omit=dev
+
+      - name: Write security summary
+        if: always()
+        run: |
+          {
+            echo "## 🔒 Security Audit — ${{ job.status == 'success' && '✅ Clean' || '❌ Vulnerabilities Found' }}"
+            echo ""
+            echo "Audited production dependencies for HIGH and CRITICAL CVEs."
+          } >> "$GITHUB_STEP_SUMMARY"
