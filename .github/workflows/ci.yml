@@ -120,7 +120,7 @@ jobs:
 
       - name: Post bundle-size comment on PR
         if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const report = process.env.BUNDLE_REPORT?.trim() || '_Build output not available._';
