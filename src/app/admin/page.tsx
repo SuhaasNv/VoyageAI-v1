@@ -68,7 +68,13 @@ async function getOverview() {
             destination: d.destination,
             count: d._count.id,
         })),
-        recentUsers: recentUsers.map((u) => ({
+        recentUsers: recentUsers.map((u: {
+            id: string;
+            email: string;
+            name: string | null;
+            role: string;
+            createdAt: Date;
+        }) => ({
             id: u.id,
             email: u.email,
             name: u.name,
@@ -148,9 +154,9 @@ function SectionHeader({ title, href, linkLabel }: { title: string; href?: strin
 }
 
 const ROLE_STYLES: Record<string, string> = {
-    ADMIN:     "bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/25",
+    ADMIN: "bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/25",
     MODERATOR: "bg-amber-500/10 text-amber-400 border border-amber-500/20",
-    USER:      "bg-white/[0.05] text-slate-400 border border-white/[0.08]",
+    USER: "bg-white/[0.05] text-slate-400 border border-white/[0.08]",
 };
 
 function RoleBadge({ role }: { role: string }) {
@@ -180,12 +186,12 @@ export default async function AdminOverviewPage() {
             <section>
                 <SectionHeader title="Key Metrics" />
                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-                    <StatCard label="Total Users"    value={fmt(d.totalUsers)}       sub={`${fmt(d.newUsers7d)} new this week`}       icon={Users}          />
-                    <StatCard label="Active (7d)"    value={fmt(d.activeUsers7d)}    sub="users who logged in"                        icon={Activity}       />
-                    <StatCard label="New (7d)"       value={fmt(d.newUsers7d)}       sub="registered this week"                       icon={UserPlus}       />
-                    <StatCard label="Total Trips"    value={fmt(d.totalTrips)}       sub={`avg ${d.totalUsers ? (d.totalTrips / d.totalUsers).toFixed(1) : "0"} per user`} icon={MapPin} />
-                    <StatCard label="AI Calls"       value={fmt(d.totalAiCalls)}     sub={`${fmt(d.aiLast7d)} this week`}             icon={Zap}    accent />
-                    <StatCard label="AI Cost"        value={fmtCost(d.totalCostUsd)} sub={`${fmt(d.totalTokens)} total tokens`}       icon={DollarSign} accent />
+                    <StatCard label="Total Users" value={fmt(d.totalUsers)} sub={`${fmt(d.newUsers7d)} new this week`} icon={Users} />
+                    <StatCard label="Active (7d)" value={fmt(d.activeUsers7d)} sub="users who logged in" icon={Activity} />
+                    <StatCard label="New (7d)" value={fmt(d.newUsers7d)} sub="registered this week" icon={UserPlus} />
+                    <StatCard label="Total Trips" value={fmt(d.totalTrips)} sub={`avg ${d.totalUsers ? (d.totalTrips / d.totalUsers).toFixed(1) : "0"} per user`} icon={MapPin} />
+                    <StatCard label="AI Calls" value={fmt(d.totalAiCalls)} sub={`${fmt(d.aiLast7d)} this week`} icon={Zap} accent />
+                    <StatCard label="AI Cost" value={fmtCost(d.totalCostUsd)} sub={`${fmt(d.totalTokens)} total tokens`} icon={DollarSign} accent />
                 </div>
             </section>
 
@@ -283,10 +289,10 @@ export default async function AdminOverviewPage() {
                     <SectionHeader title="System at a Glance" />
                     <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] overflow-hidden">
                         {[
-                            { icon: MessageSquare, label: "Chat messages",         value: fmt(d.totalChats)        },
-                            { icon: Layers,        label: "Itineraries generated", value: fmt(d.totalItineraries)  },
-                            { icon: Zap,           label: "AI calls (all-time)",   value: fmt(d.totalAiCalls)      },
-                            { icon: MapPin,        label: "Trips created",         value: fmt(d.totalTrips)        },
+                            { icon: MessageSquare, label: "Chat messages", value: fmt(d.totalChats) },
+                            { icon: Layers, label: "Itineraries generated", value: fmt(d.totalItineraries) },
+                            { icon: Zap, label: "AI calls (all-time)", value: fmt(d.totalAiCalls) },
+                            { icon: MapPin, label: "Trips created", value: fmt(d.totalTrips) },
                         ].map(({ icon: Icon, label, value }, i, arr) => (
                             <div
                                 key={label}
