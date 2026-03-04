@@ -61,7 +61,10 @@ async function getOverview() {
         newUsers7d,
         roleCounts,
         totalTrips,
-        topDestinations: topDestinations.map((d) => ({
+        topDestinations: topDestinations.map((d: {
+            destination: string;
+            _count: { id: number };
+        }) => ({
             destination: d.destination,
             count: d._count.id,
         })),
