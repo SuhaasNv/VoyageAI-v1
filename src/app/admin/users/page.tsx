@@ -68,7 +68,7 @@ async function getUsers(): Promise<GetUsersResult> {
         prisma.user.count({ where: { trips: { none: {} } } }),
     ]);
 
-    const users = usersRaw.map((u: RawPrismaUser): AdminUser => ({
+    const users: AdminUser[] = usersRaw.map((u: RawPrismaUser): AdminUser => ({
         id: u.id,
         email: u.email,
         name: u.name,
