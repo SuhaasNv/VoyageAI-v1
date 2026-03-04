@@ -9,6 +9,16 @@ import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { Users, Activity, UserPlus, MapPin, Zap, DollarSign, MessageSquare, Layers } from "lucide-react";
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type RecentUser = {
+    id: string;
+    email: string;
+    name: string | null;
+    role: string;
+    createdAt: string; // ISO string after mapping
+};
+
 // ─── Data layer ───────────────────────────────────────────────────────────────
 
 async function getOverview() {
@@ -68,13 +78,7 @@ async function getOverview() {
             destination: d.destination,
             count: d._count.id,
         })),
-        recentUsers: recentUsers.map((u: {
-            id: string;
-            email: string;
-            name: string | null;
-            role: string;
-            createdAt: Date;
-        }) => ({
+        recentUsers: recentUsers.map((u): RecentUser => ({
             id: u.id,
             email: u.email,
             name: u.name,
@@ -201,7 +205,7 @@ export default async function AdminOverviewPage() {
                 <div>
                     <SectionHeader title="Recent Signups" href="/admin/users" linkLabel="Manage users →" />
                     <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] overflow-hidden">
-                        {d.recentUsers.map((u, i) => (
+                        {d.recentUsers.map((u: RecentUser, i: number) => (
                             <div
                                 key={u.id}
                                 className={`flex items-center gap-3 px-4 py-3 ${i < d.recentUsers.length - 1 ? "border-b border-white/[0.04]" : ""}`}
