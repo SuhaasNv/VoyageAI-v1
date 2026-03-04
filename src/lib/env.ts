@@ -35,12 +35,7 @@ const EnvSchema = z
         if (data.LLM_PROVIDER === "gemini" && !(data.GEMINI_API_KEY?.trim())) {
             ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["GEMINI_API_KEY"], message: "GEMINI_API_KEY is required when LLM_PROVIDER is gemini" });
         }
-        if (!data.UPSTASH_REDIS_REST_URL?.trim()) {
-            ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["UPSTASH_REDIS_REST_URL"], message: "UPSTASH_REDIS_REST_URL is required in production" });
-        }
-        if (!data.UPSTASH_REDIS_REST_TOKEN?.trim()) {
-            ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["UPSTASH_REDIS_REST_TOKEN"], message: "UPSTASH_REDIS_REST_TOKEN is required in production" });
-        }
+        // Upstash Redis is optional — caching is skipped gracefully when absent
         if (!data.GOOGLE_CLIENT_ID?.trim()) {
             ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["GOOGLE_CLIENT_ID"], message: "GOOGLE_CLIENT_ID is required in production" });
         }
