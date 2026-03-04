@@ -10,21 +10,56 @@ import { requireAdmin } from "@/lib/admin";
 import { UserTable } from "./_table";
 import { Users, ShieldCheck, Activity, MapPin } from "lucide-react";
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type RawPrismaUser = {
+    id: string;
+    email: string;
+    name: string | null;
+    role: string;
+    createdAt: Date;
+    lastLoginAt: Date | null;
+    isActive: boolean;
+    _count: { trips: number };
+};
+
+type AdminUser = {
+    id: string;
+    email: string;
+    name: string | null;
+    role: "USER" | "ADMIN" | "MODERATOR";
+    createdAt: string;
+    lastLoginAt: string | null;
+    isActive: boolean;
+    tripCount: number;
+};
+
+type GetUsersResult = {
+    users: AdminUser[];
+    stats: {
+        total: number;
+        adminCount: number;
+        modCount: number;
+        activeCount: number;
+        noTripsCount: number;
+    };
+};
+
 // ─── Data layer ───────────────────────────────────────────────────────────────
 
-async function getUsers() {
+async function getUsers(): Promise<GetUsersResult> {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
     const [usersRaw, activeCount, noTripsCount] = await Promise.all([
         prisma.user.findMany({
             select: {
-                id:          true,
-                email:       true,
-                name:        true,
-                role:        true,
-                createdAt:   true,
+                id: true,
+                email: true,
+                name: true,
+                role: true,
+                createdAt: true,
                 lastLoginAt: true,
-                isActive:    true,
+                isActive: true,
                 _count: { select: { trips: true } },
             },
             orderBy: { createdAt: "desc" },
@@ -33,19 +68,19 @@ async function getUsers() {
         prisma.user.count({ where: { trips: { none: {} } } }),
     ]);
 
-    const users = usersRaw.map((u) => ({
-        id:          u.id,
-        email:       u.email,
-        name:        u.name,
-        role:        u.role as "USER" | "ADMIN" | "MODERATOR",
-        createdAt:   u.createdAt.toISOString(),
+    const users = usersRaw.map((u: RawPrismaUser): AdminUser => ({
+        id: u.id,
+        email: u.email,
+        name: u.name,
+        role: u.role as "USER" | "ADMIN" | "MODERATOR",
+        createdAt: u.createdAt.toISOString(),
         lastLoginAt: u.lastLoginAt?.toISOString() ?? null,
-        isActive:    u.isActive,
-        tripCount:   u._count.trips,
+        isActive: u.isActive,
+        tripCount: u._count.trips,
     }));
 
     const adminCount = users.filter((u) => u.role === "ADMIN").length;
-    const modCount   = users.filter((u) => u.role === "MODERATOR").length;
+    const modCount = users.filter((u) => u.role === "MODERATOR").length;
 
     return { users, stats: { total: users.length, adminCount, modCount, activeCount, noTripsCount } };
 }
@@ -91,10 +126,10 @@ export default async function UsersPage() {
 
             {/* Stat strip */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <StripCard icon={Users}       label="Total users"   value={stats.total}       />
-                <StripCard icon={ShieldCheck} label="Admins"        value={stats.adminCount}   />
-                <StripCard icon={Activity}    label="Active (7d)"   value={stats.activeCount}  />
-                <StripCard icon={MapPin}      label="No trips yet"  value={stats.noTripsCount} />
+                <StripCard icon={Users} label="Total users" value={stats.total} />
+                <StripCard icon={ShieldCheck} label="Admins" value={stats.adminCount} />
+                <StripCard icon={Activity} label="Active (7d)" value={stats.activeCount} />
+                <StripCard icon={MapPin} label="No trips yet" value={stats.noTripsCount} />
             </div>
 
             {/* Interactive table */}
