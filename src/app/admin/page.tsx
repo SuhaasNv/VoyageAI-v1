@@ -11,6 +11,14 @@ import { Users, Activity, UserPlus, MapPin, Zap, DollarSign, MessageSquare, Laye
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+type RawPrismaUser = {
+    id: string;
+    email: string;
+    name: string | null;
+    role: string;
+    createdAt: Date; // raw Date from Prisma
+};
+
 type RecentUser = {
     id: string;
     email: string;
@@ -78,7 +86,7 @@ async function getOverview() {
             destination: d.destination,
             count: d._count.id,
         })),
-        recentUsers: recentUsers.map((u): RecentUser => ({
+        recentUsers: recentUsers.map((u: RawPrismaUser): RecentUser => ({
             id: u.id,
             email: u.email,
             name: u.name,
