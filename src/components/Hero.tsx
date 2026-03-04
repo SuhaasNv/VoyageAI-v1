@@ -29,6 +29,11 @@ const MotionDiv = dynamic(
     { ssr: false }
 );
 
+const RotatingEarth = dynamic(
+    () => import("@/components/ui/wireframe-dotted-globe"),
+    { ssr: false }
+);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
@@ -130,8 +135,8 @@ function AILandingPrompt() {
                 const buffered = total - current;
                 const speed = streamEndedRef.current ? 30
                     : buffered > 80 ? 6
-                    : buffered > 20 ? 3
-                    : 1;
+                        : buffered > 20 ? 3
+                            : 1;
                 const next = Math.min(current + speed, total);
                 displayedLenRef.current = next;
                 setDisplayedText(incomingRef.current.slice(0, next));
@@ -338,6 +343,19 @@ function AILandingPrompt() {
         [isClient, user, accessToken, router, startTypewriter, stopTypewriter]
     );
 
+    // ── Custom event handler for triggering submit from sibling components ──
+    useEffect(() => {
+        if (!isClient) return;
+        const handler = (e: Event) => {
+            const promptText = (e as CustomEvent).detail;
+            setPrompt(promptText);
+            // Execute on the next tick to ensure state is clean
+            setTimeout(() => executeSubmit(promptText), 0);
+        };
+        window.addEventListener("voyage_hero_submit", handler);
+        return () => window.removeEventListener("voyage_hero_submit", handler);
+    }, [isClient, executeSubmit]);
+
     // ── Voice recognition ──────────────────────────────────────────────────
     const stopVoice = useCallback(() => {
         recognitionRef.current?.stop();
@@ -462,17 +480,16 @@ function AILandingPrompt() {
                         disabled={isBusy || !micSupported}
                         title={!micSupported ? "Voice input not supported in this browser" : isListening ? "Stop listening" : "Voice input"}
                         aria-label={isListening ? "Stop listening" : "Voice input"}
-                        className={`p-2 rounded-full transition-all duration-200 ${
-                            isListening
-                                ? "bg-red-500/20 text-red-400 shadow-[0_0_12px_rgba(239,68,68,0.4)]"
-                                : "hover:bg-white/10 text-slate-400 disabled:opacity-30"
-                        }`}
+                        className={`p-2 rounded-full transition-all duration-200 ${isListening
+                            ? "bg-red-500/20 text-red-400 shadow-[0_0_12px_rgba(239,68,68,0.4)]"
+                            : "hover:bg-white/10 text-slate-400 disabled:opacity-30"
+                            }`}
                     >
                         {isListening
                             ? <span className="flex items-center gap-1">
                                 <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
                                 <Mic className="w-4 h-4" />
-                              </span>
+                            </span>
                             : <Mic className="w-4 h-4" />
                         }
                     </button>
@@ -675,18 +692,21 @@ function HeroCard() {
             </p>
 
             <div className="flex gap-2">
-                <Link
-                    href="/explore/bali"
+                <button
+                    onClick={() => {
+                        window.dispatchEvent(new CustomEvent("voyage_hero_submit", {
+                            detail: "Create a 7-day mindful itinerary to Bali focusing on nature and wellness"
+                        }));
+                    }}
                     className="flex-1 py-2 rounded-full border border-white/20 text-xs font-medium hover:bg-white/10 transition-colors text-center inline-block"
                 >
                     View Details
-                </Link>
+                </button>
                 <button
                     onClick={handleFavorite}
                     disabled={isFavoriting}
-                    className={`px-3 py-2 rounded-full ${
-                        favorited ? "bg-red-500 text-white" : "bg-[#f48c06] text-white"
-                    } hover:opacity-80 transition-all disabled:opacity-50`}
+                    className={`px-3 py-2 rounded-full ${favorited ? "bg-red-500 text-white" : "bg-[#f48c06] text-white"
+                        } hover:opacity-80 transition-all disabled:opacity-50`}
                     aria-label={favorited ? "Remove from favorites" : "Add to favorites"}
                 >
                     <Heart className={`w-4 h-4 ${favorited ? "fill-current" : ""}`} />
@@ -744,10 +764,19 @@ export function Hero() {
                         </Link>
                     </MotionDiv>
 
-                    {/* Right card */}
-                    <div className="relative h-full hidden lg:flex items-center justify-end">
-                        <HeroCard />
-                    </div>
+                    {/* Right globe */}
+                    <MotionDiv
+                        initial={{ opacity: 0, scale: 0.85 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ duration: 1, delay: 0.5 }}
+                        className="relative h-full hidden lg:flex items-center justify-end"
+                    >
+                        <RotatingEarth
+                            width={560}
+                            height={500}
+                            className="opacity-90"
+                        />
+                    </MotionDiv>
                 </div>
 
                 {/* Bottom bar */}

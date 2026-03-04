@@ -38,49 +38,49 @@ const VALID_ACTIVITY_TYPES = new Set([
  * LLMs frequently invent types like "entertainment", "leisure", "museum", etc.
  */
 const ACTIVITY_TYPE_ALIASES: Record<string, string> = {
-    entertainment:  "cultural",
-    event:          "cultural",
-    arts:           "cultural",
-    history:        "cultural",
-    museum:         "cultural",
-    gallery:        "cultural",
-    festival:       "cultural",
-    performance:    "cultural",
-    leisure:        "relaxation",
-    wellness:       "relaxation",
-    spa:            "relaxation",
-    beach:          "relaxation",
-    rest:           "relaxation",
-    nightlife:      "dining",
-    bar:            "dining",
-    cafe:           "dining",
-    coffee:         "dining",
-    breakfast:      "dining",
-    lunch:          "dining",
-    dinner:         "dining",
-    food:           "dining",
-    drinks:         "dining",
-    recreation:     "adventure",
-    fitness:        "adventure",
-    sports:         "adventure",
-    outdoor:        "adventure",
-    hiking:         "adventure",
-    nature:         "sightseeing",
-    landmark:       "sightseeing",
-    tour:           "sightseeing",
-    visit:          "sightseeing",
-    excursion:      "sightseeing",
-    experience:     "sightseeing",
-    market:         "shopping",
-    retail:         "shopping",
-    hotel:          "accommodation",
-    hostel:         "accommodation",
-    flight:         "transport",
-    train:          "transport",
-    bus:            "transport",
-    taxi:           "transport",
-    transfer:       "transport",
-    cruise:         "transport",
+    entertainment: "cultural",
+    event: "cultural",
+    arts: "cultural",
+    history: "cultural",
+    museum: "cultural",
+    gallery: "cultural",
+    festival: "cultural",
+    performance: "cultural",
+    leisure: "relaxation",
+    wellness: "relaxation",
+    spa: "relaxation",
+    beach: "relaxation",
+    rest: "relaxation",
+    nightlife: "dining",
+    bar: "dining",
+    cafe: "dining",
+    coffee: "dining",
+    breakfast: "dining",
+    lunch: "dining",
+    dinner: "dining",
+    food: "dining",
+    drinks: "dining",
+    recreation: "adventure",
+    fitness: "adventure",
+    sports: "adventure",
+    outdoor: "adventure",
+    hiking: "adventure",
+    nature: "sightseeing",
+    landmark: "sightseeing",
+    tour: "sightseeing",
+    visit: "sightseeing",
+    excursion: "sightseeing",
+    experience: "sightseeing",
+    market: "shopping",
+    retail: "shopping",
+    hotel: "accommodation",
+    hostel: "accommodation",
+    flight: "transport",
+    train: "transport",
+    bus: "transport",
+    taxi: "transport",
+    transfer: "transport",
+    cruise: "transport",
 };
 
 function normalizeActivityType(raw: unknown): string {
@@ -148,6 +148,10 @@ export async function generateItinerary(
 ): Promise<Itinerary> {
     const parsedReq = GenerateItineraryRequestSchema.parse(request);
 
+    const start = new Date(parsedReq.startDate);
+    const end = new Date(parsedReq.endDate);
+    const computedTotalDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 3600 * 24)) + 1);
+
     const cacheKey = itineraryCacheKey({
         destination: parsedReq.destination,
         startDate: parsedReq.startDate,
@@ -168,7 +172,8 @@ export async function generateItinerary(
     const schema = SCHEMA_INSTRUCTIONS.ITINERARY;
     const task = `
 ## Task
-Generate a complete day‑by‑day travel itinerary for **${parsedReq.destination}** from **${parsedReq.startDate}** to **${parsedReq.endDate}**.
+Generate a complete day‑by‑day travel itinerary for exactly **${computedTotalDays} days** for **${parsedReq.destination}** from **${parsedReq.startDate}** to **${parsedReq.endDate}**.
+- Your "days" array MUST contain exactly ${computedTotalDays} objects, one for each day.
 - Respect the total budget of ${parsedReq.budget.total} ${parsedReq.budget.currency} (flexibility: ${parsedReq.budget.flexibility}).
 - Incorporate any provided Travel DNA profile.
 - Include at least one "must‑see" attraction from the list if possible.

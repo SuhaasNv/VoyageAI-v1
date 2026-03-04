@@ -413,23 +413,18 @@ export const CreateTripFromTextInputSchema = z.object({
     text: z.string().min(1).max(2000),
 });
 
-export const CreateTripFromTextOutputSchema = z
-    .object({
-        destination: z.string().min(2).max(200),
-        startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-        endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-        budget: z
-            .object({
-                total: z.number().nonnegative(),
-                currency: z.string().length(3).default("USD"),
-            })
-            .optional(),
-        style: TripStyleSchema.optional(),
-    })
-    .refine(
-        (d) => new Date(d.endDate) >= new Date(d.startDate),
-        { message: "endDate must be on or after startDate", path: ["endDate"] }
-    );
+export const CreateTripFromTextOutputSchema = z.object({
+    destination: z.string().min(2).max(200),
+    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+    endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+    budget: z
+        .object({
+            total: z.number().nonnegative(),
+            currency: z.string().length(3).default("USD"),
+        })
+        .optional(),
+    style: TripStyleSchema.optional(),
+});
 
 export type CreateTripFromTextInput = z.infer<typeof CreateTripFromTextInputSchema>;
 export type CreateTripFromTextOutput = z.infer<typeof CreateTripFromTextOutputSchema>;
@@ -438,19 +433,14 @@ export type CreateTripFromTextOutput = z.infer<typeof CreateTripFromTextOutputSc
 //  Extract Trip From Ticket (PDF)
 // ─────────────────────────────────────────
 
-export const ExtractTripFromTicketOutputSchema = z
-    .object({
-        departureCity:  z.string().min(2).max(200),
-        destination:    z.string().min(2).max(200),
-        departureDate:  z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-        returnDate:     z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-        airline:        z.string().max(100).optional(),
-        flightNumber:   z.string().max(20).optional(),
-    })
-    .refine(
-        (d) => new Date(d.returnDate) >= new Date(d.departureDate),
-        { message: "returnDate must be on or after departureDate", path: ["returnDate"] }
-    );
+export const ExtractTripFromTicketOutputSchema = z.object({
+    departureCity:  z.string().min(2).max(200),
+    destination:    z.string().min(2).max(200),
+    departureDate:  z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    returnDate:     z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    airline:        z.string().max(100).optional(),
+    flightNumber:   z.string().max(20).optional(),
+});
 
 export type ExtractTripFromTicketOutput = z.infer<typeof ExtractTripFromTicketOutputSchema>;
 
@@ -466,7 +456,7 @@ export const DashboardSuggestionSchema = z.object({
 });
 
 export const DashboardSuggestionsOutputSchema = z.object({
-    suggestions: z.array(DashboardSuggestionSchema).length(2),
+    suggestions: z.array(DashboardSuggestionSchema).min(1).max(10),
 });
 
 export type DashboardSuggestion = z.infer<typeof DashboardSuggestionSchema>;

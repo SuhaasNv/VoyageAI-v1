@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Sparkles, Send, Loader2, CheckCircle2 } from "lucide-react";
-import { getCsrfToken, type Trip } from "@/lib/api";
+import { ensureCsrfToken, type Trip } from "@/lib/api";
 
 interface DashboardAIAssistantProps {
     onTripCreated: (trip: Trip) => void;
@@ -20,12 +20,13 @@ export function DashboardAIAssistant({ onTripCreated }: DashboardAIAssistantProp
         setSuccessMsg(null);
         setErrorMsg(null);
         try {
+            const csrf = await ensureCsrfToken();
             const res = await fetch("/api/ai/create-trip", {
                 method: "POST",
                 credentials: "include",
                 headers: {
                     "Content-Type": "application/json",
-                    "X-CSRF-Token": getCsrfToken()
+                    "X-CSRF-Token": csrf,
                 },
                 body: JSON.stringify({ text: prompt }),
             });

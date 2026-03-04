@@ -50,13 +50,23 @@ export async function POST(req: NextRequest) {
                 return errorResponse("INVALID_INPUT", "File too large — max 10 MB", 400);
             }
 
-            const buffer = Buffer.from(await file.arrayBuffer());
-            const text   = await extractTextFromPdf(buffer);
+            let text: string;
+            try {
+                const buffer = Buffer.from(await file.arrayBuffer());
+                text = await extractTextFromPdf(buffer);
+            } catch (parseErr) {
+                logError("[POST /api/ai/extract-ticket] PDF parse error", parseErr);
+                return errorResponse(
+                    "INVALID_INPUT",
+                    "Could not read this PDF. It may be corrupted, encrypted, or image-based (scanned). Try a text-based e-ticket.",
+                    422
+                );
+            }
 
             if (!text || text.length < 20) {
                 return errorResponse(
                     "INVALID_INPUT",
-                    "Could not extract readable text from this PDF. Try a text-based (not scanned) ticket.",
+                    "Could not extract readable text from this PDF. Use a text-based e-ticket (not a scanned image).",
                     422
                 );
             }

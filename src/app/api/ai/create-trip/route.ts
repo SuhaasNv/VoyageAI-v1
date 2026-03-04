@@ -9,29 +9,28 @@ import { checkRateLimit } from "@/lib/rateLimiter";
 import { formatErrorResponse } from "@/lib/errors";
 import { serializeTrip, type TripDTO } from "@/lib/services/trips";
 import { getDestinationImage } from "@/lib/services/image.service";
-import { getLLMClient, executeWithRetry, parseJSONResponse } from "@/lib/ai/llm";
+import { extractTripFromText } from "@/services/ai/create-trip-from-text.service";
 import { getTravelPreferenceContext } from "@/lib/ai/contextStore";
 
-const CreateTripAIChema = z.object({
+const CreateTripAISchema = z.object({
     text: z.string().min(5).max(1000)
 });
 
-
-
-const ExtractedTripSchema = z.object({
-    destination: z.string(),
-    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    budget: z.coerce.number().nullable().optional(),
-    vibe: z.string().nullable().optional()
-});
+function defaultTripDates(): { startDate: string; endDate: string } {
+    const start = new Date();
+    start.setDate(start.getDate() + 30);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 7);
+    const fmt = (d: Date) => d.toISOString().slice(0, 10);
+    return { startDate: fmt(start), endDate: fmt(end) };
+}
 
 export async function POST(req: NextRequest) {
     return runWithRequestContext(req, async () => {
         const auth = getAuthContext(req);
         if (!auth) return unauthorizedResponse();
 
-        const body = await validateBody(req, CreateTripAIChema);
+        const body = await validateBody(req, CreateTripAISchema);
         if (!body.ok) return body.response;
 
         try {
@@ -39,30 +38,11 @@ export async function POST(req: NextRequest) {
 
             const dnaContext = await getTravelPreferenceContext(auth.user.sub);
 
-            const prompt = `Extract structured travel data from this text. Return strict JSON only.
-Assume the current year is ${new Date().getFullYear()} if the year is not specified.
-${dnaContext ? `\n${dnaContext}\n` : ""}
-Schema:
-{
-  "destination": "string",
-  "startDate": "YYYY-MM-DD",
-  "endDate": "YYYY-MM-DD",
-  "budget": "number (optional, null if not provided)",
-  "vibe": "string enum (relaxed | exciting | creative | luxury | adventure | mixed) (null if not provided)"
-}
-Text: ${body.data.text}`;
+            const extracted = await extractTripFromText(body.data.text, dnaContext ?? undefined);
 
-            const client = getLLMClient();
-            const llmResponse = await executeWithRetry(client, [{ role: "user", content: prompt }], {
-                temperature: 0.1,
-                responseFormat: "json",
-                maxTokens: 300,
-                timeoutMs: 10000,
-                retries: 2,
-            });
-
-            const parsed = parseJSONResponse<unknown>(llmResponse.content);
-            const extracted = ExtractedTripSchema.parse(parsed);
+            const defaults = defaultTripDates();
+            const startDate = extracted.startDate ?? defaults.startDate;
+            const endDate   = extracted.endDate   ?? defaults.endDate;
 
             let imageUrl: string | null = null;
             try {
@@ -73,13 +53,13 @@ Text: ${body.data.text}`;
 
             const trip = await prisma.trip.create({
                 data: {
-                    userId: auth.user.sub,
+                    userId:      auth.user.sub,
                     destination: extracted.destination,
-                    startDate: new Date(extracted.startDate),
-                    endDate: new Date(extracted.endDate),
-                    budgetTotal: extracted.budget || 0,
-                    style: extracted.vibe || undefined,
-                    imageUrl: imageUrl || undefined,
+                    startDate:   new Date(startDate),
+                    endDate:     new Date(endDate),
+                    budgetTotal: extracted.budget?.total ?? 0,
+                    style:       extracted.style ?? undefined,
+                    imageUrl:    imageUrl ?? undefined,
                 },
             });
 

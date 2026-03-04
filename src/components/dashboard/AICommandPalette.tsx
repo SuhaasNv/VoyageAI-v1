@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Sparkles, Send, Loader2, CheckCircle2, X } from "lucide-react";
-import { getCsrfToken, type Trip } from "@/lib/api";
+import { ensureCsrfToken, type Trip } from "@/lib/api";
 
 interface AICommandPaletteProps {
     onTripCreated: (trip: Trip) => void;
@@ -49,12 +49,13 @@ export function AICommandPalette({ onTripCreated }: AICommandPaletteProps) {
         setErrorMsg(null);
 
         try {
+            const csrf = await ensureCsrfToken();
             const res = await fetch("/api/ai/create-trip", {
                 method: "POST",
                 credentials: "include",
                 headers: {
                     "Content-Type": "application/json",
-                    "X-CSRF-Token": getCsrfToken(),
+                    "X-CSRF-Token": csrf,
                 },
                 body: JSON.stringify({ text: prompt }),
             });

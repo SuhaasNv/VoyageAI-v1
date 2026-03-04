@@ -38,6 +38,13 @@ export async function POST(req: NextRequest) {
             const dnaContext = await getTravelPreferenceContext(auth.user.sub);
             const extracted = await extractTripFromText(text, dnaContext || undefined);
 
+            const defaultStart = new Date();
+            defaultStart.setDate(defaultStart.getDate() + 30);
+            const defaultEnd = new Date(defaultStart);
+            defaultEnd.setDate(defaultEnd.getDate() + 7);
+            const startDate = extracted.startDate ?? defaultStart.toISOString().slice(0, 10);
+            const endDate   = extracted.endDate   ?? defaultEnd.toISOString().slice(0, 10);
+
             let imageUrl: string | null = null;
             try {
                 imageUrl = await getDestinationImage(extracted.destination);
@@ -49,8 +56,8 @@ export async function POST(req: NextRequest) {
                 data: {
                     userId: auth.user.sub,
                     destination: extracted.destination,
-                    startDate: new Date(extracted.startDate),
-                    endDate: new Date(extracted.endDate),
+                    startDate: new Date(startDate),
+                    endDate: new Date(endDate),
                     budgetTotal: extracted.budget?.total ?? 0,
                     budgetCurrency: extracted.budget?.currency ?? "USD",
                     style: extracted.style ?? undefined,

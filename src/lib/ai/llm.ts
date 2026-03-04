@@ -104,14 +104,8 @@ class MockLLMClient implements LLMClient {
             (this.simulatedLatencyMs.max - this.simulatedLatencyMs.min);
         await this.sleep(latency);
 
-        // Simulate occasional transient errors (5% rate) for error handling testing
-        if (Math.random() < 0.05) {
-            throw new AIServiceError(
-                "LLM_ERROR",
-                "Simulated transient LLM error (5% failure rate for testing)",
-                { provider: "mock" }
-            );
-        }
+        // Transient errors disabled for stability — re-enable for error-handling tests
+        // if (Math.random() < 0.05) { throw new AIServiceError("LLM_ERROR", "Simulated error", {}); }
 
         const systemPrompt =
             messages.find((m) => m.role === "system")?.content ?? "";
@@ -134,149 +128,180 @@ class MockLLMClient implements LLMClient {
         };
     }
 
-    private generateMockResponse(system: string, _user: string): string {
+    private generateMockResponse(system: string, user: string): string {
         const now = new Date().toISOString();
 
-        // Route to the correct mock based on system prompt content
-        if (system.includes("itinerary architect")) {
-            return JSON.stringify(this.mockItineraryResponse(now));
+        // Check both the system role message and the user message content
+        // (services embed the system prompt in the user message via buildFullPrompt)
+        const ctx = system + " " + user;
+
+        if (ctx.includes("itinerary architect") || ctx.includes("day-by-day travel itinerary") || ctx.includes("expert travel planner")) {
+            return JSON.stringify(this.mockItineraryResponse(now, user));
         }
-        if (system.includes("adaptive trip intelligence")) {
-            return JSON.stringify(this.mockReoptimizeResponse(now));
+        if (ctx.includes("adaptive trip intelligence")) {
+            return JSON.stringify(this.mockReoptimizeResponse(now, user));
         }
-        if (system.includes("AI travel companion")) {
+        if (ctx.includes("AI travel companion")) {
             return JSON.stringify(this.mockChatResponse(now));
         }
-        if (system.includes("packing advisor")) {
+        if (ctx.includes("packing advisor")) {
             return JSON.stringify(this.mockPackingResponse(now));
         }
-        if (system.includes("trip risk analyst")) {
+        if (ctx.includes("trip risk analyst")) {
             return JSON.stringify(this.mockSimulationResponse(now));
         }
-        if (system.includes("trip creation assistant")) {
+        if (ctx.includes("trip creation assistant")) {
             return JSON.stringify(this.mockCreateTripFromTextResponse(now));
         }
-        if (system.includes("ticket parser")) {
+        if (ctx.includes("ticket parser")) {
             return JSON.stringify(this.mockExtractTripFromTicketResponse(now));
         }
-        if (system.includes("contextual suggestion engine")) {
+        if (ctx.includes("contextual suggestion engine")) {
             return JSON.stringify(this.mockDashboardSuggestionsResponse(now));
         }
 
         return JSON.stringify({ message: "Unknown endpoint", modelVersion: "voyage-ai-mock-v1.0" });
     }
 
-    private mockItineraryResponse(now: string) {
+    private mockItineraryResponse(now: string, userPrompt: string) {
+        // Default to the hardcoded values for fallback
+        let destination = "Tokyo, Japan";
+        let startDate = "2025-04-01";
+        let endDate = "2025-04-05";
+        let totalDays = 5;
+
+        // Try to extract dynamic values from the prompt
+        const destMatch = userPrompt.match(/for \*\*(.*?)\*\* from/);
+        const startMatch = userPrompt.match(/from \*\*(.*?)\*\* to/);
+        const endMatch = userPrompt.match(/to \*\*(.*?)\*\*\./);
+        const daysMatch = userPrompt.match(/exactly \*\*(\d+) days\*\*/);
+
+        if (destMatch && destMatch[1]) destination = destMatch[1];
+        if (startMatch && startMatch[1]) startDate = startMatch[1];
+        if (endMatch && endMatch[1]) endDate = endMatch[1];
+        if (daysMatch && daysMatch[1]) {
+            totalDays = parseInt(daysMatch[1], 10);
+        } else {
+            // fallback day calculation if prompt regex misses
+            try {
+                const s = new Date(startDate);
+                const e = new Date(endDate);
+                if (!isNaN(s.getTime()) && !isNaN(e.getTime())) {
+                    totalDays = Math.max(1, Math.ceil((e.getTime() - s.getTime()) / (1000 * 3600 * 24)) + 1);
+                }
+            } catch {
+                // ignore
+            }
+        }
+
+        const days = [];
+        const startTs = new Date(startDate).getTime() || Date.now();
+
+        for (let i = 0; i < totalDays; i++) {
+            const currentDayDate = new Date(startTs + i * 24 * 3600 * 1000).toISOString().split('T')[0];
+            const destCity = destination.split(',')[0].trim();
+            days.push({
+                day: i + 1,
+                date: currentDayDate,
+                theme: `Day ${i + 1} Immersion in ${destCity}`,
+                activities: [
+                    {
+                        id: `act_${Date.now()}_${i}_1`,
+                        name: i === 0 ? `Check in at ${destCity} Hotel` : `Explore ${destCity} Historic Center`,
+                        type: i === 0 ? "accommodation" : "sightseeing",
+                        startTime: "10:00",
+                        endTime: "12:30",
+                        duration_minutes: 150,
+                        location: {
+                            name: i === 0 ? `${destCity} Central Hotel` : `${destCity} Main Square`,
+                            address: `Central District, ${destCity}`,
+                            lat: 35.6897 + (i * 0.01),
+                            lng: 139.6922 + (i * 0.01),
+                        },
+                        estimatedCost: { amount: 20, currency: "USD" },
+                        notes: `Enjoy a wonderful morning in ${destCity}.`,
+                        aiGenerated: true,
+                        fatigueScore: 2,
+                        tags: ["morning", "discovery"],
+                    },
+                    {
+                        id: `act_${Date.now()}_${i}_2`,
+                        name: `Authentic ${destCity} Cuisine`,
+                        type: "dining",
+                        startTime: "13:00",
+                        endTime: "15:00",
+                        duration_minutes: 120,
+                        location: {
+                            name: `Famous ${destCity} Restaurant`,
+                            address: `Culinary Ave, ${destCity}`,
+                            lat: 35.6851 + (i * 0.01),
+                            lng: 139.7106 + (i * 0.01),
+                        },
+                        estimatedCost: { amount: 30, currency: "USD" },
+                        notes: "A great place for a local meal.",
+                        aiGenerated: true,
+                        fatigueScore: 1,
+                        tags: ["food", "local"],
+                    },
+                    {
+                        id: `act_${Date.now()}_${i}_3`,
+                        name: `${destCity} Evening Attraction`,
+                        type: "cultural",
+                        startTime: "16:00",
+                        endTime: "19:00",
+                        duration_minutes: 180,
+                        location: {
+                            name: `${destCity} Cultural Site`,
+                            address: `Historic District, ${destCity}`,
+                            lat: 35.6918 + (i * 0.01),
+                            lng: 139.7001 + (i * 0.01),
+                        },
+                        estimatedCost: { amount: 40, currency: "USD" },
+                        notes: "Experience the vibrant evening culture.",
+                        aiGenerated: true,
+                        fatigueScore: 3,
+                        tags: ["evening", "culture"],
+                    }
+                ],
+                totalCost: { amount: 90, currency: "USD" },
+                dailyFatigueScore: 3 + i,
+                tips: ["Stay hydrated and wear comfortable shoes."],
+            });
+        }
+
         return {
             tripId: `trip_${Date.now()}`,
-            destination: "Tokyo, Japan",
-            startDate: "2025-04-01",
-            endDate: "2025-04-05",
-            totalDays: 5,
-            days: [
-                {
-                    day: 1,
-                    date: "2025-04-01",
-                    theme: "Arrival & Shinjuku Immersion",
-                    activities: [
-                        {
-                            id: `act_${Date.now()}_1`,
-                            name: "Check in at Hotel & Refresh",
-                            type: "accommodation",
-                            startTime: "15:00",
-                            endTime: "16:30",
-                            duration_minutes: 90,
-                            location: {
-                                name: "Shinjuku Washington Hotel",
-                                address: "3-2-9 Nishi-Shinjuku, Tokyo",
-                                lat: 35.6897,
-                                lng: 139.6922,
-                            },
-                            estimatedCost: { amount: 120, currency: "USD" },
-                            notes: "Check-in typically at 3PM. Store luggage if early arrival.",
-                            aiGenerated: true,
-                            fatigueScore: 1,
-                            tags: ["accommodation", "rest"],
-                        },
-                        {
-                            id: `act_${Date.now()}_2`,
-                            name: "Shinjuku Gyoen National Garden",
-                            type: "sightseeing",
-                            startTime: "16:30",
-                            endTime: "18:30",
-                            duration_minutes: 120,
-                            location: {
-                                name: "Shinjuku Gyoen",
-                                address: "11 Naitomachi, Shinjuku City",
-                                lat: 35.6851,
-                                lng: 139.7106,
-                            },
-                            estimatedCost: { amount: 5, currency: "USD" },
-                            notes:
-                                "Cherry blossoms peak in late March to early April. Arrive 1 hour before closing.",
-                            aiGenerated: true,
-                            fatigueScore: 2,
-                            tags: ["nature", "cherry-blossoms", "peaceful"],
-                        },
-                        {
-                            id: `act_${Date.now()}_3`,
-                            name: "Omoide Yokocho (Memory Lane) Dinner",
-                            type: "dining",
-                            startTime: "19:00",
-                            endTime: "21:00",
-                            duration_minutes: 120,
-                            location: {
-                                name: "Omoide Yokocho",
-                                address: "1-2-11 Nishi-Shinjuku, Tokyo",
-                                lat: 35.6918,
-                                lng: 139.7001,
-                            },
-                            estimatedCost: { amount: 30, currency: "USD" },
-                            notes:
-                                "Classic yakitori alley. Try: Sakura (chicken), tsukune, and a cold Sapporo.",
-                            aiGenerated: true,
-                            fatigueScore: 2,
-                            tags: ["food", "yakitori", "local-experience"],
-                        },
-                    ],
-                    totalCost: { amount: 155, currency: "USD" },
-                    dailyFatigueScore: 3,
-                    tips: [
-                        "Get a Suica card at the airport for seamless transit.",
-                        "Jet lag tip: stay awake until 10PM local time on arrival day.",
-                    ],
-                },
-            ],
+            destination,
+            startDate,
+            endDate,
+            totalDays,
+            days,
             totalEstimatedCost: {
-                amount: 1850,
+                amount: 90 * totalDays + 600,
                 currency: "USD",
                 breakdown: {
                     accommodation: 600,
-                    food: 350,
-                    activities: 400,
+                    food: 30 * totalDays,
+                    activities: 60 * totalDays,
                     transport: 200,
-                    shopping: 300,
                 },
             },
             aiInsights: [
-                "Cherry blossom season (late March–early April) makes this the optimal time for Tokyo.",
-                "Japan Rail Pass not cost-effective for Tokyo-only trips; Suica card recommended.",
-                "Pace is set to moderate — 4-5 activities per day with built-in rest windows.",
+                "Mock itinerary generator recognized your dates and adapted.",
+                "Pace is set to moderate with balanced activities.",
             ],
             pacingAnalysis: {
                 overallScore: 7.2,
                 warnings: [],
-                suggestions: [
-                    "Consider adding a rest afternoon on Day 3 after the intensive Day 2 schedule.",
-                ],
+                suggestions: [],
             },
             generatedAt: now,
             modelVersion: "voyage-ai-mock-v1.0",
         };
     }
 
-    private mockReoptimizeResponse(now: string) {
-        const mockItinerary = this.mockItineraryResponse(now);
+    private mockReoptimizeResponse(now: string, userPrompt: string) {
+        const mockItinerary = this.mockItineraryResponse(now, userPrompt);
         return {
             tripId: mockItinerary.tripId,
             originalItinerary: mockItinerary,

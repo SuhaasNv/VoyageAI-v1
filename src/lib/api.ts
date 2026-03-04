@@ -21,7 +21,7 @@ export function getCsrfToken(): string {
 
 // ─── Fetch options ────────────────────────────────────────────────────────────
 
-async function ensureCsrfToken(): Promise<string> {
+export async function ensureCsrfToken(): Promise<string> {
   let token = getCsrfToken();
   if (!token) {
     if (typeof window !== "undefined") {

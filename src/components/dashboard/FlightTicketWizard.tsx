@@ -18,7 +18,7 @@ import {
     AlertCircle,
     ExternalLink,
 } from "lucide-react";
-import { getCsrfToken } from "@/lib/api";
+import { ensureCsrfToken } from "@/lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -171,7 +171,7 @@ export function FlightTicketWizard({ isOpen, onClose, onTripCreated }: FlightTic
         setStep("extracting");
 
         try {
-            const csrf = await getCsrfToken();
+            const csrf = await ensureCsrfToken();
             const form = new FormData();
             form.append("file", file);
 
@@ -182,8 +182,13 @@ export function FlightTicketWizard({ isOpen, onClose, onTripCreated }: FlightTic
                 body:        form,
             });
 
-            const json = await res.json();
-            if (!json.success) throw new Error(json.error?.message ?? "Extraction failed.");
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok || !json.success) {
+                const msg = json?.error?.message ?? (res.status === 422
+                    ? "Could not read text from this PDF. Use a text-based ticket (not a scanned image)."
+                    : "Extraction failed.");
+                throw new Error(msg);
+            }
 
             setExtracted(json.data as ExtractedTicket);
             setStep("review");
@@ -205,7 +210,7 @@ export function FlightTicketWizard({ isOpen, onClose, onTripCreated }: FlightTic
 
         try {
             // Phase A: create trip
-            const csrf = await getCsrfToken();
+            const csrf = await ensureCsrfToken();
             const createRes = await fetch("/api/trips/from-ticket", {
                 method:      "POST",
                 credentials: "include",
@@ -235,7 +240,7 @@ export function FlightTicketWizard({ isOpen, onClose, onTripCreated }: FlightTic
             setCreateMsg("Generating AI itinerary…");
 
             // Phase B: generate itinerary
-            const csrf2 = await getCsrfToken();
+            const csrf2 = await ensureCsrfToken();
             const itiRes = await fetch("/api/ai/itinerary", {
                 method:      "POST",
                 credentials: "include",
@@ -356,7 +361,7 @@ export function FlightTicketWizard({ isOpen, onClose, onTripCreated }: FlightTic
                                                 <p className="text-sm font-semibold text-white truncate max-w-[200px]">{file.name}</p>
                                                 <p className="text-xs text-white/35">{(file.size / 1024).toFixed(0)} KB · PDF</p>
                                             </div>
-                                            <p className="text-[11px] text-white/25">Click to change</p>
+                                            <p className="text-[11px] text-white/25">Click to change · Text-based PDFs only</p>
                                         </>
                                     ) : (
                                         <>
@@ -366,6 +371,7 @@ export function FlightTicketWizard({ isOpen, onClose, onTripCreated }: FlightTic
                                             <div className="text-center space-y-1">
                                                 <p className="text-sm font-medium text-white/60">Drop your ticket here</p>
                                                 <p className="text-xs text-white/25">or click to browse · PDF only · max 10 MB</p>
+                                                <p className="text-[10px] text-white/20">Text-based PDFs only (scanned tickets may not work)</p>
                                             </div>
                                             <div className="flex gap-2 mt-1">
                                                 {["e-ticket", "booking conf.", "itinerary"].map(t => (

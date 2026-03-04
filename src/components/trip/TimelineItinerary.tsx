@@ -34,7 +34,7 @@ import {
     AlertCircle,
     RefreshCw,
 } from "lucide-react";
-import { getCsrfToken } from "@/lib/api";
+import { ensureCsrfToken } from "@/lib/api";
 import type { TripDTO, ItineraryDay, ItineraryEvent } from "@/lib/services/trips";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -389,12 +389,13 @@ export function TimelineItinerary({ trip, onRefresh, onDayChange, onActivityFocu
         setIsGenerating(true);
         setGenError(null);
         try {
+            const csrf = await ensureCsrfToken();
             const res = await fetch("/api/ai/itinerary", {
                 method: "POST",
                 credentials: "include",
                 headers: {
                     "Content-Type": "application/json",
-                    "X-CSRF-Token": getCsrfToken(),
+                    "X-CSRF-Token": csrf,
                 },
                 body: JSON.stringify({
                     tripId: trip.id,
