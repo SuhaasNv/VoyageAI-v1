@@ -16,7 +16,12 @@ type RawPrismaUser = {
     email: string;
     name: string | null;
     role: string;
-    createdAt: Date; // raw Date from Prisma
+    createdAt: Date;
+};
+
+type TopDestination = {
+    destination: string;
+    count: number;
 };
 
 type RecentUser = {
@@ -27,9 +32,25 @@ type RecentUser = {
     createdAt: string; // ISO string after mapping
 };
 
+type Overview = {
+    totalUsers: number;
+    activeUsers7d: number;
+    newUsers7d: number;
+    roleCounts: Record<string, number>;
+    totalTrips: number;
+    topDestinations: TopDestination[];
+    recentUsers: RecentUser[];
+    totalAiCalls: number;
+    aiLast7d: number;
+    totalTokens: number;
+    totalCostUsd: number;
+    totalChats: number;
+    totalItineraries: number;
+};
+
 // ─── Data layer ───────────────────────────────────────────────────────────────
 
-async function getOverview() {
+async function getOverview(): Promise<Overview> {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
     const [
@@ -79,12 +100,9 @@ async function getOverview() {
         newUsers7d,
         roleCounts,
         totalTrips,
-        topDestinations: topDestinations.map((d: {
-            destination: string;
-            _count: { id: number };
-        }) => ({
-            destination: d.destination,
-            count: d._count.id,
+        topDestinations: topDestinations.map((row: { destination: string; _count: { id: number } }): TopDestination => ({
+            destination: row.destination,
+            count: row._count.id,
         })),
         recentUsers: recentUsers.map((u: RawPrismaUser): RecentUser => ({
             id: u.id,
@@ -213,7 +231,7 @@ export default async function AdminOverviewPage() {
                 <div>
                     <SectionHeader title="Recent Signups" href="/admin/users" linkLabel="Manage users →" />
                     <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] overflow-hidden">
-                        {d.recentUsers.map((u: RecentUser, i: number) => (
+                        {d.recentUsers.map((u, i) => (
                             <div
                                 key={u.id}
                                 className={`flex items-center gap-3 px-4 py-3 ${i < d.recentUsers.length - 1 ? "border-b border-white/[0.04]" : ""}`}
