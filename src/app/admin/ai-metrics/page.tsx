@@ -45,14 +45,24 @@ async function getMetrics(): Promise<AiMetrics> {
         successCount,
         errorRate:    totalCalls > 0 ? (errorCount / totalCalls) * 100 : 0,
         totalCostUsd: totals._sum.costEstimateUsd ?? 0,
-        byEndpoint: byEndpoint.map((row) => ({
+        byEndpoint: byEndpoint.map((row: {
+            endpoint: string | null;
+            _count: { id: number };
+            _sum: { totalTokens: number | null; costEstimateUsd: number | null };
+            _avg: { latencyMs: number | null };
+        }) => ({
             endpoint:     row.endpoint ?? "(unknown)",
             calls:        row._count.id,
             tokens:       row._sum.totalTokens    ?? 0,
             avgLatencyMs: Math.round(row._avg.latencyMs ?? 0),
             costUsd:      row._sum.costEstimateUsd ?? 0,
         })),
-        byProvider: byProvider.map((row) => ({
+        byProvider: byProvider.map((row: {
+            provider: string;
+            _count: { id: number };
+            _sum: { totalTokens: number | null; costEstimateUsd: number | null };
+            _avg: { latencyMs: number | null };
+        }) => ({
             provider:     row.provider,
             calls:        row._count.id,
             tokens:       row._sum.totalTokens    ?? 0,
