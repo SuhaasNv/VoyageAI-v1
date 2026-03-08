@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateCsrfToken } from "@/lib/auth/csrf";
-import { serializeCsrfCookie } from "@/lib/auth/cookies";
+import { generateCsrfToken } from "@/services/auth/csrf";
+import { serializeCsrfCookie } from "@/services/auth/cookies";
 import { successResponse } from "@/lib/api/response";
 import { runWithRequestContext } from "@/lib/requestContext";
 

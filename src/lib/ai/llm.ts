@@ -14,45 +14,11 @@
  */
 
 import { AIErrorSchema, type AIError } from "./schemas";
-import { logLLMUsage } from "./usageLogger";
+import { logLLMUsage } from "../../services/logging/usageLogger";
 import { getRequestId, getRequestPathname } from "@/lib/requestContext";
-import { logInfo, logError } from "@/lib/logger";
+import { logInfo, logError } from "@/infrastructure/logger";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-
-// ─────────────────────────────────────────
-//  LLM Client Interface
-// ─────────────────────────────────────────
-
-export interface LLMMessage {
-    role: "system" | "user" | "assistant";
-    content: string;
-}
-
-export interface LLMRequestOptions {
-    model?: string;
-    temperature?: number;
-    maxTokens?: number;
-    responseFormat?: "json" | "text";
-    timeoutMs?: number;
-    retries?: number;
-}
-
-export interface LLMResponse {
-    content: string;
-    modelUsed: string;
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
-    latencyMs: number;
-    provider: string;
-}
-
-export interface LLMClient {
-    execute(
-        messages: LLMMessage[],
-        options?: LLMRequestOptions
-    ): Promise<LLMResponse>;
-}
+import { type LLMMessage, type LLMRequestOptions, type LLMResponse, type LLMClient } from "./types";
 
 // ─────────────────────────────────────────
 //  Custom AI Error

@@ -25,11 +25,11 @@ import {
     signAccessToken,
     signRefreshToken,
     hashToken,
-} from "@/lib/auth/tokens";
-import { serializeRefreshTokenCookie, clearRefreshTokenCookie, serializeAccessTokenCookie, serializeCsrfCookie } from "@/lib/auth/cookies";
-import { generateCsrfToken } from "@/lib/auth/csrf";
-import { rateLimit, REFRESH_RATE_LIMIT } from "@/lib/auth/rateLimit";
-import { writeAuditLog } from "@/lib/auth/audit";
+} from "@/services/auth/tokens";
+import { serializeRefreshTokenCookie, clearRefreshTokenCookie, serializeAccessTokenCookie, serializeCsrfCookie } from "@/services/auth/cookies";
+import { generateCsrfToken } from "@/services/auth/csrf";
+import { rateLimit, REFRESH_RATE_LIMIT } from "@/services/auth/rateLimit";
+import { writeAuditLog } from "@/services/auth/audit";
 import {
     successResponse,
     unauthorizedResponse,
@@ -37,7 +37,7 @@ import {
     internalErrorResponse,
 } from "@/lib/api/response";
 import { getClientIp, getRefreshTokenFromCookie } from "@/lib/api/request";
-import { logError } from "@/lib/logger";
+import { logError } from "@/infrastructure/logger";
 import { runWithRequestContext } from "@/lib/requestContext";
 
 export async function POST(req: NextRequest) {

@@ -9,19 +9,19 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { exchangeCodeForUserInfo } from "@/lib/auth/google";
-import { signAccessToken, signRefreshToken, newTokenFamily } from "@/lib/auth/tokens";
+import { exchangeCodeForUserInfo } from "@/services/auth/google";
+import { signAccessToken, signRefreshToken, newTokenFamily } from "@/services/auth/tokens";
 import {
     serializeRefreshTokenCookie,
     serializeCsrfCookie,
     serializeAccessTokenCookie,
     clearOAuthStateCookie,
-} from "@/lib/auth/cookies";
-import { generateCsrfToken } from "@/lib/auth/csrf";
-import { writeAuditLog } from "@/lib/auth/audit";
-import { OAUTH_STATE_COOKIE } from "@/lib/auth/cookies";
+} from "@/services/auth/cookies";
+import { generateCsrfToken } from "@/services/auth/csrf";
+import { writeAuditLog } from "@/services/auth/audit";
+import { OAUTH_STATE_COOKIE } from "@/services/auth/cookies";
 import { getClientIp } from "@/lib/api/request";
-import { logError } from "@/lib/logger";
+import { logError } from "@/infrastructure/logger";
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 

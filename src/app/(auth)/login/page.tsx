@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Eye, EyeOff, MoveRight, Loader2, AlertCircle } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
-import { Logo } from "@/components/Logo";
+import { Logo } from "@/ui/components/Logo";
 
 // ── Component ─────────────────────────────────────────────────────────────
 

@@ -2,8 +2,10 @@
  * /admin/ai-metrics
  *
  * AI usage metrics page — auth handled by parent admin layout.
- * Queries ai_usage_logs directly.
+ * Queries ai_usage_logs directly. Always server-rendered on demand.
  */
+
+export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
 import type { AiMetrics } from "@/app/api/admin/ai-metrics/route";

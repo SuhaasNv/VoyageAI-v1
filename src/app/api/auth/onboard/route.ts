@@ -10,7 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { successResponse, unauthorizedResponse, internalErrorResponse } from "@/lib/api/response";
 import { getAuthContext, validateBody } from "@/lib/api/request";
 import { runWithRequestContext } from "@/lib/requestContext";
-import { logError } from "@/lib/logger";
+import { logError } from "@/infrastructure/logger";
 
 const OnboardSchema = z.object({
     travelStyles: z.array(z.string()).min(1).max(5).optional().default([]),

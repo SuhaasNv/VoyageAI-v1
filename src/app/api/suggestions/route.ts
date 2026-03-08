@@ -12,15 +12,15 @@ import { prisma } from "@/lib/prisma";
 import { successResponse, unauthorizedResponse } from "@/lib/api/response";
 import { getAuthContext } from "@/lib/api/request";
 import { runWithRequestContext } from "@/lib/requestContext";
-import { logError } from "@/lib/logger";
-import { checkRateLimit } from "@/lib/rateLimiter";
+import { logError } from "@/infrastructure/logger";
+import { checkRateLimit } from "@/security/rateLimiter";
 import { formatErrorResponse } from "@/lib/errors";
 import {
     suggestionsCacheKey,
     getSuggestionsCached,
     setSuggestionsCached,
 } from "@/lib/ai/cache";
-import { generateSuggestionsForTrip } from "@/services/ai/dashboard-suggestions.service";
+import { generateSuggestionsForTrip } from "@/tools/suggestionTool";
 import { rankSuggestions } from "@/lib/ai/travelDNARules";
 import { generateSuggestions, type DestinationSuggestion } from "@/lib/ai/destinationSuggestions";
 

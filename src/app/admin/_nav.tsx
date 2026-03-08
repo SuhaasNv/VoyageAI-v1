@@ -1,14 +1,16 @@
 "use client";
 
+import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
     LayoutDashboard,
     Users,
     BarChart2,
-    ArrowLeft,
+    LogOut,
     Shield,
 } from "lucide-react";
+import { useAuthStore } from "@/stores/authStore";
 
 const NAV_LINKS = [
     { href: "/admin",             icon: LayoutDashboard, label: "Overview"   },
@@ -22,6 +24,14 @@ interface AdminNavProps {
 
 export default function AdminNav({ email }: AdminNavProps) {
     const pathname = usePathname();
+    const { logout } = useAuthStore();
+    const [isLoggingOut, setIsLoggingOut] = React.useState(false);
+
+    const handleSignOut = () => {
+        setIsLoggingOut(true);
+        logout();
+        window.location.href = "/login";
+    };
 
     return (
         <aside className="w-52 shrink-0 flex flex-col border-r border-white/[0.06] bg-[#060A0F]">
@@ -65,13 +75,19 @@ export default function AdminNav({ email }: AdminNavProps) {
 
             {/* Footer */}
             <div className="px-4 pb-6 pt-3 border-t border-white/[0.06]">
-                <Link
-                    href="/dashboard"
-                    className="flex items-center gap-2 text-xs text-slate-600 hover:text-slate-400 transition-colors"
+                <button
+                    type="button"
+                    onClick={handleSignOut}
+                    disabled={isLoggingOut}
+                    className="flex items-center gap-2 w-full text-left text-xs text-slate-600 hover:text-slate-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
-                    <ArrowLeft className="w-3.5 h-3.5" />
-                    Back to Dashboard
-                </Link>
+                    {isLoggingOut ? (
+                        <span className="w-3.5 h-3.5 border-2 border-slate-500/30 border-t-slate-400 rounded-full animate-spin" />
+                    ) : (
+                        <LogOut className="w-3.5 h-3.5" />
+                    )}
+                    {isLoggingOut ? "Signing out…" : "Sign out"}
+                </button>
             </div>
         </aside>
     );

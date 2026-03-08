@@ -20,8 +20,8 @@ import { extractTripFromTicket } from "@/services/ai/extract-trip-from-ticket.se
 import { extractTextFromPdf } from "@/lib/pdf/extractText";
 import { getAuthContext } from "@/lib/api/request";
 import { runWithRequestContext } from "@/lib/requestContext";
-import { logError } from "@/lib/logger";
-import { checkRateLimit } from "@/lib/rateLimiter";
+import { logError } from "@/infrastructure/logger";
+import { checkRateLimit } from "@/security/rateLimiter";
 import { formatErrorResponse } from "@/lib/errors";
 import { successResponse, errorResponse, unauthorizedResponse } from "@/lib/api/response";
 

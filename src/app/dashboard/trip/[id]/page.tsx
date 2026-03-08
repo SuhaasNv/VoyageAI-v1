@@ -1,13 +1,13 @@
 import { notFound, redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
-import { verifyAccessToken } from "@/lib/auth/tokens";
-import { ACCESS_TOKEN_COOKIE } from "@/lib/auth/cookies";
+import { verifyAccessToken } from "@/services/auth/tokens";
+import { ACCESS_TOKEN_COOKIE } from "@/services/auth/cookies";
 import { serializeTrip, parseStoredItinerary } from "@/lib/services/trips";
 import { ItinerarySchema, type Itinerary } from "@/lib/ai/schemas";
 import type { ChatMessageDTO } from "@/app/api/trips/[id]/chat/route";
-import { logError } from "@/lib/logger";
-import { TripViewClient } from "@/components/trip/TripViewClient";
+import { logError } from "@/infrastructure/logger";
+import { TripViewClient } from "@/ui/components/trip/TripViewClient";
 
 export default async function TripViewPage({ params }: { params: Promise<{ id: string }> }) {
     const cookieStore = await cookies();

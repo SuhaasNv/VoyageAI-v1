@@ -13,11 +13,11 @@ import { z } from "zod";
 import { compareTrips } from "@/lib/ai/compareTrips";
 import { validateBody, getAuthContext } from "@/lib/api/request";
 import { formatErrorResponse } from "@/lib/errors";
-import { logError } from "@/lib/logger";
+import { logError } from "@/infrastructure/logger";
 import { runWithRequestContext } from "@/lib/requestContext";
-import { checkRateLimit } from "@/lib/rateLimiter";
+import { checkRateLimit } from "@/security/rateLimiter";
 import { unauthorizedResponse } from "@/lib/api/response";
-import { sanitizeUserInput } from "@/lib/ai/safety";
+import { sanitizeUserInput } from "@/security/safety";
 
 const CompareSchema = z.object({
     destinationA: z.string().min(2).max(100),

@@ -14,7 +14,7 @@
  * Reuses routeDistanceKm from the existing geo layer.
  */
 
-import { routeDistanceKm } from "@/lib/geo/routeOptimizer";
+import { routeDistanceKm } from "@/services/geo/routeOptimizer";
 import type { Itinerary } from "@/lib/ai/schemas";
 
 // ─────────────────────────────────────────────────────────────────────────────

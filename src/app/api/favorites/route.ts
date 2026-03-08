@@ -14,7 +14,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getAuthContext } from "@/lib/api/request";
 import { runWithRequestContext } from "@/lib/requestContext";
-import { logInfo, logError } from "@/lib/logger";
+import { logInfo, logError } from "@/infrastructure/logger";
 
 export const runtime = "nodejs";
 

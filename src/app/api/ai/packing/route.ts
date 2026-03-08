@@ -10,13 +10,13 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
-import { generatePackingList } from "@/services/ai/packing.service";
+import { generatePackingList } from "@/tools/packingTool";
 import { PackingListRequestSchema } from "@/lib/ai/schemas";
 import { validateBody, getAuthContext } from "@/lib/api/request";
 import { formatErrorResponse } from "@/lib/errors";
-import { logError } from "@/lib/logger";
+import { logError } from "@/infrastructure/logger";
 import { runWithRequestContext } from "@/lib/requestContext";
-import { checkRateLimit } from "@/lib/rateLimiter";
+import { checkRateLimit } from "@/security/rateLimiter";
 import { unauthorizedResponse } from "@/lib/api/response";
 
 export async function POST(req: NextRequest): Promise<NextResponse> {

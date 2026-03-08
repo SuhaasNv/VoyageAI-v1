@@ -6,7 +6,7 @@
  * itinerary service and travelScore engine.
  */
 
-import { generateItinerary } from "@/services/ai/itinerary.service";
+import { generateItinerary } from "@/tools/itineraryTool";
 import { calculateTravelScore, type TravelScoreResult } from "@/lib/analysis/travelScore";
 import type { Itinerary } from "@/lib/ai/schemas";
 
