@@ -19,8 +19,8 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { CSRF_TOKEN_COOKIE } from "@/lib/auth/cookies";
-import { env } from "@/lib/env";
+import { CSRF_TOKEN_COOKIE } from "@/services/auth/cookies";
+import { env } from "@/infrastructure/env";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants

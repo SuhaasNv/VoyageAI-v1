@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin, AdminAuthError } from "@/lib/admin";
-import { logError } from "@/lib/logger";
+import { logError } from "@/infrastructure/logger";
 
 type Role = "USER" | "ADMIN" | "MODERATOR";
 

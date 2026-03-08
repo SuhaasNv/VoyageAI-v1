@@ -12,11 +12,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { ItinerarySchema } from "@/lib/ai/schemas";
-import { optimizeItineraryRoutes } from "@/lib/geo/routeOptimizer";
+import { optimizeItineraryRoutes } from "@/services/geo/routeOptimizer";
 import { getAuthContext, validateBody } from "@/lib/api/request";
 import { unauthorizedResponse } from "@/lib/api/response";
 import { runWithRequestContext } from "@/lib/requestContext";
-import { checkRateLimit } from "@/lib/rateLimiter";
+import { checkRateLimit } from "@/security/rateLimiter";
 import { formatErrorResponse } from "@/lib/errors";
 
 const OptimizeRequestSchema = z.object({

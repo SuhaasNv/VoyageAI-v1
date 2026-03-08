@@ -12,20 +12,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-import { chatCompanion } from "@/services/ai/chat.service";
+import { chatCompanion } from "@/tools/chatTool";
 import { ChatRequestSchema, type Itinerary, type TravelDNA } from "@/lib/ai/schemas";
 import { validateBody, getAuthContext } from "@/lib/api/request";
 import { formatErrorResponse } from "@/lib/errors";
-import { logError } from "@/lib/logger";
+import { logError } from "@/infrastructure/logger";
 import { runWithRequestContext } from "@/lib/requestContext";
-import { checkRateLimit } from "@/lib/rateLimiter";
+import { checkRateLimit } from "@/security/rateLimiter";
 import { unauthorizedResponse } from "@/lib/api/response";
 import { prisma } from "@/lib/prisma";
-import { getTravelPreferenceContext } from "@/lib/ai/contextStore";
+import { getTravelPreferenceContext } from "@/memory/contextStore";
 import { assembleContext } from "@/lib/ai/context";
 import { buildTravelDNARules } from "@/lib/ai/travelDNARules";
-import { updateMemory, buildMemoryContext } from "@/lib/ai/memory";
-import { sanitizeUserInput, validateLLMOutput } from "@/lib/ai/safety";
+import { updateMemory, buildMemoryContext } from "@/memory/memory";
+import { sanitizeUserInput, validateLLMOutput } from "@/security/safety";
 
 // Extend base schema: tripId is required for persistence.
 const ChatRouteSchema = ChatRequestSchema.extend({

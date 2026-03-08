@@ -17,7 +17,7 @@ import {
 } from "@/lib/api/response";
 import { getAuthContext, validateBody } from "@/lib/api/request";
 import { runWithRequestContext } from "@/lib/requestContext";
-import { logError } from "@/lib/logger";
+import { logError } from "@/infrastructure/logger";
 import { serializeTrip, parseStoredItinerary, type TripDTO } from "@/lib/services/trips";
 import { getDestinationImage } from "@/lib/services/image.service";
 

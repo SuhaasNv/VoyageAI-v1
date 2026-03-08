@@ -13,13 +13,13 @@ import { NextRequest } from "next/server";
 import { ZodError } from "zod";
 
 import { prisma } from "@/lib/prisma";
-import { hashPassword } from "@/lib/auth/password";
-import { signAccessToken, signRefreshToken, newTokenFamily } from "@/lib/auth/tokens";
-import { serializeRefreshTokenCookie, serializeCsrfCookie, serializeAccessTokenCookie } from "@/lib/auth/cookies";
-import { generateCsrfToken } from "@/lib/auth/csrf";
-import { rateLimit, AUTH_RATE_LIMIT } from "@/lib/auth/rateLimit";
-import { writeAuditLog } from "@/lib/auth/audit";
-import { RegisterSchema } from "@/lib/auth/schemas";
+import { hashPassword } from "@/services/auth/password";
+import { signAccessToken, signRefreshToken, newTokenFamily } from "@/services/auth/tokens";
+import { serializeRefreshTokenCookie, serializeCsrfCookie, serializeAccessTokenCookie } from "@/services/auth/cookies";
+import { generateCsrfToken } from "@/services/auth/csrf";
+import { rateLimit, AUTH_RATE_LIMIT } from "@/services/auth/rateLimit";
+import { writeAuditLog } from "@/services/auth/audit";
+import { RegisterSchema } from "@/services/auth/schemas";
 import {
     successResponse,
     errorResponse,
@@ -28,7 +28,7 @@ import {
     internalErrorResponse,
 } from "@/lib/api/response";
 import { getClientIp } from "@/lib/api/request";
-import { logError } from "@/lib/logger";
+import { logError } from "@/infrastructure/logger";
 import { runWithRequestContext } from "@/lib/requestContext";
 
 export async function POST(req: NextRequest) {

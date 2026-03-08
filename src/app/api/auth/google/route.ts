@@ -9,8 +9,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
-import { getGoogleAuthUrl } from "@/lib/auth/google";
-import { serializeOAuthStateCookie } from "@/lib/auth/cookies";
+import { getGoogleAuthUrl } from "@/services/auth/google";
+import { serializeOAuthStateCookie } from "@/services/auth/cookies";
 
 export async function GET(req: NextRequest) {
     const { searchParams } = req.nextUrl;

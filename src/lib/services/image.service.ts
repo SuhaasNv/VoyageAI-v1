@@ -4,7 +4,7 @@
  * PEXELS_API_KEY must never be NEXT_PUBLIC_* — that would leak the key to the browser.
  */
 
-import { logInfo, logError } from "@/lib/logger";
+import { logInfo, logError } from "@/infrastructure/logger";
 
 if (typeof window !== "undefined") {
     throw new Error("[image.service] Must not run in browser — PEXELS_API_KEY would be exposed");

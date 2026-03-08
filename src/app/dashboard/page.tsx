@@ -2,17 +2,17 @@
 
 import { useState, useEffect } from "react";
 import { Plus, Plane } from "lucide-react";
-import { UpcomingTripsGrid } from "@/components/dashboard/UpcomingTripsGrid";
-import { BudgetOverviewCard } from "@/components/dashboard/BudgetOverviewCard";
-import { AISuggestionsCard } from "@/components/dashboard/AISuggestionsCard";
-import { CreateTripModal } from "@/components/dashboard/CreateTripModal";
-import { TripIntelligencePanel } from "@/components/dashboard/TripIntelligencePanel";
-import { CalendarWidget } from "@/components/dashboard/CalendarWidget";
-import { TravelDNAOnboardingModal } from "@/components/dashboard/TravelDNAOnboardingModal";
-import { AICommandPalette } from "@/components/dashboard/AICommandPalette";
-import { FlightTicketWizard } from "@/components/dashboard/FlightTicketWizard";
+import { UpcomingTripsGrid } from "@/ui/dashboard/UpcomingTripsGrid";
+import { BudgetOverviewCard } from "@/ui/dashboard/BudgetOverviewCard";
+import { AISuggestionsCard } from "@/ui/dashboard/AISuggestionsCard";
+import { CreateTripModal } from "@/ui/dashboard/CreateTripModal";
+import { TripIntelligencePanel } from "@/ui/dashboard/TripIntelligencePanel";
+import { CalendarWidget } from "@/ui/dashboard/CalendarWidget";
+import { TravelDNAOnboardingModal } from "@/ui/dashboard/TravelDNAOnboardingModal";
+import { AICommandPalette } from "@/ui/dashboard/AICommandPalette";
+import { FlightTicketWizard } from "@/ui/dashboard/FlightTicketWizard";
 import { useTrips } from "@/hooks/useTrips";
-import { NotificationBell } from "@/components/dashboard/NotificationBell";
+import { NotificationBell } from "@/ui/dashboard/NotificationBell";
 import type { Trip } from "@/lib/api";
 import { useMemo } from "react";
 

@@ -13,9 +13,9 @@
  */
 
 import type { TravelDNA, Itinerary, ChatMessage } from "./schemas";
-import { getTravelDNA } from "./contextStore";
+import { getTravelDNA } from "../../memory/contextStore";
 import { truncateContext, MAX_CONTEXT_TOKENS, estimateTokenCount } from "./prompts";
-import { logInfo } from "@/lib/logger";
+import { logInfo } from "@/infrastructure/logger";
 
 // ─────────────────────────────────────────
 //  Context Types

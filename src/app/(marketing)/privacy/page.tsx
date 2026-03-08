@@ -1,5 +1,5 @@
-import { PageHero } from "@/components/marketing/PageHero";
-import { PageContent } from "@/components/marketing/PageContent";
+import { PageHero } from "@/ui/components/marketing/PageHero";
+import { PageContent } from "@/ui/components/marketing/PageContent";
 
 export const metadata = {
     title: "Privacy Policy | VoyageAI",

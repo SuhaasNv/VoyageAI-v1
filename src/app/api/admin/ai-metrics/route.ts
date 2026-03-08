@@ -16,7 +16,7 @@ import {
     internalErrorResponse,
 } from "@/lib/api/response";
 import { runWithRequestContext } from "@/lib/requestContext";
-import { logError } from "@/lib/logger";
+import { logError } from "@/infrastructure/logger";
 import { isAdminPayload } from "@/lib/admin";
 
 // ─── Types ────────────────────────────────────────────────────────────────────

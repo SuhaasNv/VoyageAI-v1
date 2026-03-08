@@ -12,12 +12,12 @@
 import { NextRequest } from "next/server";
 
 import { prisma } from "@/lib/prisma";
-import { hashToken } from "@/lib/auth/tokens";
-import { clearRefreshTokenCookie, clearCsrfCookie, clearAccessTokenCookie } from "@/lib/auth/cookies";
-import { writeAuditLog } from "@/lib/auth/audit";
+import { hashToken } from "@/services/auth/tokens";
+import { clearRefreshTokenCookie, clearCsrfCookie, clearAccessTokenCookie } from "@/services/auth/cookies";
+import { writeAuditLog } from "@/services/auth/audit";
 import { successResponse } from "@/lib/api/response";
 import { getClientIp, getRefreshTokenFromCookie, getAuthContext } from "@/lib/api/request";
-import { logError } from "@/lib/logger";
+import { logError } from "@/infrastructure/logger";
 import { runWithRequestContext } from "@/lib/requestContext";
 
 export async function POST(req: NextRequest) {

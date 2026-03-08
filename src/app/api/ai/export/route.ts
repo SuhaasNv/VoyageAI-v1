@@ -13,10 +13,10 @@ import { z } from "zod";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getAuthContext } from "@/lib/api/request";
 import { runWithRequestContext } from "@/lib/requestContext";
-import { checkRateLimit } from "@/lib/rateLimiter";
+import { checkRateLimit } from "@/security/rateLimiter";
 import { unauthorizedResponse } from "@/lib/api/response";
-import { logError } from "@/lib/logger";
-import { sanitizeUserInput } from "@/lib/ai/safety";
+import { logError } from "@/infrastructure/logger";
+import { sanitizeUserInput } from "@/security/safety";
 
 export const runtime = "nodejs";
 

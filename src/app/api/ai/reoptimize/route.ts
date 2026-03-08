@@ -11,17 +11,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-import { reoptimizeTrip } from "@/services/ai/reoptimize.service";
+import { reoptimizeTrip } from "@/tools/reoptimizeTool";
 import { ReoptimizeRequestSchema } from "@/lib/ai/schemas";
 import { validateBody, getAuthContext } from "@/lib/api/request";
 import { formatErrorResponse } from "@/lib/errors";
-import { logError } from "@/lib/logger";
+import { logError } from "@/infrastructure/logger";
 import { runWithRequestContext } from "@/lib/requestContext";
-import { checkRateLimit } from "@/lib/rateLimiter";
+import { checkRateLimit } from "@/security/rateLimiter";
 import { unauthorizedResponse, errorResponse } from "@/lib/api/response";
 import { prisma } from "@/lib/prisma";
-import { getTravelPreferenceContext } from "@/lib/ai/contextStore";
-import { sanitizeUserInput, validateLLMOutput } from "@/lib/ai/safety";
+import { getTravelPreferenceContext } from "@/memory/contextStore";
+import { sanitizeUserInput, validateLLMOutput } from "@/security/safety";
 
 // Extend schema to require tripId at the route level for ownership check + persistence.
 const ReoptimizeRouteSchema = ReoptimizeRequestSchema.extend({

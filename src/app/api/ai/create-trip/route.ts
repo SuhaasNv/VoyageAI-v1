@@ -4,13 +4,13 @@ import { prisma } from "@/lib/prisma";
 import { successResponse, unauthorizedResponse } from "@/lib/api/response";
 import { getAuthContext, validateBody } from "@/lib/api/request";
 import { runWithRequestContext } from "@/lib/requestContext";
-import { logError } from "@/lib/logger";
-import { checkRateLimit } from "@/lib/rateLimiter";
+import { logError } from "@/infrastructure/logger";
+import { checkRateLimit } from "@/security/rateLimiter";
 import { formatErrorResponse } from "@/lib/errors";
 import { serializeTrip, type TripDTO } from "@/lib/services/trips";
 import { getDestinationImage } from "@/lib/services/image.service";
 import { extractTripFromText } from "@/services/ai/create-trip-from-text.service";
-import { getTravelPreferenceContext } from "@/lib/ai/contextStore";
+import { getTravelPreferenceContext } from "@/memory/contextStore";
 
 const CreateTripAISchema = z.object({
     text: z.string().min(5).max(1000)

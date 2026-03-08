@@ -18,7 +18,7 @@ import {
 } from "@/lib/api/response";
 import { getAuthContext } from "@/lib/api/request";
 import { runWithRequestContext } from "@/lib/requestContext";
-import { logError } from "@/lib/logger";
+import { logError } from "@/infrastructure/logger";
 
 export interface ChatMessageDTO {
     id: string;

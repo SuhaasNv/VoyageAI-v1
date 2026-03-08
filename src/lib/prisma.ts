@@ -1,7 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
-import { env } from "@/lib/env";
+import { env } from "@/infrastructure/env";
 import dns from "node:dns";
 
 // Fix Node fetch/connection IPv6 latency issue

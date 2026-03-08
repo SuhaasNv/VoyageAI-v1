@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getUpcomingTrips, type Trip } from "@/lib/api";
-import { useDashboardTrips } from "@/components/dashboard/DashboardTripsProvider";
+import { useDashboardTrips } from "@/ui/dashboard/DashboardTripsProvider";
 
 export function useTrips() {
     const ctx = useDashboardTrips();

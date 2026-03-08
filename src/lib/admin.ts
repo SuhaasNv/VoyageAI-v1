@@ -6,8 +6,8 @@
  */
 
 import { cookies } from "next/headers";
-import { verifyAccessToken, type AccessTokenPayload } from "@/lib/auth/tokens";
-import { ACCESS_TOKEN_COOKIE } from "@/lib/auth/cookies";
+import { verifyAccessToken, type AccessTokenPayload } from "@/services/auth/tokens";
+import { ACCESS_TOKEN_COOKIE } from "@/services/auth/cookies";
 
 // ─── Allow-list ───────────────────────────────────────────────────────────────
 // Any user with role ADMIN or whose email appears here passes the gate.

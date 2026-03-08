@@ -9,8 +9,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parse as parseCookies } from "cookie";
 import { type ZodSchema, ZodError } from "zod";
-import { verifyAccessToken, type AccessTokenPayload } from "@/lib/auth/tokens";
-import { REFRESH_TOKEN_COOKIE, CSRF_TOKEN_COOKIE, ACCESS_TOKEN_COOKIE } from "@/lib/auth/cookies";
+import { verifyAccessToken, type AccessTokenPayload } from "@/services/auth/tokens";
+import { REFRESH_TOKEN_COOKIE, CSRF_TOKEN_COOKIE, ACCESS_TOKEN_COOKIE } from "@/services/auth/cookies";
 import { errorResponse, validationErrorResponse } from "@/lib/api/response";
 
 // ─────────────────────────────────────────────────────────────────────────────

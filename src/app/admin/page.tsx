@@ -2,8 +2,10 @@
  * /admin — Overview dashboard
  *
  * Server component — auth handled by layout.
- * Queries the DB directly for aggregate stats.
+ * Queries the DB directly for aggregate stats. Always server-rendered on demand.
  */
+
+export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";

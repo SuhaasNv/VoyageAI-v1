@@ -3,7 +3,10 @@
  *
  * Server component — auth handled by parent layout.
  * Fetches users with trip counts, passes to interactive client table.
+ * Always server-rendered on demand.
  */
+
+export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/admin";

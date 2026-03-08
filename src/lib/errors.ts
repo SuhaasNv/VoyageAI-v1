@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { getRequestId } from "@/lib/requestContext";
-import { RateLimitError } from "@/lib/rateLimiter";
+import { RateLimitError } from "@/security/rateLimiter";
 import { ItineraryValidationError } from "@/lib/ai/itineraryValidation";
 import { AIServiceError } from "@/lib/ai/llm";
 

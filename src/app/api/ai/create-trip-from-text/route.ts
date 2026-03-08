@@ -13,14 +13,14 @@ import {
 } from "@/lib/api/response";
 import { getAuthContext, validateBody } from "@/lib/api/request";
 import { runWithRequestContext } from "@/lib/requestContext";
-import { logError } from "@/lib/logger";
-import { checkRateLimit } from "@/lib/rateLimiter";
+import { logError } from "@/infrastructure/logger";
+import { checkRateLimit } from "@/security/rateLimiter";
 import { formatErrorResponse } from "@/lib/errors";
 import { serializeTrip, type TripDTO } from "@/lib/services/trips";
 import { getDestinationImage } from "@/lib/services/image.service";
 import { extractTripFromText } from "@/services/ai/create-trip-from-text.service";
 import { CreateTripFromTextInputSchema } from "@/lib/ai/schemas";
-import { getTravelPreferenceContext } from "@/lib/ai/contextStore";
+import { getTravelPreferenceContext } from "@/memory/contextStore";
 
 export async function POST(req: NextRequest) {
     return runWithRequestContext(req, async () => {
