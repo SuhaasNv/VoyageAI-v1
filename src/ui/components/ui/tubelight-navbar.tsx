@@ -20,14 +20,6 @@ interface NavBarProps {
 export function TubelightNavBar({ items, className }: NavBarProps) {
     const [activeTab, setActiveTab] = useState(items[0].name);
 
-    useEffect(() => {
-        const handleResize = () => {
-            // handle resize logic if needed in future
-        };
-        window.addEventListener("resize", handleResize);
-        return () => window.removeEventListener("resize", handleResize);
-    }, []);
-
     // Sync active tab with current path on mount
     useEffect(() => {
         if (typeof window === "undefined") return;

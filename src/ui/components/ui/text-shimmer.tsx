@@ -4,9 +4,11 @@ import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
+type SupportedTag = 'p' | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'span' | 'div';
+
 interface TextShimmerProps {
     children: string;
-    as?: React.ElementType;
+    as?: SupportedTag;
     className?: string;
     /** Animation duration in seconds. Default: 2 */
     duration?: number;
@@ -14,7 +16,7 @@ interface TextShimmerProps {
     spread?: number;
 }
 
-const MotionElements: Record<string, React.ElementType> = {
+const MotionElements: Record<SupportedTag, React.ElementType> = {
     p: motion.p,
     h1: motion.h1,
     h2: motion.h2,
@@ -33,7 +35,7 @@ export function TextShimmer({
     duration = 2,
     spread = 2,
 }: TextShimmerProps) {
-    const MotionComponent = MotionElements[Component as unknown as string] || motion.p;
+    const MotionComponent = MotionElements[Component as SupportedTag] ?? motion.p;
 
     const dynamicSpread = useMemo(
         () => children.length * spread,

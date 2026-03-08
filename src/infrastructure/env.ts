@@ -2,8 +2,8 @@ import { z } from "zod";
 
 const isProduction =
     process.env.NODE_ENV === "production" &&
-    process.env.CI !== "true" &&
-    process.env.CI !== "1";
+    process.env.SKIP_ENV_VALIDATION !== "true" &&
+    process.env.SKIP_ENV_VALIDATION !== "1";
 
 const EnvSchema = z
     .object({
