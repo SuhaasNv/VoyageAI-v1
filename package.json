@@ -19,7 +19,7 @@
     "@prisma/adapter-pg": "^7.4.1",
     "@prisma/client": "^7.4.1",
     "@types/d3": "^7.4.3",
-    "@upstash/redis": "^1.36.2",
+    "@upstash/redis": "^1.36.4",
     "bcryptjs": "^3.0.3",
     "canvas-confetti": "^1.9.4",
     "clsx": "^2.1.1",
