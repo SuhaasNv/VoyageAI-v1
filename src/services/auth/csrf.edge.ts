@@ -35,13 +35,14 @@ function bufToHex(buf: ArrayBuffer): string {
         .join("");
 }
 
-function hexToBuf(hex: string): Uint8Array {
-    const len = hex.length;
-    const buf = new Uint8Array(len / 2);
-    for (let i = 0; i < len; i += 2) {
-        buf[i / 2] = parseInt(hex.slice(i, i + 2), 16);
+/** Constant-time comparison of two equal-length lowercase hex strings. */
+function timingSafeEqualHex(a: string, b: string): boolean {
+    if (a.length !== b.length) return false;
+    let diff = 0;
+    for (let i = 0; i < a.length; i++) {
+        diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
     }
-    return buf;
+    return diff === 0;
 }
 
 /**
@@ -86,12 +87,11 @@ export async function verifyCsrfTokenEdge(token: string): Promise<boolean> {
         const key = await importHmacKey(secret);
         const enc = new TextEncoder();
 
-        const providedBytes = hexToBuf(providedHmac);
-        const signatureBuffer = providedBytes.buffer.slice(
-            providedBytes.byteOffset,
-            providedBytes.byteOffset + providedBytes.byteLength
-        ) as ArrayBuffer;
-        return await crypto.subtle.verify("HMAC", key, signatureBuffer, enc.encode(nonce));
+        // Recompute HMAC with sign() + hex compare (matches Node createHmac path; avoids subtle.verify quirks).
+        const expectedSig = await crypto.subtle.sign("HMAC", key, enc.encode(nonce));
+        const sig = new Uint8Array(expectedSig);
+        const expectedHex = bufToHex(sig.buffer.slice(sig.byteOffset, sig.byteOffset + sig.byteLength));
+        return timingSafeEqualHex(expectedHex, providedHmac);
     } catch {
         return false;
     }

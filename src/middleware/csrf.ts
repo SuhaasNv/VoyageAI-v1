@@ -7,7 +7,7 @@
  *  1. Read the `X-CSRF-Token` request header.
  *  2. Read the signed CSRF cookie (`voyageai_csrf`).
  *  3. Reject if either is absent or they do not match.
- *  4. Verify the HMAC signature (same logic as `@/services/auth/csrf.edge`).
+ *  4. Verify the HMAC (must match tokens from `generateCsrfToken` in csrf.ts).
  *
  * Applied to: POST, PUT, PATCH, DELETE on /api/* routes.
  * Exempt from: routes that issue the token (login, register, refresh).
@@ -19,7 +19,6 @@ import { verifyCsrfTokenEdge } from "@/services/auth/csrf.edge";
 
 const CSRF_HEADER = "x-csrf-token";
 
-/** HTTP methods that mutate server state and therefore require a CSRF token. */
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 const EXEMPT_PATHS = new Set([
@@ -34,10 +33,6 @@ function csrfRejected(reason?: string): NextResponse {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
 }
 
-/**
- * CSRF verification middleware.
- * Returns a `NextResponse` (403) when the request should be rejected; `null` when OK.
- */
 export async function checkCsrf(req: NextRequest): Promise<NextResponse | null> {
     const { pathname } = req.nextUrl;
 

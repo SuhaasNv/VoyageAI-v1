@@ -1,15 +1,26 @@
 const DEV_CSRF_FALLBACK = "dev-csrf-secret-do-not-use-in-production";
 
+/** Env key built at runtime so Turbopack/Webpack cannot replace it with a stale empty inline. */
+function readCsrfSecretFromProcessEnv(): string | undefined {
+    if (typeof process === "undefined" || !process.env) return undefined;
+    const record = process.env as Record<string, string | undefined>;
+    const key = ["CSRF", "SECRET"].join("_");
+    const dynamic = record[key];
+    if (typeof dynamic === "string" && dynamic.trim()) return dynamic.trim();
+    const direct = record.CSRF_SECRET;
+    if (typeof direct === "string" && direct.trim()) return direct.trim();
+    return undefined;
+}
+
 /**
  * CSRF HMAC secret for signing and verifying tokens.
  *
- * Read straight from `process.env` (not the cached `env` object) so Edge middleware
- * and Node API routes resolve the same value after `.env` changes and dev restarts.
+ * Uses indirect `process.env` access so Edge middleware reads the same runtime value
+ * as Node API routes (avoids empty-string inlining mismatches with Turbopack).
  */
 export function getCsrfSecret(): string {
-    const raw = process.env.CSRF_SECRET;
-    const trimmed = typeof raw === "string" ? raw.trim() : "";
-    if (trimmed.length > 0) return trimmed;
+    const trimmed = readCsrfSecretFromProcessEnv();
+    if (trimmed) return trimmed;
     if (process.env.NODE_ENV !== "production") return DEV_CSRF_FALLBACK;
     throw new Error("CSRF_SECRET is required in production");
 }
