@@ -14,12 +14,12 @@
  */
 
 import { createHmac, randomBytes, timingSafeEqual } from "crypto";
-import { env } from "@/infrastructure/env";
+import { getCsrfSecret } from "@/infrastructure/csrfSecret";
 
 /** Generate a new CSRF token: `<nonce>.<hmac>` */
 export function generateCsrfToken(): string {
     const nonce = randomBytes(16).toString("hex");
-    const secret = env.CSRF_SECRET;
+    const secret = getCsrfSecret();
     const hmac = createHmac("sha256", secret).update(nonce).digest("hex");
     return `${nonce}.${hmac}`;
 }
@@ -33,7 +33,7 @@ export function verifyCsrfToken(token: string): boolean {
         const [nonce, providedHmac] = token.split(".");
         if (!nonce || !providedHmac) return false;
 
-        const secret = env.CSRF_SECRET;
+        const secret = getCsrfSecret();
         const expectedHmac = createHmac("sha256", secret).update(nonce).digest("hex");
 
         const a = Buffer.from(providedHmac, "hex");

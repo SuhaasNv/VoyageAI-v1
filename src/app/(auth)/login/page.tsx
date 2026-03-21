@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Eye, EyeOff, MoveRight, Loader2, AlertCircle } from "lucide-react";
+import { readJsonApiResponse } from "@/lib/api/readJsonResponse";
 import { useAuthStore } from "@/stores/authStore";
 import { Logo } from "@/ui/components/Logo";
 
@@ -53,20 +54,36 @@ export default function LoginPage() {
                 body: JSON.stringify({ email, password }),
             });
 
-            const json = await res.json();
+            const parsed = await readJsonApiResponse(res);
+            if (!parsed.ok) {
+                setError(parsed.userMessage);
+                return;
+            }
+            const json = parsed.data;
 
             if (!json.success) {
-                if (json.error?.code === "VALIDATION_ERROR") {
-                    setFieldErrors(json.error.details ?? {});
+                const apiErr = json.error as
+                    | { code?: string; message?: string; details?: Record<string, string[]> }
+                    | undefined;
+                if (apiErr?.code === "VALIDATION_ERROR") {
+                    setFieldErrors(apiErr.details ?? {});
                 } else {
-                    setError(json.error?.message ?? "Login failed. Please try again.");
+                    setError(
+                        typeof apiErr?.message === "string"
+                            ? apiErr.message
+                            : "Login failed. Please try again."
+                    );
                 }
                 return;
             }
 
-            setAuth(json.data.user, json.data.accessToken);
+            const payload = json.data as {
+                user: Parameters<typeof setAuth>[0];
+                accessToken: string;
+            };
+            setAuth(payload.user, payload.accessToken);
             const url = new URL(window.location.href);
-            const defaultDest = json.data.user?.role === "ADMIN" ? "/admin" : "/dashboard";
+            const defaultDest = payload.user?.role === "ADMIN" ? "/admin" : "/dashboard";
             const returnUrl = url.searchParams.get("returnUrl") || defaultDest;
             router.replace(returnUrl);
         } catch {

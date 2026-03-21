@@ -4,7 +4,7 @@
  * Edge Runtime–compatible CSRF verification using the Web Crypto API.
  */
 
-import { env } from "@/infrastructure/env";
+import { getCsrfSecret } from "@/infrastructure/csrfSecret";
 
 /**
  * Token format: `<nonce>.<hmac-hex>`
@@ -53,7 +53,7 @@ function hexToBuf(hex: string): Uint8Array {
 export async function generateCsrfTokenEdge(): Promise<string> {
     const nonceBytes = crypto.getRandomValues(new Uint8Array(16));
     const nonce = bufToHex(nonceBytes.buffer);
-    const secret = env.CSRF_SECRET;
+    const secret = getCsrfSecret();
 
     const key = await importHmacKey(secret);
     const enc = new TextEncoder();
@@ -82,19 +82,16 @@ export async function verifyCsrfTokenEdge(token: string): Promise<boolean> {
         // HMAC-SHA-256 hex digest is always 64 characters
         if (providedHmac.length !== 64) return false;
 
-        const secret = env.CSRF_SECRET;
+        const secret = getCsrfSecret();
         const key = await importHmacKey(secret);
         const enc = new TextEncoder();
 
-        // Use SubtleCrypto verify for constant-time comparison.
-        // Cast to ArrayBuffer to satisfy strict DOM lib BufferSource constraints.
         const providedBytes = hexToBuf(providedHmac);
-        return await crypto.subtle.verify(
-            "HMAC",
-            key,
-            providedBytes.buffer as ArrayBuffer,
-            enc.encode(nonce)
-        );
+        const signatureBuffer = providedBytes.buffer.slice(
+            providedBytes.byteOffset,
+            providedBytes.byteOffset + providedBytes.byteLength
+        ) as ArrayBuffer;
+        return await crypto.subtle.verify("HMAC", key, signatureBuffer, enc.encode(nonce));
     } catch {
         return false;
     }

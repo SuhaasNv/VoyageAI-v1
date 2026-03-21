@@ -21,12 +21,11 @@ import { generateCsrfToken } from "@/services/auth/csrf";
 import { writeAuditLog } from "@/services/auth/audit";
 import { OAUTH_STATE_COOKIE } from "@/services/auth/cookies";
 import { getClientIp } from "@/lib/api/request";
+import { getGoogleOAuthRedirectUri, getResolvedAppBaseUrl } from "@/lib/appBaseUrl";
 import { logError } from "@/infrastructure/logger";
 
-const BASE_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-
 function redirectToLogin(error: string): NextResponse {
-    const url = new URL("/login", BASE_URL);
+    const url = new URL("/login", getResolvedAppBaseUrl());
     url.searchParams.set("error", error);
     const res = new NextResponse(null, { status: 302 });
     res.headers.set("Location", url.toString());
@@ -64,7 +63,7 @@ export async function GET(req: NextRequest) {
     const [, redirectTo] = state.includes(":") ? state.split(":") : [null, "/"];
     const safeRedirect = redirectTo?.startsWith("/") ? redirectTo : "/";
 
-    const redirectUri = `${BASE_URL}/api/auth/google/callback`;
+    const redirectUri = getGoogleOAuthRedirectUri();
 
     let googleUser;
     try {
@@ -156,7 +155,7 @@ export async function GET(req: NextRequest) {
         }).catch(err => logError("[google/callback] Delayed audit log failed", err));
 
         // Use standard 302 redirect. Modern browsers handle Set-Cookie on 302 perfectly.
-        const redirectUrl = new URL(safeRedirect, BASE_URL).toString();
+        const redirectUrl = new URL(safeRedirect, getResolvedAppBaseUrl()).toString();
         const res = NextResponse.redirect(redirectUrl);
 
         res.headers.append("Set-Cookie", serializeAccessTokenCookie(accessToken));

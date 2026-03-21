@@ -9,6 +9,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
+import { getGoogleOAuthRedirectUri } from "@/lib/appBaseUrl";
 import { getGoogleAuthUrl } from "@/services/auth/google";
 import { serializeOAuthStateCookie } from "@/services/auth/cookies";
 
@@ -20,10 +21,8 @@ export async function GET(req: NextRequest) {
     if (!redirectTo.startsWith("/") || redirectTo.includes("//")) {
         return new NextResponse("Invalid redirect", { status: 400 });
     }
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-
     const state = randomBytes(24).toString("hex");
-    const redirectUri = `${baseUrl}/api/auth/google/callback`;
+    const redirectUri = getGoogleOAuthRedirectUri();
 
     const authUrl = getGoogleAuthUrl(redirectUri, `${state}:${redirectTo}`);
 

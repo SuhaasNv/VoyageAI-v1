@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Eye, EyeOff, MoveRight, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
+import { readJsonApiResponse } from "@/lib/api/readJsonResponse";
 import { useAuthStore } from "@/stores/authStore";
 import { Logo } from "@/ui/components/Logo";
 
@@ -68,19 +69,32 @@ export default function SignupPage() {
                 body: JSON.stringify({ name: name || undefined, email, password, confirmPassword }),
             });
 
-            const json = await res.json();
+            const parsed = await readJsonApiResponse(res);
+            if (!parsed.ok) {
+                setError(parsed.userMessage);
+                return;
+            }
+            const json = parsed.data;
 
             if (!json.success) {
-                if (json.error?.code === "VALIDATION_ERROR") {
-                    setFieldErrors(json.error.details ?? {});
+                const apiErr = json.error as
+                    | { code?: string; message?: string; details?: Record<string, string[]> }
+                    | undefined;
+                if (apiErr?.code === "VALIDATION_ERROR") {
+                    setFieldErrors(apiErr.details ?? {});
                 } else {
-                    setError(json.error?.message ?? "Registration failed. Please try again.");
+                    setError(
+                        typeof apiErr?.message === "string"
+                            ? apiErr.message
+                            : "Registration failed. Please try again."
+                    );
                 }
                 return;
             }
 
+            const payload = json.data as { user: Parameters<typeof setAuth>[0]; accessToken: string };
             setSuccess(true);
-            setAuth(json.data.user, json.data.accessToken);
+            setAuth(payload.user, payload.accessToken);
             if (redirectTimeoutRef.current) clearTimeout(redirectTimeoutRef.current);
             redirectTimeoutRef.current = setTimeout(() => router.replace("/dashboard"), 900);
         } catch {

@@ -9,10 +9,19 @@
 import { serialize, type SerializeOptions as CookieSerializeOptions } from "cookie";
 import { env } from "@/infrastructure/env";
 
-export const REFRESH_TOKEN_COOKIE = "voyageai_rt";
-export const CSRF_TOKEN_COOKIE = "voyageai_csrf";
-export const ACCESS_TOKEN_COOKIE = "voyageai_at";
-export const OAUTH_STATE_COOKIE = "voyageai_oauth_state";
+import {
+    REFRESH_TOKEN_COOKIE,
+    CSRF_TOKEN_COOKIE,
+    ACCESS_TOKEN_COOKIE,
+    OAUTH_STATE_COOKIE,
+} from "./cookieNames";
+
+export {
+    REFRESH_TOKEN_COOKIE,
+    CSRF_TOKEN_COOKIE,
+    ACCESS_TOKEN_COOKIE,
+    OAUTH_STATE_COOKIE,
+} from "./cookieNames";
 
 const isProduction = env.NODE_ENV === "production";
 
