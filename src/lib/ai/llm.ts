@@ -131,6 +131,9 @@ class MockLLMClient implements LLMClient {
         if (ctx.includes("travel safety analyst")) {
             return JSON.stringify(this.mockSafetyResponse(user));
         }
+        if (ctx.includes("travel logistics optimizer")) {
+            return this.mockLogisticsResponse(user);
+        }
 
         return JSON.stringify({ message: "Unknown endpoint", modelVersion: "voyage-ai-mock-v1.0" });
     }
@@ -716,6 +719,34 @@ class MockLLMClient implements LLMClient {
 
     private sleep(ms: number): Promise<void> {
         return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    /**
+     * Produces a mock logistics response that passes LogisticsAgent's merge-back
+     * validation. Parses the input EnrichedTripContext from the user prompt,
+     * assigns time slots deterministically, and picks the first hotel.
+     */
+    private mockLogisticsResponse(userPrompt: string): string {
+        try {
+            const ctx = JSON.parse(userPrompt) as {
+                days: Array<{ day: number; theme: string; activities: Array<{ name: string; type: string }> }>;
+                hotels: Array<{ name: string; priceRange: string }>;
+            };
+            const slotCycle: Array<"morning" | "afternoon" | "evening"> = ["morning", "afternoon", "evening"];
+            const days = ctx.days.map((d) => ({
+                day: d.day,
+                theme: d.theme,
+                activities: d.activities.map((act, idx) => ({
+                    name: act.name,
+                    type: act.type,
+                    timeSlot: slotCycle[idx % 3],
+                })),
+            }));
+            const selectedHotel = ctx.hotels[0] ?? { name: "Accommodation — to be confirmed", priceRange: "$$" };
+            return JSON.stringify({ days, selectedHotel });
+        } catch {
+            return JSON.stringify({ days: [], selectedHotel: { name: "Accommodation — to be confirmed", priceRange: "$$" } });
+        }
     }
 }
 
