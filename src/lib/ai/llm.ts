@@ -125,6 +125,9 @@ class MockLLMClient implements LLMClient {
         if (ctx.includes("contextual suggestion engine")) {
             return JSON.stringify(this.mockDashboardSuggestionsResponse(now));
         }
+        if (ctx.includes("Planner Agent") || ctx.includes("TripContext")) {
+            return JSON.stringify(this.mockPlannerResponse(user));
+        }
 
         return JSON.stringify({ message: "Unknown endpoint", modelVersion: "voyage-ai-mock-v1.0" });
     }
@@ -627,6 +630,39 @@ class MockLLMClient implements LLMClient {
             flexibilityScore: 8.4,
             simulatedAt: now,
             modelVersion: "voyage-ai-mock-v1.0",
+        };
+    }
+
+    private mockPlannerResponse(userPrompt: string) {
+        const destMatch = userPrompt.match(/Travel request:\s*"([^"]+)"/);
+        const rawInput = destMatch?.[1] ?? "";
+
+        // Best-effort destination extraction from the raw input
+        const destGuessMatch = rawInput.match(/(?:to|in|visit|trip to)\s+([A-Za-z\s,]+?)(?:\s+for|\s+from|\s+in|\.|,|$)/i);
+        const destination = destGuessMatch?.[1]?.trim() ?? "Barcelona, Spain";
+        const durationDays = 4;
+
+        const today = new Date();
+        const start = new Date(today);
+        start.setDate(today.getDate() + 7);
+        const end = new Date(start);
+        end.setDate(start.getDate() + durationDays - 1);
+        const fmt = (d: Date) => d.toISOString().split("T")[0];
+
+        const themes = [
+            "Arrival & Orientation",
+            "Culture & Landmarks",
+            "Nature & Relaxation",
+            "Local Life & Departure Prep",
+        ];
+
+        return {
+            destination,
+            startDate: fmt(start),
+            endDate: fmt(end),
+            durationDays,
+            preferences: { style: "balanced", pace: "moderate" },
+            days: themes.slice(0, durationDays).map((theme, i) => ({ day: i + 1, theme })),
         };
     }
 
