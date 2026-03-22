@@ -249,8 +249,8 @@ Return ONLY a valid JSON object. No other text. Structure must match exactly:
           "location": {
             "name": "string",
             "address": "string (full address when known)",
-            "lat": number (REQUIRED — decimal degrees, e.g. 35.6762),
-            "lng": number (REQUIRED — decimal degrees, e.g. 139.6503)
+            "lat": number (REQUIRED — decimal degrees, e.g. 48.8566),
+            "lng": number (REQUIRED — decimal degrees, e.g. 2.3522)
           },
           "estimatedCost": { "amount": number, "currency": "USD" },
           "notes": "string (include 'Travel from previous: X min' for activities 2+; first activity: no travel)",

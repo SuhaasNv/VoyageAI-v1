@@ -57,6 +57,55 @@ export class AIServiceError extends Error {
 class MockLLMClient implements LLMClient {
     private readonly simulatedLatencyMs = { min: 800, max: 2400 };
 
+    private static readonly CITY_COORDS: Record<string, [number, number]> = {
+        // Europe
+        "paris": [48.8566, 2.3522], "london": [51.5074, -0.1278],
+        "rome": [41.9028, 12.4964], "barcelona": [41.3851, 2.1734],
+        "amsterdam": [52.3676, 4.9041], "berlin": [52.5200, 13.4050],
+        "madrid": [40.4168, -3.7038], "vienna": [48.2082, 16.3738],
+        "prague": [50.0755, 14.4378], "lisbon": [38.7167, -9.1395],
+        "athens": [37.9838, 23.7275], "budapest": [47.4979, 19.0402],
+        "florence": [43.7696, 11.2558], "milan": [45.4642, 9.1900],
+        "venice": [45.4408, 12.3155], "zurich": [47.3769, 8.5417],
+        "copenhagen": [55.6761, 12.5683], "stockholm": [59.3293, 18.0686],
+        "brussels": [50.8503, 4.3517], "warsaw": [52.2297, 21.0122],
+        "edinburgh": [55.9533, -3.1883], "dublin": [53.3498, -6.2603],
+        // Asia
+        "tokyo": [35.6762, 139.6503], "kyoto": [35.0116, 135.7681],
+        "osaka": [34.6937, 135.5023], "bangkok": [13.7563, 100.5018],
+        "singapore": [1.3521, 103.8198], "hong kong": [22.3193, 114.1694],
+        "seoul": [37.5665, 126.9780], "beijing": [39.9042, 116.4074],
+        "shanghai": [31.2304, 121.4737], "dubai": [25.2048, 55.2708],
+        "mumbai": [19.0760, 72.8777], "delhi": [28.6139, 77.2090],
+        "bali": [-8.3405, 115.0920], "hanoi": [21.0285, 105.8542],
+        "ho chi minh": [10.8231, 106.6297], "kuala lumpur": [3.1390, 101.6869],
+        "taipei": [25.0330, 121.5654], "kathmandu": [27.7172, 85.3240],
+        // Americas
+        "new york": [40.7128, -74.0060], "los angeles": [34.0522, -118.2437],
+        "san francisco": [37.7749, -122.4194], "miami": [25.7617, -80.1918],
+        "chicago": [41.8781, -87.6298], "mexico city": [19.4326, -99.1332],
+        "toronto": [43.6532, -79.3832], "vancouver": [49.2827, -123.1207],
+        "rio de janeiro": [-22.9068, -43.1729], "buenos aires": [-34.6037, -58.3816],
+        "cancun": [21.1619, -86.8515], "havana": [23.1136, -82.3666],
+        "bogota": [4.7110, -74.0721], "lima": [-12.0464, -77.0428],
+        // Africa & Middle East
+        "cairo": [30.0444, 31.2357], "cape town": [-33.9249, 18.4241],
+        "nairobi": [-1.2921, 36.8219], "marrakech": [31.6295, -7.9811],
+        "istanbul": [41.0082, 28.9784], "tel aviv": [32.0853, 34.7818],
+        "abu dhabi": [24.4539, 54.3773],
+        // Oceania
+        "sydney": [-33.8688, 151.2093], "melbourne": [-37.8136, 144.9631],
+        "auckland": [-36.8509, 174.7645], "queenstown": [-45.0312, 168.6626],
+    };
+
+    private getCityCoords(destination: string): [number, number] | null {
+        const lower = destination.toLowerCase();
+        for (const [city, coords] of Object.entries(MockLLMClient.CITY_COORDS)) {
+            if (lower.includes(city)) return coords;
+        }
+        return null;
+    }
+
     async execute(
         messages: LLMMessage[],
         options: LLMRequestOptions = {}
@@ -180,10 +229,15 @@ class MockLLMClient implements LLMClient {
 
         const days = [];
         const startTs = new Date(startDate).getTime() || Date.now();
+        const destCity = destination.split(',')[0].trim();
+        const baseCoords = this.getCityCoords(destCity);
 
         for (let i = 0; i < totalDays; i++) {
             const currentDayDate = new Date(startTs + i * 24 * 3600 * 1000).toISOString().split('T')[0];
-            const destCity = destination.split(',')[0].trim();
+            const dayOffset = i * 0.008;
+            const coordsAct1 = baseCoords ? { lat: baseCoords[0] + dayOffset, lng: baseCoords[1] + dayOffset } : {};
+            const coordsAct2 = baseCoords ? { lat: baseCoords[0] - 0.006 + dayOffset, lng: baseCoords[1] + 0.014 + dayOffset } : {};
+            const coordsAct3 = baseCoords ? { lat: baseCoords[0] + 0.004 + dayOffset, lng: baseCoords[1] - 0.009 + dayOffset } : {};
             days.push({
                 day: i + 1,
                 date: currentDayDate,
@@ -199,8 +253,7 @@ class MockLLMClient implements LLMClient {
                         location: {
                             name: i === 0 ? `${destCity} Central Hotel` : `${destCity} Main Square`,
                             address: `Central District, ${destCity}`,
-                            lat: 35.6897 + (i * 0.01),
-                            lng: 139.6922 + (i * 0.01),
+                            ...coordsAct1,
                         },
                         estimatedCost: { amount: 20, currency: "USD" },
                         notes: `Enjoy a wonderful morning in ${destCity}.`,
@@ -217,9 +270,8 @@ class MockLLMClient implements LLMClient {
                         duration_minutes: 120,
                         location: {
                             name: `Famous ${destCity} Restaurant`,
-                            address: `Culinary Ave, ${destCity}`,
-                            lat: 35.6851 + (i * 0.01),
-                            lng: 139.7106 + (i * 0.01),
+                            address: `Culinary District, ${destCity}`,
+                            ...coordsAct2,
                         },
                         estimatedCost: { amount: 30, currency: "USD" },
                         notes: "A great place for a local meal.",
@@ -237,8 +289,7 @@ class MockLLMClient implements LLMClient {
                         location: {
                             name: `${destCity} Cultural Site`,
                             address: `Historic District, ${destCity}`,
-                            lat: 35.6918 + (i * 0.01),
-                            lng: 139.7001 + (i * 0.01),
+                            ...coordsAct3,
                         },
                         estimatedCost: { amount: 40, currency: "USD" },
                         notes: "Experience the vibrant evening culture.",

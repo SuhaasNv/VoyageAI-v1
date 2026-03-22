@@ -6,6 +6,39 @@ import type { Itinerary } from "@/lib/ai/schemas";
 import type { ItineraryEvent } from "@/lib/services/trips";
 import { Map as MapIcon, RefreshCw } from "lucide-react";
 
+// ─── Geocoding cache (module-level — persists across renders) ──────────────────
+
+const geocodeCache = new Map<string, { lat: number; lng: number } | null>();
+
+async function geocodeLocation(
+    query: string,
+    token: string
+): Promise<{ lat: number; lng: number } | null> {
+    if (geocodeCache.has(query)) return geocodeCache.get(query)!;
+    try {
+        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}&limit=1`;
+        const res = await fetch(url);
+        if (!res.ok) { geocodeCache.set(query, null); return null; }
+        const data = await res.json() as { features?: Array<{ center: [number, number] }> };
+        const center = data.features?.[0]?.center;
+        if (
+            center &&
+            typeof center[0] === "number" && isFinite(center[0]) &&
+            typeof center[1] === "number" && isFinite(center[1]) &&
+            (center[0] !== 0 || center[1] !== 0)
+        ) {
+            const result = { lng: center[0], lat: center[1] };
+            geocodeCache.set(query, result);
+            return result;
+        }
+        geocodeCache.set(query, null);
+        return null;
+    } catch {
+        geocodeCache.set(query, null);
+        return null;
+    }
+}
+
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 interface MapPoint {
@@ -127,6 +160,7 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
     const eventOrderRef = useRef(eventOrder);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [retryCount, setRetryCount] = useState(0);
+    const [hasGeocodedPoints, setHasGeocodedPoints] = useState(false);
 
     eventOrderRef.current = eventOrder;
 
@@ -505,8 +539,53 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
         const map = mapRef.current;
         const mbox = mboxRef.current;
         if (!map || !mbox || !map.isStyleLoaded()) return;
-        draw(map, mbox, extractPoints(rawItinerary, selectedDay, eventOrder));
-    }, [rawItinerary, selectedDay, eventOrder, draw]);
+
+        setHasGeocodedPoints(false);
+        const points = extractPoints(rawItinerary, selectedDay, eventOrder);
+        console.log("coords:", points);
+        draw(map, mbox, points);
+
+        if (!token || !rawItinerary?.days) return;
+
+        const days = selectedDay
+            ? rawItinerary.days.filter((d) => d.day === selectedDay)
+            : rawItinerary.days;
+
+        const missing: Array<{ query: string; idx: number }> = [];
+        let globalIdx = 0;
+        for (const day of days) {
+            for (const act of day.activities) {
+                const lat = act.location?.lat;
+                const lng = act.location?.lng;
+                const valid =
+                    typeof lat === "number" && isFinite(lat) && lat !== 0 &&
+                    typeof lng === "number" && isFinite(lng) && lng !== 0;
+                if (!valid) {
+                    const query = act.location?.address || act.location?.name;
+                    if (query) missing.push({ query, idx: globalIdx });
+                }
+                globalIdx++;
+            }
+        }
+
+        if (missing.length === 0) return;
+
+        let cancelled = false;
+        (async () => {
+            const geocoded: MapPoint[] = [];
+            for (const { query, idx } of missing) {
+                const coords = await geocodeLocation(query, token);
+                if (coords) geocoded.push({ ...coords, label: query, index: idx });
+            }
+            if (!cancelled && geocoded.length > 0 && mapRef.current && mboxRef.current) {
+                setHasGeocodedPoints(true);
+                const enriched = [...points, ...geocoded].sort((a, b) => a.index - b.index);
+                draw(mapRef.current, mboxRef.current, enriched);
+            }
+        })();
+
+        return () => { cancelled = true; };
+    }, [rawItinerary, selectedDay, eventOrder, draw, token]);
 
     // ─── Handle Resize when visibility changes ────────────────────────────────
     useEffect(() => {
@@ -569,13 +648,13 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
                 </div>
             )}
 
-            {rawItinerary && !hasCoords && !loadError && (
+            {rawItinerary && !hasCoords && !hasGeocodedPoints && !loadError && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
                     <div className="bg-black/60 backdrop-blur-xl border border-white/10 rounded-2xl px-6 py-5 flex flex-col items-center gap-2 text-center max-w-xs shadow-2xl">
                         <MapIcon className="w-6 h-6 text-zinc-400" />
-                        <p className="text-sm font-semibold text-white">No map coordinates</p>
+                        <p className="text-sm font-semibold text-white">No map data available</p>
                         <p className="text-xs text-zinc-400 leading-relaxed">
-                            The AI did not return lat/lng for these activities. Try regenerating the itinerary.
+                            Location coordinates could not be resolved for these activities.
                         </p>
                     </div>
                 </div>
