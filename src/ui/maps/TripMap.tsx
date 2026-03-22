@@ -8,17 +8,31 @@ import { Map as MapIcon, RefreshCw } from "lucide-react";
 
 // ─── Geocoding cache (module-level — persists across renders) ──────────────────
 
+const GEO_CACHE_MAX = 100;
 const geocodeCache = new Map<string, { lat: number; lng: number } | null>();
+
+function normalizeGeoKey(name: string): string {
+    return name.toLowerCase().trim();
+}
+
+function geocachePut(key: string, value: { lat: number; lng: number } | null): void {
+    if (geocodeCache.size >= GEO_CACHE_MAX) {
+        const oldest = geocodeCache.keys().next().value;
+        if (oldest !== undefined) geocodeCache.delete(oldest);
+    }
+    geocodeCache.set(key, value);
+}
 
 async function geocodeLocation(
     query: string,
     token: string
 ): Promise<{ lat: number; lng: number } | null> {
-    if (geocodeCache.has(query)) return geocodeCache.get(query)!;
+    const key = normalizeGeoKey(query);
+    if (geocodeCache.has(key)) return geocodeCache.get(key)!;
     try {
-        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${token}&limit=1`;
+        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(key)}.json?access_token=${token}&limit=1`;
         const res = await fetch(url);
-        if (!res.ok) { geocodeCache.set(query, null); return null; }
+        if (!res.ok) { geocachePut(key, null); return null; }
         const data = await res.json() as { features?: Array<{ center: [number, number] }> };
         const center = data.features?.[0]?.center;
         if (
@@ -28,13 +42,13 @@ async function geocodeLocation(
             (center[0] !== 0 || center[1] !== 0)
         ) {
             const result = { lng: center[0], lat: center[1] };
-            geocodeCache.set(query, result);
+            geocachePut(key, result);
             return result;
         }
-        geocodeCache.set(query, null);
+        geocachePut(key, null);
         return null;
     } catch {
-        geocodeCache.set(query, null);
+        geocachePut(key, null);
         return null;
     }
 }
@@ -138,6 +152,48 @@ function pulseMarker(
     };
 }
 
+// ─── Route / camera helpers ────────────────────────────────────────────────────
+
+function easeInOutCubic(t: number): number {
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+function dedupConsecutive(points: MapPoint[]): MapPoint[] {
+    return points.filter((p, i) => {
+        if (i === 0) return true;
+        const prev = points[i - 1];
+        return !(Math.abs(p.lat - prev.lat) < 1e-6 && Math.abs(p.lng - prev.lng) < 1e-6);
+    });
+}
+
+function haversineDist(a: [number, number], b: [number, number]): number {
+    const R = 6371;
+    const dLat = (b[1] - a[1]) * Math.PI / 180;
+    const dLng = (b[0] - a[0]) * Math.PI / 180;
+    const sinDLat = Math.sin(dLat / 2);
+    const sinDLng = Math.sin(dLng / 2);
+    const aa =
+        sinDLat * sinDLat +
+        Math.cos(a[1] * Math.PI / 180) * Math.cos(b[1] * Math.PI / 180) * sinDLng * sinDLng;
+    return R * 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa));
+}
+
+// Insert a midpoint for segments > 50 km to improve line curvature over long distances
+function smoothRoute(coords: [number, number][]): [number, number][] {
+    if (coords.length < 2) return coords;
+    const result: [number, number][] = [];
+    for (let i = 0; i < coords.length; i++) {
+        result.push(coords[i]);
+        if (i < coords.length - 1 && haversineDist(coords[i], coords[i + 1]) > 50) {
+            result.push([
+                (coords[i][0] + coords[i + 1][0]) / 2,
+                (coords[i][1] + coords[i + 1][1]) / 2,
+            ]);
+        }
+    }
+    return result;
+}
+
 // ─── Component ─────────────────────────────────────────────────────────────────
 
 const MAP_STYLES = [
@@ -158,6 +214,7 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
     const idleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const isProgrammaticNavRef = useRef(false);
     const eventOrderRef = useRef(eventOrder);
+    const redrawDebounceRef = useRef<NodeJS.Timeout | null>(null);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [retryCount, setRetryCount] = useState(0);
     const [hasGeocodedPoints, setHasGeocodedPoints] = useState(false);
@@ -178,8 +235,11 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
 
         if (points.length === 0) return;
 
+        const deduped = dedupConsecutive(points);
+        if (deduped.length === 0) return;
+
         // Markers
-        points.forEach((pt, i) => {
+        deduped.forEach((pt, i) => {
             const el = makeMarkerEl(i, i === 0);
             const popup = new mbox.Popup({
                 offset: [0, -10],
@@ -232,8 +292,10 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
             markersRef.current.push(marker);
         });
 
-        // Route line
-        const coords = points.map((p) => [p.lng, p.lat]);
+        // Route line — deduplicated + midpoint-smoothed for long segments
+        const rawCoords = deduped.map((p) => [p.lng, p.lat] as [number, number]);
+        const coords = smoothRoute(rawCoords);
+        console.log("finalCoords:", coords);
         map.addSource("route", {
             type: "geojson",
             data: { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: [coords[0]] } },
@@ -295,31 +357,29 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
             animRef.current = requestAnimationFrame(animateLine);
         }
 
-        if (points.length === 1) {
-            map.easeTo({ center: [points[0].lng, points[0].lat], zoom: 14, pitch: 60, duration: 1400, essential: true });
+        if (deduped.length === 1) {
+            map.easeTo({ center: [deduped[0].lng, deduped[0].lat], zoom: 14, pitch: 60, duration: 1400, essential: true });
         } else {
-            const bounds = points.reduce(
+            const bounds = deduped.reduce(
                 (b, p) => b.extend([p.lng, p.lat] as mapboxgl.LngLatLike),
-                new mbox.LngLatBounds([points[0].lng, points[0].lat], [points[0].lng, points[0].lat])
+                new mbox.LngLatBounds([deduped[0].lng, deduped[0].lat], [deduped[0].lng, deduped[0].lat])
             );
-            map.fitBounds(bounds, { padding: 80, maxZoom: 14, speed: 1.1, essential: true });
+            map.fitBounds(bounds, { padding: 100, maxZoom: 14, duration: 1200, essential: true });
         }
 
         if (cameraTimeoutRef.current) clearTimeout(cameraTimeoutRef.current);
-        type MapWithIntro = typeof map & { _introDone?: boolean };
-        if (!prefersReducedMotion && !(map as MapWithIntro)._introDone) {
-            (map as MapWithIntro)._introDone = true;
+        if (!prefersReducedMotion) {
             cameraTimeoutRef.current = setTimeout(() => {
                 if (!map) return;
                 const isMobile = window.innerWidth < 768;
                 map.easeTo({
-                    pitch: isMobile ? 45 : 60,
+                    pitch: isMobile ? 50 : 65,
                     bearing: 20,
                     duration: 2000,
-                    easing: (t) => t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t,
+                    easing: easeInOutCubic,
                     essential: true,
                 });
-            }, 800);
+            }, 1200);
         }
     }, []);
 
@@ -482,6 +542,7 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
             if (cameraTimeoutRef.current) clearTimeout(cameraTimeoutRef.current);
             if (idleAnimRef.current) cancelAnimationFrame(idleAnimRef.current);
             if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
+            if (redrawDebounceRef.current) clearTimeout(redrawDebounceRef.current);
             markersRef.current.forEach((m) => m.remove());
             markersRef.current = [];
             mapRef.current?.remove();
@@ -534,57 +595,64 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [focusedActivity]);
 
-    // ─── Redraw when data / day / order changes ───────────────────────────────
+    // ─── Redraw when data / day / order changes (debounced 150 ms) ───────────
     useEffect(() => {
-        const map = mapRef.current;
-        const mbox = mboxRef.current;
-        if (!map || !mbox || !map.isStyleLoaded()) return;
+        if (redrawDebounceRef.current) clearTimeout(redrawDebounceRef.current);
+        let cancelledGeocode = false;
 
-        setHasGeocodedPoints(false);
-        const points = extractPoints(rawItinerary, selectedDay, eventOrder);
-        console.log("coords:", points);
-        draw(map, mbox, points);
+        redrawDebounceRef.current = setTimeout(() => {
+            const map = mapRef.current;
+            const mbox = mboxRef.current;
+            if (!map || !mbox || !map.isStyleLoaded()) return;
 
-        if (!token || !rawItinerary?.days) return;
+            setHasGeocodedPoints(false);
+            const points = extractPoints(rawItinerary, selectedDay, eventOrder);
+            draw(map, mbox, points);
 
-        const days = selectedDay
-            ? rawItinerary.days.filter((d) => d.day === selectedDay)
-            : rawItinerary.days;
+            if (!token || !rawItinerary?.days) return;
 
-        const missing: Array<{ query: string; idx: number }> = [];
-        let globalIdx = 0;
-        for (const day of days) {
-            for (const act of day.activities) {
-                const lat = act.location?.lat;
-                const lng = act.location?.lng;
-                const valid =
-                    typeof lat === "number" && isFinite(lat) && lat !== 0 &&
-                    typeof lng === "number" && isFinite(lng) && lng !== 0;
-                if (!valid) {
-                    const query = act.location?.address || act.location?.name;
-                    if (query) missing.push({ query, idx: globalIdx });
+            const days = selectedDay
+                ? rawItinerary.days.filter((d) => d.day === selectedDay)
+                : rawItinerary.days;
+
+            const missing: Array<{ query: string; idx: number }> = [];
+            let globalIdx = 0;
+            for (const day of days) {
+                for (const act of day.activities) {
+                    const lat = act.location?.lat;
+                    const lng = act.location?.lng;
+                    const valid =
+                        typeof lat === "number" && isFinite(lat) && lat !== 0 &&
+                        typeof lng === "number" && isFinite(lng) && lng !== 0;
+                    if (!valid) {
+                        const query = act.location?.address || act.location?.name;
+                        if (query) missing.push({ query, idx: globalIdx });
+                    }
+                    globalIdx++;
                 }
-                globalIdx++;
             }
-        }
 
-        if (missing.length === 0) return;
+            if (missing.length === 0) return;
 
-        let cancelled = false;
-        (async () => {
-            const geocoded: MapPoint[] = [];
-            for (const { query, idx } of missing) {
-                const coords = await geocodeLocation(query, token);
-                if (coords) geocoded.push({ ...coords, label: query, index: idx });
-            }
-            if (!cancelled && geocoded.length > 0 && mapRef.current && mboxRef.current) {
-                setHasGeocodedPoints(true);
-                const enriched = [...points, ...geocoded].sort((a, b) => a.index - b.index);
-                draw(mapRef.current, mboxRef.current, enriched);
-            }
-        })();
+            (async () => {
+                const geocoded: MapPoint[] = [];
+                for (const { query, idx } of missing) {
+                    if (cancelledGeocode) return;
+                    const coords = await geocodeLocation(query, token);
+                    if (coords) geocoded.push({ ...coords, label: query, index: idx });
+                }
+                if (!cancelledGeocode && geocoded.length > 0 && mapRef.current && mboxRef.current) {
+                    setHasGeocodedPoints(true);
+                    const enriched = [...points, ...geocoded].sort((a, b) => a.index - b.index);
+                    draw(mapRef.current, mboxRef.current, enriched);
+                }
+            })();
+        }, 150);
 
-        return () => { cancelled = true; };
+        return () => {
+            if (redrawDebounceRef.current) clearTimeout(redrawDebounceRef.current);
+            cancelledGeocode = true;
+        };
     }, [rawItinerary, selectedDay, eventOrder, draw, token]);
 
     // ─── Handle Resize when visibility changes ────────────────────────────────
