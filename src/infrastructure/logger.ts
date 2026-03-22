@@ -43,3 +43,77 @@ export function logDebug(message: string, meta?: unknown): void {
     if (meta !== undefined) console.debug(`[DEBUG] ${message}`, meta);
     else console.debug(`[DEBUG] ${message}`);
 }
+
+// ─── Structured tracing ───────────────────────────────────────────────────────
+
+export type LogStep =
+    | "start"
+    | "input"
+    | "llm-call"
+    | "llm-response"
+    | "output"
+    | "error"
+    | "end"
+    | "fallback";
+
+export type StructuredLogEntry = {
+    layer: "agent" | "orchestrator" | "llm";
+    agent?: string;
+    step: LogStep;
+    requestId?: string;
+    data?: Record<string, unknown>;
+};
+
+/**
+ * Generates a short request-scoped trace ID.
+ * Uses crypto.randomUUID() when available (Node 19+, all browsers).
+ */
+export function generateRequestId(): string {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+        return crypto.randomUUID();
+    }
+    return `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** Truncates a string to `max` chars — prevents large payload dumps in logs. */
+export function trunc(value: string, max = 200): string {
+    return value.length > max ? `${value.slice(0, max)}…` : value;
+}
+
+/**
+ * Emits a structured log entry.
+ *
+ * Development:  "[layer:agent] step  { requestId, ...data }"  (pretty, console)
+ * Production:   single-line JSON — machine-parseable, no secrets, data is truncated.
+ */
+export function logStructured(entry: StructuredLogEntry): void {
+    const tag = entry.agent
+        ? `[${entry.layer}:${entry.agent}]`
+        : `[${entry.layer}]`;
+    const prefix = `${tag} ${entry.step}`;
+
+    if (isProduction) {
+        const line = JSON.stringify({
+            ts: new Date().toISOString(),
+            level: entry.step === "error" ? "ERROR" : "INFO",
+            layer: entry.layer,
+            ...(entry.agent && { agent: entry.agent }),
+            step: entry.step,
+            ...(entry.requestId && { requestId: entry.requestId }),
+            ...(entry.data && { data: entry.data }),
+        });
+        if (entry.step === "error") console.error(line);
+        else console.log(line);
+    } else {
+        const meta: Record<string, unknown> = {};
+        if (entry.requestId) meta.requestId = entry.requestId;
+        if (entry.data) Object.assign(meta, entry.data);
+        if (Object.keys(meta).length > 0) {
+            if (entry.step === "error") console.error(prefix, meta);
+            else console.log(prefix, meta);
+        } else {
+            if (entry.step === "error") console.error(prefix);
+            else console.log(prefix);
+        }
+    }
+}

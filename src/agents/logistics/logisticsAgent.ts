@@ -1,5 +1,5 @@
 import { LLMClientFactory, parseJSONResponse } from "@/lib/ai/llm";
-import { logInfo, logError, logDebug } from "@/infrastructure/logger";
+import { logInfo, logError, logStructured, trunc } from "@/infrastructure/logger";
 
 // ─────────────────────────────────────────
 //  Domain Types
@@ -363,12 +363,9 @@ Return ONLY valid JSON — no markdown, no explanation, no extra keys:
 // ─────────────────────────────────────────
 
 export class LogisticsAgent {
-    async run(context: EnrichedTripContext): Promise<OptimizedTripContext> {
-        logDebug("[LogisticsAgent] run() start", {
-            days: context.days.length,
-            hotels: context.hotels.length,
-            totalActivities: context.days.reduce((s, d) => s + d.activities.length, 0),
-        });
+    async run(context: EnrichedTripContext, requestId?: string): Promise<OptimizedTripContext> {
+        logStructured({ layer: "agent", agent: "logistics", step: "start", requestId });
+        logStructured({ layer: "agent", agent: "logistics", step: "input", requestId, data: { days: context.days.length, hotels: context.hotels.length, totalActivities: context.days.reduce((s, d) => s + d.activities.length, 0), pace: context.preferences?.pace } });
         const preprocessed = preprocessContext(context);
         const client = LLMClientFactory.create({ agent: "logistics" });
 
@@ -382,18 +379,22 @@ export class LogisticsAgent {
 
         for (let attempt = 0; attempt < 2; attempt++) {
             try {
+                logStructured({ layer: "agent", agent: "logistics", step: "llm-call", requestId, data: { attempt: attempt + 1, maxTokens: 4096 } });
                 const response = await client.execute(messages, options);
                 const raw = parseJSONResponse<LLMResponse>(response.content);
                 const merged = mergeLLMResult(raw, preprocessed, context);
                 if (validateResult(merged, context)) {
                     logInfo("[LogisticsAgent] LLM optimisation succeeded", { attempt: attempt + 1 });
-                    logDebug("[LogisticsAgent] complete (LLM path)", { selectedHotel: merged.selectedHotel.name, days: merged.days.length });
+                    logStructured({ layer: "agent", agent: "logistics", step: "llm-response", requestId, data: { attempt: attempt + 1, latencyMs: response.latencyMs, path: "llm" } });
+                    logStructured({ layer: "agent", agent: "logistics", step: "output", requestId, data: { selectedHotel: merged.selectedHotel.name, days: merged.days.length } });
+                    logStructured({ layer: "agent", agent: "logistics", step: "end", requestId, data: { path: "llm" } });
                     return merged;
                 }
                 lastError = new Error("LLM result failed post-merge validation");
                 logInfo("[LogisticsAgent] LLM result invalid, will retry or fall back", { attempt: attempt + 1 });
             } catch (err) {
                 lastError = err;
+                logStructured({ layer: "agent", agent: "logistics", step: "error", requestId, data: { attempt: attempt + 1, error: trunc((err as Error).message) } });
                 logError(`[LogisticsAgent] LLM attempt ${attempt + 1} error`, err);
             }
         }
@@ -401,8 +402,10 @@ export class LogisticsAgent {
         logInfo("[LogisticsAgent] Falling back to deterministic optimizer", {
             reason: lastError instanceof Error ? lastError.message : String(lastError),
         });
+        logStructured({ layer: "agent", agent: "logistics", step: "fallback", requestId, data: { reason: trunc(lastError instanceof Error ? lastError.message : String(lastError)) } });
         const fallback = deterministicOptimize(preprocessed);
-        logDebug("[LogisticsAgent] complete (deterministic path)", { selectedHotel: fallback.selectedHotel.name, days: fallback.days.length });
+        logStructured({ layer: "agent", agent: "logistics", step: "output", requestId, data: { selectedHotel: fallback.selectedHotel.name, days: fallback.days.length } });
+        logStructured({ layer: "agent", agent: "logistics", step: "end", requestId, data: { path: "deterministic" } });
         return fallback;
     }
 }

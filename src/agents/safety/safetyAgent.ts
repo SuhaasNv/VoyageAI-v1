@@ -1,5 +1,5 @@
 import { LLMClientFactory, executeWithRetry, parseJSONResponse } from "@/lib/ai/llm";
-import { logError, logDebug } from "@/infrastructure/logger";
+import { logError, logStructured, trunc } from "@/infrastructure/logger";
 
 // ─────────────────────────────────────────
 //  Domain Types
@@ -215,20 +215,15 @@ function validateAndClamp(raw: unknown): SafetyResult {
 export class SafetyAgent {
   private readonly llmClient = LLMClientFactory.create({ agent: "safety" });
 
-  async run(context: BudgetedTripContext): Promise<SafeTripContext> {
+  async run(context: BudgetedTripContext, requestId?: string): Promise<SafeTripContext> {
     const signals = analyzeRiskSignals(context);
-    logDebug("[SafetyAgent] run() start", {
-      destination: context.destination,
-      maxActivitiesInDay: signals.maxActivitiesInDay,
-      hasFastPace: signals.hasFastPace,
-      isOverBudget: signals.isOverBudget,
-      hasOutdoorHeavyDay: signals.hasOutdoorHeavyDay,
-      hasFamousAttractions: signals.hasFamousAttractions,
-    });
+    logStructured({ layer: "agent", agent: "safety", step: "start", requestId });
+    logStructured({ layer: "agent", agent: "safety", step: "input", requestId, data: { destination: context.destination, maxActivitiesInDay: signals.maxActivitiesInDay, hasFastPace: signals.hasFastPace, isOverBudget: signals.isOverBudget, hasOutdoorHeavyDay: signals.hasOutdoorHeavyDay, hasFamousAttractions: signals.hasFamousAttractions } });
 
     let safety: SafetyResult = { riskLevel: "low", warnings: [], tips: [] };
 
     try {
+      logStructured({ layer: "agent", agent: "safety", step: "llm-call", requestId, data: { temperature: 0.4 } });
       const response = await executeWithRetry(
         this.llmClient,
         [
@@ -243,15 +238,17 @@ export class SafetyAgent {
       );
 
       const parsed = parseJSONResponse<unknown>(response.content);
-      logDebug("[SafetyAgent] LLM response received", { contentLength: response.content.length });
+      logStructured({ layer: "agent", agent: "safety", step: "llm-response", requestId, data: { contentLength: response.content.length, latencyMs: response.latencyMs } });
       safety = validateAndClamp(parsed);
     } catch (err) {
+      logStructured({ layer: "agent", agent: "safety", step: "error", requestId, data: { error: trunc((err as Error).message) } });
       logError("[SafetyAgent] LLM call failed", err);
       throw err;
     }
 
     const result = { ...context, safety };
-    logDebug("[SafetyAgent] complete", { riskLevel: safety.riskLevel, warnings: safety.warnings.length, tips: safety.tips.length });
+    logStructured({ layer: "agent", agent: "safety", step: "output", requestId, data: { riskLevel: safety.riskLevel, warnings: safety.warnings.length, tips: safety.tips.length } });
+    logStructured({ layer: "agent", agent: "safety", step: "end", requestId });
     return result;
   }
 }

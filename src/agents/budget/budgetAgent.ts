@@ -1,6 +1,6 @@
 import { LLMClientFactory, executeWithRetry, parseJSONResponse } from "@/lib/ai/llm";
 import { selectModelConfig } from "@/lib/ai/modelRouter";
-import { logError, logDebug } from "@/infrastructure/logger";
+import { logError, logStructured, trunc } from "@/infrastructure/logger";
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
@@ -105,13 +105,9 @@ export class BudgetAgent {
      * All numeric logic is performed in TypeScript; the LLM is never trusted
      * for calculations.
      */
-    async run(context: OptimizedTripContext): Promise<BudgetedTripContext> {
-        logDebug("[BudgetAgent] run() start", {
-            destination: context.destination,
-            hotel: context.selectedHotel.name,
-            hotelTier: context.selectedHotel.priceRange,
-            days: context.days.length,
-        });
+    async run(context: OptimizedTripContext, requestId?: string): Promise<BudgetedTripContext> {
+        logStructured({ layer: "agent", agent: "budget", step: "start", requestId });
+        logStructured({ layer: "agent", agent: "budget", step: "input", requestId, data: { destination: context.destination, hotel: context.selectedHotel.name, hotelTier: context.selectedHotel.priceRange, days: context.days.length } });
         const nightly = hotelNightly(context.selectedHotel.priceRange);
 
         // Initialize costPerDay with hotel cost for each night.
@@ -146,12 +142,12 @@ export class BudgetAgent {
         const budgetGap =
             isOverBudget ? totalEstimatedCost - userBudget! : undefined;
 
-        logDebug("[BudgetAgent] cost calculated", { totalEstimatedCost, userBudget, isOverBudget, budgetGap });
+        logStructured({ layer: "agent", agent: "budget", step: "output", requestId, data: { totalEstimatedCost, userBudget, isOverBudget, budgetGap } });
 
         // ── LLM suggestions (only when over budget) ───────────────────────────
         let suggestions: string[] | undefined;
         if (isOverBudget) {
-            suggestions = await this.fetchSuggestions(context, budgetGap!);
+            suggestions = await this.fetchSuggestions(context, budgetGap!, requestId);
         }
 
         const budget: BudgetResult = {
@@ -162,13 +158,14 @@ export class BudgetAgent {
             ...(suggestions !== undefined && { suggestions }),
         };
 
-        logDebug("[BudgetAgent] complete", { totalEstimatedCost, isOverBudget, suggestions: suggestions?.length ?? 0 });
+        logStructured({ layer: "agent", agent: "budget", step: "end", requestId, data: { totalEstimatedCost, isOverBudget, suggestions: suggestions?.length ?? 0 } });
         return { ...context, budget };
     }
 
     private async fetchSuggestions(
         context: OptimizedTripContext,
         budgetGap: number,
+        requestId?: string,
     ): Promise<string[] | undefined> {
         const systemPrompt =
             "You are a travel budget advisor. " +
@@ -195,6 +192,7 @@ export class BudgetAgent {
 
         try {
             const client = LLMClientFactory.create({ agent: "budget" });
+            logStructured({ layer: "agent", agent: "budget", step: "llm-call", requestId, data: { purpose: "suggestions", budgetGap } });
             const llmResponse = await executeWithRetry(
                 client,
                 [
@@ -207,6 +205,7 @@ export class BudgetAgent {
                     retries: 2,
                 },
             );
+            logStructured({ layer: "agent", agent: "budget", step: "llm-response", requestId, data: { contentLength: llmResponse.content.length } });
 
             const parsed = parseJSONResponse<{ suggestions?: unknown }>(
                 llmResponse.content,
@@ -218,6 +217,7 @@ export class BudgetAgent {
                 .filter((s): s is string => typeof s === "string")
                 .slice(0, 3);
         } catch (err) {
+            logStructured({ layer: "agent", agent: "budget", step: "error", requestId, data: { purpose: "suggestions", error: trunc((err as Error).message) } });
             logError("[BudgetAgent] LLM suggestion generation failed — skipping", err);
             return undefined;
         }

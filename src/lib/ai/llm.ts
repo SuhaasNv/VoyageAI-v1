@@ -16,7 +16,7 @@
 import { AIErrorSchema, type AIError } from "./schemas";
 import { logLLMUsage } from "../../services/logging/usageLogger";
 import { getRequestId, getRequestPathname } from "@/lib/requestContext";
-import { logInfo, logError } from "@/infrastructure/logger";
+import { logInfo, logError, logStructured } from "@/infrastructure/logger";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { type LLMMessage, type LLMRequestOptions, type LLMResponse, type LLMClient } from "./types";
 
@@ -1082,9 +1082,17 @@ export async function executeWithRetry(
     let lastError: Error | null = null;
     let shouldFallback = false;
 
+    // Determine the underlying provider for structured trace logs
+    const resolvedProvider =
+        client instanceof OpenAILLMClient ? "openai"
+        : client instanceof GeminiLLMClient ? "gemini"
+        : "mock";
+
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
+            logStructured({ layer: "llm", step: "llm-call", data: { provider: resolvedProvider, model: options.model ?? "default", attempt: attempt + 1 } });
             const response = await client.execute(messages, options);
+            logStructured({ layer: "llm", step: "llm-response", data: { provider: response.provider, model: response.modelUsed, latencyMs: response.latencyMs, totalTokens: response.totalTokens } });
             logLLMUsage(response, {
                 requestId: getRequestId(),
                 endpoint: getRequestPathname() ?? undefined,
@@ -1141,10 +1149,12 @@ export async function executeWithRetry(
     // Fallback: try OpenAI → Gemini in priority order when primary fails
     if (shouldFallback) {
         if (!(client instanceof OpenAILLMClient) && process.env.OPENAI_API_KEY) {
+            logStructured({ layer: "llm", step: "fallback", data: { from: resolvedProvider, to: "openai", reason: lastError?.message } });
             logInfo("[LLM] Primary failed — falling back to OpenAI", { primaryError: lastError?.message });
             try {
                 const fallbackClient = new OpenAILLMClient(process.env.OPENAI_API_KEY);
                 const fallbackResponse = await fallbackClient.execute(messages, { ...options, timeoutMs: options.timeoutMs ?? 25_000 });
+                logStructured({ layer: "llm", step: "llm-response", data: { provider: fallbackResponse.provider, model: fallbackResponse.modelUsed, latencyMs: fallbackResponse.latencyMs, fallback: true } });
                 logLLMUsage(fallbackResponse, {
                     requestId: getRequestId(),
                     endpoint: getRequestPathname() ?? undefined,
@@ -1156,10 +1166,12 @@ export async function executeWithRetry(
             }
         }
         if (!(client instanceof GeminiLLMClient) && process.env.GEMINI_API_KEY) {
+            logStructured({ layer: "llm", step: "fallback", data: { from: resolvedProvider, to: "gemini", reason: lastError?.message } });
             logInfo("[LLM] Primary failed — falling back to Gemini", { primaryError: lastError?.message });
             try {
                 const fallbackClient = new GeminiLLMClient(process.env.GEMINI_API_KEY);
                 const fallbackResponse = await fallbackClient.execute(messages, { ...options, timeoutMs: options.timeoutMs ?? 30_000 });
+                logStructured({ layer: "llm", step: "llm-response", data: { provider: fallbackResponse.provider, model: fallbackResponse.modelUsed, latencyMs: fallbackResponse.latencyMs, fallback: true } });
                 logLLMUsage(fallbackResponse, {
                     requestId: getRequestId(),
                     endpoint: getRequestPathname() ?? undefined,

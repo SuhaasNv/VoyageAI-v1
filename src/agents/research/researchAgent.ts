@@ -18,7 +18,7 @@
 import { LLMClientFactory, executeWithRetry, parseJSONResponse } from "../../lib/ai/llm";
 import { selectModelConfig } from "../../lib/ai/modelRouter";
 import { buildFullPrompt } from "../../lib/ai/prompts/index";
-import { logError, logInfo, logDebug } from "@/infrastructure/logger";
+import { logError, logInfo, logStructured, trunc } from "@/infrastructure/logger";
 import {
     searchAttractions,
     searchHotels,
@@ -262,7 +262,9 @@ export class ResearchAgent {
      *
      * @throws if hotels cannot be populated after one retry
      */
-    async run(context: TripContext): Promise<EnrichedTripContext> {
+    async run(context: TripContext, requestId?: string): Promise<EnrichedTripContext> {
+        logStructured({ layer: "agent", agent: "research", step: "start", requestId });
+        logStructured({ layer: "agent", agent: "research", step: "input", requestId, data: { destination: context.destination, durationDays: context.durationDays, style: context.preferences?.style } });
         logInfo("[ResearchAgent] starting enrichment", {
             destination: context.destination,
             days: context.durationDays,
@@ -282,7 +284,7 @@ export class ResearchAgent {
         if (!hasGrounding) {
             logInfo("[ResearchAgent] no Bright Data results — proceeding with LLM-only generation");
         }
-        logDebug("[ResearchAgent] Bright Data results", { attractions: !!attractionsRaw, hotels: !!hotelsRaw, restaurants: !!restaurantsRaw });
+        logStructured({ layer: "agent", agent: "research", step: "input", requestId, data: { groundingAttractions: !!attractionsRaw, groundingHotels: !!hotelsRaw, groundingRestaurants: !!restaurantsRaw } });
 
         // ── Step 2: Build grounding context ───────────────────────────────
         const groundingParts: string[] = [];
@@ -345,30 +347,33 @@ Instructions:
 
         // ── Step 4: LLM call with single retry on validation failure ───────
         const attempt = async (): Promise<EnrichedTripContext> => {
+            logStructured({ layer: "agent", agent: "research", step: "llm-call", requestId, data: { model: modelConfig.model, maxTokens: llmOptions.maxTokens } });
             const llmResponse = await executeWithRetry(
                 client,
                 [{ role: "user", content: fullPrompt }],
                 llmOptions
             );
-            logDebug("[ResearchAgent] LLM response received", { contentLength: llmResponse.content.length });
+            logStructured({ layer: "agent", agent: "research", step: "llm-response", requestId, data: { contentLength: llmResponse.content.length, latencyMs: llmResponse.latencyMs } });
             const raw = parseJSONResponse<unknown>(llmResponse.content);
             const sanitized = validateAndSanitize(raw, context);
             const result = mergeIntoContext(context, sanitized);
-            logDebug("[ResearchAgent] enrichment complete", {
-                days: result.days.length,
-                hotels: result.hotels.length,
-                totalActivities: result.days.reduce((s, d) => s + d.activities.length, 0),
-            });
+            logStructured({ layer: "agent", agent: "research", step: "output", requestId, data: { days: result.days.length, hotels: result.hotels.length, totalActivities: result.days.reduce((s, d) => s + d.activities.length, 0) } });
             return result;
         };
 
         try {
-            return await attempt();
+            const result = await attempt();
+            logStructured({ layer: "agent", agent: "research", step: "end", requestId });
+            return result;
         } catch (firstErr) {
+            logStructured({ layer: "agent", agent: "research", step: "error", requestId, data: { attempt: 1, error: trunc((firstErr as Error).message) } });
             logError("[ResearchAgent] first attempt failed — retrying once", firstErr);
             try {
-                return await attempt();
+                const result = await attempt();
+                logStructured({ layer: "agent", agent: "research", step: "end", requestId });
+                return result;
             } catch (secondErr) {
+                logStructured({ layer: "agent", agent: "research", step: "error", requestId, data: { attempt: 2, error: trunc((secondErr as Error).message), fatal: true } });
                 logError("[ResearchAgent] failed after retry — hotels could not be populated", secondErr);
                 throw secondErr;
             }

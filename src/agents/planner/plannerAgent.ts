@@ -4,7 +4,7 @@ import {
     parseJSONResponse,
 } from "@/lib/ai/llm";
 import type { LLMClient, LLMMessage } from "@/lib/ai/types";
-import { logDebug } from "@/infrastructure/logger";
+import { logStructured, trunc } from "@/infrastructure/logger";
 import {
     PLANNER_SYSTEM_PROMPT,
     buildPlannerUserPrompt,
@@ -158,8 +158,9 @@ export class PlannerAgent {
         this.client = client ?? LLMClientFactory.create({ agent: "planner" });
     }
 
-    async run(input: string): Promise<TripContext> {
-        logDebug("[PlannerAgent] run() start", { inputLength: input.length });
+    async run(input: string, requestId?: string): Promise<TripContext> {
+        logStructured({ layer: "agent", agent: "planner", step: "start", requestId });
+        logStructured({ layer: "agent", agent: "planner", step: "input", requestId, data: { inputPreview: trunc(input) } });
 
         const messages: LLMMessage[] = [
             { role: "system", content: PLANNER_SYSTEM_PROMPT },
@@ -175,10 +176,12 @@ export class PlannerAgent {
         let rawText: string;
 
         try {
+            logStructured({ layer: "agent", agent: "planner", step: "llm-call", requestId, data: { maxTokens: 1024, temperature: 0.3 } });
             const response = await this.client.execute(messages, options);
             rawText = response.content;
-            logDebug("[PlannerAgent] LLM response received", { contentLength: rawText.length });
+            logStructured({ layer: "agent", agent: "planner", step: "llm-response", requestId, data: { contentLength: rawText.length } });
         } catch (err) {
+            logStructured({ layer: "agent", agent: "planner", step: "error", requestId, data: { error: trunc((err as Error).message) } });
             if (err instanceof AIServiceError) throw err;
             throw new AIServiceError("LLM_ERROR", `Planner LLM call failed: ${(err as Error).message}`, err);
         }
@@ -189,7 +192,7 @@ export class PlannerAgent {
             parsed = parseJSONResponse(rawText);
         } catch {
             // One retry with a repair prompt
-            logDebug("[PlannerAgent] JSON parse failed — sending repair prompt");
+            logStructured({ layer: "agent", agent: "planner", step: "llm-call", requestId, data: { attempt: "repair", reason: "invalid-json" } });
             const repairMessages: LLMMessage[] = [
                 ...messages,
                 { role: "assistant", content: rawText },
@@ -200,7 +203,9 @@ export class PlannerAgent {
             try {
                 const repairResponse = await this.client.execute(repairMessages, options);
                 repairText = repairResponse.content;
+                logStructured({ layer: "agent", agent: "planner", step: "llm-response", requestId, data: { attempt: "repair", contentLength: repairText.length } });
             } catch (err) {
+                logStructured({ layer: "agent", agent: "planner", step: "error", requestId, data: { attempt: "repair", error: trunc((err as Error).message) } });
                 if (err instanceof AIServiceError) throw err;
                 throw new AIServiceError("LLM_ERROR", `Planner repair LLM call failed: ${(err as Error).message}`, err);
             }
@@ -208,6 +213,7 @@ export class PlannerAgent {
             try {
                 parsed = parseJSONResponse(repairText);
             } catch {
+                logStructured({ layer: "agent", agent: "planner", step: "error", requestId, data: { error: "invalid-json-after-repair" } });
                 throw new AIServiceError(
                     "SCHEMA_VALIDATION_FAILED",
                     "Planner Agent returned invalid JSON after retry",
@@ -217,7 +223,8 @@ export class PlannerAgent {
         }
 
         const result = validateAndNormalize(parsed);
-        logDebug("[PlannerAgent] complete", { destination: result.destination, durationDays: result.durationDays, days: result.days.length });
+        logStructured({ layer: "agent", agent: "planner", step: "output", requestId, data: { destination: result.destination, durationDays: result.durationDays, days: result.days.length } });
+        logStructured({ layer: "agent", agent: "planner", step: "end", requestId });
         return result;
     }
 }
