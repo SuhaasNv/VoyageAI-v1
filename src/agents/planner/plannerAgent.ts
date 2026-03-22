@@ -4,6 +4,7 @@ import {
     parseJSONResponse,
 } from "@/lib/ai/llm";
 import type { LLMClient, LLMMessage } from "@/lib/ai/types";
+import { logDebug } from "@/infrastructure/logger";
 import {
     PLANNER_SYSTEM_PROMPT,
     buildPlannerUserPrompt,
@@ -158,6 +159,8 @@ export class PlannerAgent {
     }
 
     async run(input: string): Promise<TripContext> {
+        logDebug("[PlannerAgent] run() start", { inputLength: input.length });
+
         const messages: LLMMessage[] = [
             { role: "system", content: PLANNER_SYSTEM_PROMPT },
             { role: "user", content: buildPlannerUserPrompt(input) },
@@ -174,6 +177,7 @@ export class PlannerAgent {
         try {
             const response = await this.client.execute(messages, options);
             rawText = response.content;
+            logDebug("[PlannerAgent] LLM response received", { contentLength: rawText.length });
         } catch (err) {
             if (err instanceof AIServiceError) throw err;
             throw new AIServiceError("LLM_ERROR", `Planner LLM call failed: ${(err as Error).message}`, err);
@@ -185,6 +189,7 @@ export class PlannerAgent {
             parsed = parseJSONResponse(rawText);
         } catch {
             // One retry with a repair prompt
+            logDebug("[PlannerAgent] JSON parse failed — sending repair prompt");
             const repairMessages: LLMMessage[] = [
                 ...messages,
                 { role: "assistant", content: rawText },
@@ -211,6 +216,8 @@ export class PlannerAgent {
             }
         }
 
-        return validateAndNormalize(parsed);
+        const result = validateAndNormalize(parsed);
+        logDebug("[PlannerAgent] complete", { destination: result.destination, durationDays: result.durationDays, days: result.days.length });
+        return result;
     }
 }

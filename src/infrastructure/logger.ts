@@ -37,3 +37,9 @@ export function logError(message: string, meta?: unknown): void {
         else console.error(message);
     }
 }
+
+export function logDebug(message: string, meta?: unknown): void {
+    if (isProduction) return;
+    if (meta !== undefined) console.debug(`[DEBUG] ${message}`, meta);
+    else console.debug(`[DEBUG] ${message}`);
+}

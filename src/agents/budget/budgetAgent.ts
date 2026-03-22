@@ -1,6 +1,6 @@
 import { LLMClientFactory, executeWithRetry, parseJSONResponse } from "@/lib/ai/llm";
 import { selectModelConfig } from "@/lib/ai/modelRouter";
-import { logError } from "@/infrastructure/logger";
+import { logError, logDebug } from "@/infrastructure/logger";
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
@@ -28,10 +28,13 @@ export type HotelOption = {
 
 export type OptimizedTripContext = {
     destination: string;
+    startDate: string;
+    endDate: string;
     durationDays: number;
     preferences?: {
         budget?: number;
         style?: string;
+        pace?: string;
     };
     days: OptimizedDay[];
     selectedHotel: HotelOption;
@@ -103,6 +106,12 @@ export class BudgetAgent {
      * for calculations.
      */
     async run(context: OptimizedTripContext): Promise<BudgetedTripContext> {
+        logDebug("[BudgetAgent] run() start", {
+            destination: context.destination,
+            hotel: context.selectedHotel.name,
+            hotelTier: context.selectedHotel.priceRange,
+            days: context.days.length,
+        });
         const nightly = hotelNightly(context.selectedHotel.priceRange);
 
         // Initialize costPerDay with hotel cost for each night.
@@ -137,6 +146,8 @@ export class BudgetAgent {
         const budgetGap =
             isOverBudget ? totalEstimatedCost - userBudget! : undefined;
 
+        logDebug("[BudgetAgent] cost calculated", { totalEstimatedCost, userBudget, isOverBudget, budgetGap });
+
         // ── LLM suggestions (only when over budget) ───────────────────────────
         let suggestions: string[] | undefined;
         if (isOverBudget) {
@@ -151,6 +162,7 @@ export class BudgetAgent {
             ...(suggestions !== undefined && { suggestions }),
         };
 
+        logDebug("[BudgetAgent] complete", { totalEstimatedCost, isOverBudget, suggestions: suggestions?.length ?? 0 });
         return { ...context, budget };
     }
 

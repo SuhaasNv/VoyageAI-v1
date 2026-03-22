@@ -1,5 +1,5 @@
 import { LLMClientFactory, parseJSONResponse } from "@/lib/ai/llm";
-import { logInfo, logError } from "@/infrastructure/logger";
+import { logInfo, logError, logDebug } from "@/infrastructure/logger";
 
 // ─────────────────────────────────────────
 //  Domain Types
@@ -364,6 +364,11 @@ Return ONLY valid JSON — no markdown, no explanation, no extra keys:
 
 export class LogisticsAgent {
     async run(context: EnrichedTripContext): Promise<OptimizedTripContext> {
+        logDebug("[LogisticsAgent] run() start", {
+            days: context.days.length,
+            hotels: context.hotels.length,
+            totalActivities: context.days.reduce((s, d) => s + d.activities.length, 0),
+        });
         const preprocessed = preprocessContext(context);
         const client = LLMClientFactory.create({ agent: "logistics" });
 
@@ -382,6 +387,7 @@ export class LogisticsAgent {
                 const merged = mergeLLMResult(raw, preprocessed, context);
                 if (validateResult(merged, context)) {
                     logInfo("[LogisticsAgent] LLM optimisation succeeded", { attempt: attempt + 1 });
+                    logDebug("[LogisticsAgent] complete (LLM path)", { selectedHotel: merged.selectedHotel.name, days: merged.days.length });
                     return merged;
                 }
                 lastError = new Error("LLM result failed post-merge validation");
@@ -395,6 +401,8 @@ export class LogisticsAgent {
         logInfo("[LogisticsAgent] Falling back to deterministic optimizer", {
             reason: lastError instanceof Error ? lastError.message : String(lastError),
         });
-        return deterministicOptimize(preprocessed);
+        const fallback = deterministicOptimize(preprocessed);
+        logDebug("[LogisticsAgent] complete (deterministic path)", { selectedHotel: fallback.selectedHotel.name, days: fallback.days.length });
+        return fallback;
     }
 }

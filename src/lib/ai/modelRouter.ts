@@ -63,14 +63,14 @@ const CONFIGS: Record<string, (intent?: string) => ProviderMatrix> = {
 
     // ── Full itinerary generation ──────────────────────────────────────────────
     itinerary: () => ({
-        openai: { model: "gpt-4.1", temperature: 0.7, maxTokens: 8192, timeoutMs: 60_000 },
+        openai: { model: "gpt-4.1-mini", temperature: 0.7, maxTokens: 8192, timeoutMs: 60_000 },
         gemini: { model: GEMINI_FLASH, temperature: 0.7, maxTokens: 8192, timeoutMs: 60_000 },
         mock: { model: "mock", temperature: 0.7, maxTokens: 8192, timeoutMs: 60_000 },
     }),
 
     // ── Structured diff reoptimization ────────────────────────────────────────
     reoptimize: () => ({
-        openai: { model: "gpt-4.1", temperature: 0.3, maxTokens: 8192, timeoutMs: 45_000 },
+        openai: { model: "gpt-4.1-mini", temperature: 0.3, maxTokens: 8192, timeoutMs: 45_000 },
         gemini: { model: GEMINI_FLASH, temperature: 0.3, maxTokens: 8192, timeoutMs: 45_000 },
         mock: { model: "mock", temperature: 0.3, maxTokens: 8192, timeoutMs: 30_000 },
     }),
@@ -126,9 +126,9 @@ const CONFIGS: Record<string, (intent?: string) => ProviderMatrix> = {
 
     // ── Research Agent — attraction/hotel/restaurant enrichment ───────────────
     research: () => ({
-        openai: { model: "gpt-4.1", temperature: 0.5, maxTokens: 4096, timeoutMs: 45_000 },
+        openai: { model: "gpt-4.1-mini", temperature: 0.5, maxTokens: 4096, timeoutMs: 45_000 },
         gemini: { model: GEMINI_FLASH, temperature: 0.5, maxTokens: 4096, timeoutMs: 45_000 },
-        mock:   { model: "mock",       temperature: 0.5, maxTokens: 4096, timeoutMs: 15_000 },
+        mock:   { model: "mock",        temperature: 0.5, maxTokens: 4096, timeoutMs: 15_000 },
     }),
 };
 

@@ -78,6 +78,8 @@ function makeOptimizedContext(overBudget = false, dense = false): OptimizedTripC
 
     return {
         destination: "Tokyo",
+        startDate: "2025-04-01",
+        endDate: "2025-04-05",
         durationDays: 5,
         preferences: { budget: overBudget ? 100 : 9999, style: "balanced" },
         days: [
@@ -100,6 +102,8 @@ function makeSafeContext(overBudget = false, dense = false): SafeTripContext {
 
     return {
         destination: "Tokyo",
+        startDate: "2025-04-01",
+        endDate: "2025-04-05",
         durationDays: 5,
         days: [
             { day: 1, theme: "Arrival", activities },

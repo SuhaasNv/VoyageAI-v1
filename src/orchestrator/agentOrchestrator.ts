@@ -9,6 +9,7 @@ import {
 import { SafetyAgent, type SafeTripContext } from "@/agents/safety/safetyAgent";
 import { LLMClientFactory, parseJSONResponse } from "@/lib/ai/llm";
 import type { LLMMessage } from "@/lib/ai/types";
+import { logDebug } from "@/infrastructure/logger";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -208,7 +209,8 @@ export class AgentOrchestrator {
             return safe;
         } catch (err) {
             this.logAgent("safety", "error", (err as Error).message);
-            return undefined;
+            // Fallback: pipeline continues; safety result is empty but logged as failed.
+            return { ...budgeted, safety: { riskLevel: "low" as const, warnings: [], tips: [] } } as SafeTripContext;
         }
     }
 
@@ -216,12 +218,14 @@ export class AgentOrchestrator {
 
     async run(input: string): Promise<OrchestratorResult> {
         this.executionLog.length = 0;
+        logDebug("[Orchestrator] pipeline start", { inputLength: input.length });
 
         // Step 1: Planner
         let trip: TripContext;
         try {
             trip = await this.planner.run(input);
             this.logAgent("planner", "success");
+            logDebug("[Orchestrator] planner complete", { destination: trip.destination, durationDays: trip.durationDays });
         } catch (err) {
             this.logAgent("planner", "error", (err as Error).message);
             return { ok: false, stage: "planner", executionLog: this.executionLog, error: (err as Error).message };
@@ -232,6 +236,7 @@ export class AgentOrchestrator {
         try {
             enriched = await this.research.run(trip);
             this.logAgent("research", "success");
+            logDebug("[Orchestrator] research complete", { days: enriched.days.length, hotels: enriched.hotels.length });
         } catch (err) {
             this.logAgent("research", "error", (err as Error).message);
             return { ok: false, stage: "research", context: trip, executionLog: this.executionLog, error: (err as Error).message };
@@ -242,6 +247,7 @@ export class AgentOrchestrator {
         try {
             optimized = await this.logistics.run(enriched);
             this.logAgent("logistics", "success");
+            logDebug("[Orchestrator] logistics complete", { selectedHotel: optimized.selectedHotel.name });
         } catch (err) {
             this.logAgent("logistics", "error", (err as Error).message);
             return { ok: false, stage: "logistics", context: enriched, executionLog: this.executionLog, error: (err as Error).message };
@@ -263,6 +269,7 @@ export class AgentOrchestrator {
             const overBudget = hasBudgetIssues(lastSafe);
             const dense = isTooDense(lastSafe);
             const issue = classifyIssue(overBudget, dense);
+            logDebug("[Orchestrator] validation loop", { round: decisionRound + 1, issue, overBudget, dense });
 
             let action: OrchestratorAction = "reoptimize_budget";
             try {
@@ -273,6 +280,7 @@ export class AgentOrchestrator {
             }
             this.logLlmDecision(issue, action);
             decisionRound += 1;
+            logDebug("[Orchestrator] LLM decided", { action, round: decisionRound });
 
             if (action === "ask_user") {
                 return {
@@ -296,11 +304,13 @@ export class AgentOrchestrator {
                     this.logAgent("logistics", "error", (err as Error).message);
                 }
             } else if (action === "reoptimize_budget") {
+                // BudgetAgent only calculates costs; to actually reduce them, re-run
+                // logistics so it can select a cheaper hotel / activity set.
                 try {
-                    await this.budget.run(optimized);
-                    this.logAgent("budget", "success");
+                    optimized = await this.logistics.run(enriched);
+                    this.logAgent("logistics", "success");
                 } catch (err) {
-                    this.logAgent("budget", "error", (err as Error).message);
+                    this.logAgent("logistics", "error", (err as Error).message);
                 }
             }
 
@@ -321,6 +331,7 @@ export class AgentOrchestrator {
             return { requiresHuman: true, message, context: lastSafe, executionLog: this.executionLog };
         }
 
+        logDebug("[Orchestrator] pipeline complete", { ok: true, requiresHuman: false, rounds: decisionRound });
         return { ok: true, requiresHuman: false, context: lastSafe, executionLog: this.executionLog };
     }
 }

@@ -1,5 +1,5 @@
 import { LLMClientFactory, executeWithRetry, parseJSONResponse } from "@/lib/ai/llm";
-import { logError } from "@/infrastructure/logger";
+import { logError, logDebug } from "@/infrastructure/logger";
 
 // ─────────────────────────────────────────
 //  Domain Types
@@ -21,6 +21,8 @@ export type OptimizedDay = {
 
 export type BudgetedTripContext = {
   destination: string;
+  startDate: string;
+  endDate: string;
   durationDays: number;
   preferences?: {
     budget?: number;
@@ -215,6 +217,14 @@ export class SafetyAgent {
 
   async run(context: BudgetedTripContext): Promise<SafeTripContext> {
     const signals = analyzeRiskSignals(context);
+    logDebug("[SafetyAgent] run() start", {
+      destination: context.destination,
+      maxActivitiesInDay: signals.maxActivitiesInDay,
+      hasFastPace: signals.hasFastPace,
+      isOverBudget: signals.isOverBudget,
+      hasOutdoorHeavyDay: signals.hasOutdoorHeavyDay,
+      hasFamousAttractions: signals.hasFamousAttractions,
+    });
 
     let safety: SafetyResult = { riskLevel: "low", warnings: [], tips: [] };
 
@@ -233,12 +243,15 @@ export class SafetyAgent {
       );
 
       const parsed = parseJSONResponse<unknown>(response.content);
+      logDebug("[SafetyAgent] LLM response received", { contentLength: response.content.length });
       safety = validateAndClamp(parsed);
     } catch (err) {
-      logError("[SafetyAgent] LLM call failed, using safe fallback", err);
-      safety = { riskLevel: "low", warnings: [], tips: [] };
+      logError("[SafetyAgent] LLM call failed", err);
+      throw err;
     }
 
-    return { ...context, safety };
+    const result = { ...context, safety };
+    logDebug("[SafetyAgent] complete", { riskLevel: safety.riskLevel, warnings: safety.warnings.length, tips: safety.tips.length });
+    return result;
   }
 }

@@ -18,7 +18,7 @@
 import { LLMClientFactory, executeWithRetry, parseJSONResponse } from "../../lib/ai/llm";
 import { selectModelConfig } from "../../lib/ai/modelRouter";
 import { buildFullPrompt } from "../../lib/ai/prompts/index";
-import { logError, logInfo } from "@/infrastructure/logger";
+import { logError, logInfo, logDebug } from "@/infrastructure/logger";
 import {
     searchAttractions,
     searchHotels,
@@ -72,7 +72,7 @@ export interface EnrichedDay {
     activities: Activity[];
 }
 
-export type EnrichedTripContext = TripContext & {
+export type EnrichedTripContext = Omit<TripContext, "days"> & {
     days: EnrichedDay[];
     hotels: HotelOption[];
 };
@@ -80,10 +80,11 @@ export type EnrichedTripContext = TripContext & {
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 /** Map a numeric budget hint to a Bright Data query budget string. */
-function budgetHint(preferences?: TripContext["preferences"]): string | undefined {
+function budgetHint(preferences?: TripContext["preferences"], durationDays = 1): string | undefined {
     if (!preferences?.budget) return undefined;
-    if (preferences.budget < 100) return "budget cheap";
-    if (preferences.budget < 300) return "mid-range";
+    const daily = preferences.budget / Math.max(1, durationDays);
+    if (daily < 100) return "budget cheap";
+    if (daily < 300) return "mid-range";
     return "luxury";
 }
 
@@ -268,7 +269,7 @@ export class ResearchAgent {
         });
 
         // ── Step 1: Parallel Bright Data searches ──────────────────────────
-        const budget = budgetHint(context.preferences);
+        const budget = budgetHint(context.preferences, context.durationDays);
         const themes = context.days.map((d) => d.theme).join(", ");
 
         const [attractionsRaw, hotelsRaw, restaurantsRaw] = await Promise.all([
@@ -281,6 +282,7 @@ export class ResearchAgent {
         if (!hasGrounding) {
             logInfo("[ResearchAgent] no Bright Data results — proceeding with LLM-only generation");
         }
+        logDebug("[ResearchAgent] Bright Data results", { attractions: !!attractionsRaw, hotels: !!hotelsRaw, restaurants: !!restaurantsRaw });
 
         // ── Step 2: Build grounding context ───────────────────────────────
         const groundingParts: string[] = [];
@@ -348,9 +350,16 @@ Instructions:
                 [{ role: "user", content: fullPrompt }],
                 llmOptions
             );
+            logDebug("[ResearchAgent] LLM response received", { contentLength: llmResponse.content.length });
             const raw = parseJSONResponse<unknown>(llmResponse.content);
             const sanitized = validateAndSanitize(raw, context);
-            return mergeIntoContext(context, sanitized);
+            const result = mergeIntoContext(context, sanitized);
+            logDebug("[ResearchAgent] enrichment complete", {
+                days: result.days.length,
+                hotels: result.hotels.length,
+                totalActivities: result.days.reduce((s, d) => s + d.activities.length, 0),
+            });
+            return result;
         };
 
         try {
