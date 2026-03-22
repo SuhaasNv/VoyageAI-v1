@@ -1,44 +1,15 @@
 import { LLMClientFactory, executeWithRetry, parseJSONResponse } from "@/lib/ai/llm";
 import { selectModelConfig } from "@/lib/ai/modelRouter";
 import { logError, logStructured, trunc } from "@/infrastructure/logger";
+import type {
+    ScheduledActivity,
+    OptimizedDay,
+    HotelOption,
+    OptimizedTripContext,
+} from "@/agents/logistics/logisticsAgent";
 
-// ─── Domain types ─────────────────────────────────────────────────────────────
-
-export type ScheduledActivity = {
-    name: string;
-    type: "attraction" | "experience" | "restaurant";
-    description: string;
-    estimatedCost?: number;
-    timeSlot: "morning" | "afternoon" | "evening";
-};
-
-export type OptimizedDay = {
-    day: number;
-    theme: string;
-    activities: ScheduledActivity[];
-};
-
-export type HotelOption = {
-    name: string;
-    priceRange: "$" | "$$" | "$$$" | "$$$$";
-    area: string;
-    tags: string[];
-    rating?: number;
-};
-
-export type OptimizedTripContext = {
-    destination: string;
-    startDate: string;
-    endDate: string;
-    durationDays: number;
-    preferences?: {
-        budget?: number;
-        style?: string;
-        pace?: string;
-    };
-    days: OptimizedDay[];
-    selectedHotel: HotelOption;
-};
+// Re-export so existing importers (orchestrator, tests) don't need to change.
+export type { ScheduledActivity, OptimizedDay, HotelOption, OptimizedTripContext };
 
 export type BudgetResult = {
     totalEstimatedCost: number;

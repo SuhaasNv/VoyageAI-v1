@@ -8,14 +8,22 @@ import type { LLMResponse } from "../../lib/ai/types";
 
 // $ per 1M tokens (input, output). Approximate; update as pricing changes.
 const COST_PER_1M: Record<string, { input: number; output: number }> = {
+    // OpenAI — production models
+    "gpt-4.1": { input: 2.0, output: 8.0 },
+    "gpt-4.1-mini": { input: 0.4, output: 1.6 },
+    "gpt-4o": { input: 2.5, output: 10.0 },
+    "gpt-4o-mini": { input: 0.15, output: 0.60 },
+    // Google Gemini — production + fallback models
+    "gemini-2.5-flash": { input: 0.15, output: 0.60 },
+    "gemini-2.5-pro": { input: 1.25, output: 10.0 },
+    "gemini-1.5-flash": { input: 0.075, output: 0.30 },
+    "gemini-1.5-pro": { input: 1.25, output: 5.0 },
+    // Llama (legacy / alternate provider)
     "llama-3.1-8b-instant": { input: 0.05, output: 0.05 },
     "llama-3.3-70b-versatile": { input: 0.59, output: 0.79 },
     "llama-3.1-70b-versatile": { input: 0.59, output: 0.79 },
     "llama-3.1-405b-reasoning": { input: 3.0, output: 15.0 },
-    "gemini-1.5-flash": { input: 0.075, output: 0.30 },
-    "gemini-1.5-pro": { input: 1.25, output: 5.0 },
-    "gpt-4o": { input: 2.5, output: 10.0 },
-    "gpt-4o-mini": { input: 0.15, output: 0.60 },
+    // Mock / free
     "voyage-ai-mock-v1.0": { input: 0, output: 0 },
     mock: { input: 0, output: 0 },
 };
@@ -69,8 +77,8 @@ export async function logLLMUsage(
             },
         });
     } catch {
-        console.log(
-            "[LLM Usage]",
+        console.error(
+            "[LLM Usage] DB write failed — logging to stderr:",
             JSON.stringify({
                 ...payload,
                 timestamp: new Date().toISOString(),

@@ -310,19 +310,16 @@ export class AgentOrchestrator {
                 break;
             }
 
-            if (action === "rerun_logistics") {
+            if (action === "rerun_logistics" || action === "reoptimize_budget") {
+                // reoptimize_budget: hint the logistics agent toward a cheaper hotel tier
+                // by injecting the current budget ceiling into the enriched context.
+                // rerun_logistics: re-run as-is (density / ordering issue, not cost).
+                const logisticsInput: typeof enriched =
+                    action === "reoptimize_budget" && lastSafe.preferences?.budget
+                        ? { ...enriched, preferences: { ...enriched.preferences, budget: lastSafe.preferences.budget } }
+                        : enriched;
                 try {
-                    optimized = await this.logistics.run(enriched, requestId);
-                    this.logAgent("logistics", "success");
-                } catch (err) {
-                    this.logAgent("logistics", "error", (err as Error).message);
-                    logStructured({ layer: "orchestrator", step: "error", requestId, data: { agent: "logistics", round: decisionRound, error: (err as Error).message } });
-                }
-            } else if (action === "reoptimize_budget") {
-                // BudgetAgent only calculates costs; to actually reduce them, re-run
-                // logistics so it can select a cheaper hotel / activity set.
-                try {
-                    optimized = await this.logistics.run(enriched, requestId);
+                    optimized = await this.logistics.run(logisticsInput, requestId);
                     this.logAgent("logistics", "success");
                 } catch (err) {
                     this.logAgent("logistics", "error", (err as Error).message);

@@ -213,8 +213,6 @@ function validateAndClamp(raw: unknown): SafetyResult {
 // ─────────────────────────────────────────
 
 export class SafetyAgent {
-  private readonly llmClient = LLMClientFactory.create({ agent: "safety" });
-
   async run(context: BudgetedTripContext, requestId?: string): Promise<SafeTripContext> {
     const signals = analyzeRiskSignals(context);
     logStructured({ layer: "agent", agent: "safety", step: "start", requestId });
@@ -223,9 +221,10 @@ export class SafetyAgent {
     let safety: SafetyResult = { riskLevel: "low", warnings: [], tips: [] };
 
     try {
+      const llmClient = LLMClientFactory.create({ agent: "safety" });
       logStructured({ layer: "agent", agent: "safety", step: "llm-call", requestId, data: { temperature: 0.4 } });
       const response = await executeWithRetry(
-        this.llmClient,
+        llmClient,
         [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: buildUserPrompt(context, signals) },
