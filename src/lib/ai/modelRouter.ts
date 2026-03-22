@@ -127,6 +127,14 @@ const CONFIGS: Record<string, (intent?: string) => ProviderMatrix> = {
         mock: { model: "mock", temperature: 0.2, maxTokens: 512, timeoutMs: 5_000 },
     }),
 
+    // ── Budget constraint suggestions ─────────────────────────────────────────
+    // Very low temperature — deterministic, short JSON output only.
+    budget: () => ({
+        gemini: { model: GEMINI_FLASH, temperature: 0.3, maxTokens: 400, timeoutMs: 15_000 },
+        groq: { model: GROQ_FAST, temperature: 0.3, maxTokens: 400, timeoutMs: 12_000 },
+        mock: { model: "mock", temperature: 0.3, maxTokens: 400, timeoutMs: 5_000 },
+    }),
+
     // ── Dashboard contextual suggestions ──────────────────────────────────────
     suggestions: () => ({
         gemini: { model: GEMINI_FLASH, temperature: 0.7, maxTokens: 512, timeoutMs: 10_000 },

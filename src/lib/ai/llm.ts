@@ -134,6 +134,15 @@ class MockLLMClient implements LLMClient {
         if (ctx.includes("travel logistics optimizer")) {
             return this.mockLogisticsResponse(user);
         }
+        if (ctx.includes("budget constraint suggestions")) {
+            return JSON.stringify({
+                suggestions: [
+                    "Replace luxury hotel with a mid-range option",
+                    "Swap paid experiences for free local attractions",
+                    "Reduce restaurant meals by choosing budget-friendly eateries",
+                ],
+            });
+        }
 
         return JSON.stringify({ message: "Unknown endpoint", modelVersion: "voyage-ai-mock-v1.0" });
     }
