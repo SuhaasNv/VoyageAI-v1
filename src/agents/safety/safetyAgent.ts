@@ -23,12 +23,25 @@ export type BudgetedTripContext = {
   destination: string;
   durationDays: number;
   preferences?: {
+    budget?: number;
+    style?: string;
     pace?: string;
   };
   days: OptimizedDay[];
+  /** Present when output came from BudgetAgent (full OptimizedTripContext). */
+  selectedHotel?: {
+    name: string;
+    priceRange: string;
+    area: string;
+    tags: string[];
+    rating?: number;
+  };
   budget: {
     totalEstimatedCost: number;
+    costPerDay?: number[];
     isOverBudget: boolean;
+    budgetGap?: number;
+    suggestions?: string[];
   };
 };
 
