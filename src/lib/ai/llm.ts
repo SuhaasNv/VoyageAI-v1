@@ -128,6 +128,9 @@ class MockLLMClient implements LLMClient {
         if (ctx.includes("Planner Agent") || ctx.includes("TripContext")) {
             return JSON.stringify(this.mockPlannerResponse(user));
         }
+        if (ctx.includes("travel safety analyst")) {
+            return JSON.stringify(this.mockSafetyResponse(user));
+        }
 
         return JSON.stringify({ message: "Unknown endpoint", modelVersion: "voyage-ai-mock-v1.0" });
     }
@@ -537,6 +540,51 @@ class MockLLMClient implements LLMClient {
                 { title: "Price Drop: flights to Reykjavik", description: "Dropped by $120 for your dates", action: "View", tag: "Savings" },
             ],
         };
+    }
+
+    private mockSafetyResponse(userPrompt: string) {
+        const hasOutdoor = /outdoor|park|beach|trail|walk|garden/i.test(userPrompt);
+        const hasFamous = /eiffel|colosseum|shibuya|taj|burj|louvre|big ben|times square/i.test(userPrompt);
+        const isOverBudget = /Over budget: true/i.test(userPrompt);
+        const maxActivities = parseInt(userPrompt.match(/Max activities in a single day: (\d+)/)?.[1] ?? "3", 10);
+        const isFastPace = /Fast pace preference: true/i.test(userPrompt);
+
+        const warnings: string[] = [];
+        const tips: string[] = [
+            "Stay alert in crowded tourist areas and keep valuables secure",
+            "Carry a portable charger and offline maps in case of connectivity issues",
+        ];
+
+        const effectiveMax = isFastPace ? maxActivities + 1 : maxActivities;
+
+        if (effectiveMax > 5) {
+            warnings.push("Heavy daily schedule — risk of fatigue; consider rest breaks between activities");
+        } else if (effectiveMax > 4) {
+            warnings.push("Busy itinerary detected — pace yourself and stay hydrated throughout the day");
+        }
+        if (hasOutdoor) {
+            warnings.push("Outdoor activities planned — check local weather forecasts each morning");
+            tips.push("Carry water and sunscreen for outdoor segments of the day");
+        }
+        if (hasFamous) {
+            warnings.push("Popular landmarks on the itinerary — expect large crowds, especially on weekends");
+            tips.push("Arrive at major attractions early (before 9 AM) to avoid peak crowds");
+        }
+        if (isOverBudget) {
+            warnings.push("Trip is over budget — monitor daily spending to avoid financial stress mid-trip");
+        }
+
+        const finalWarnings = warnings.slice(0, 3);
+        const finalTips = tips.slice(0, 4);
+
+        let riskLevel: "low" | "medium" | "high" = "low";
+        if (finalWarnings.length >= 3 || effectiveMax > 5) {
+            riskLevel = "high";
+        } else if (finalWarnings.length >= 1) {
+            riskLevel = "medium";
+        }
+
+        return { riskLevel, warnings: finalWarnings, tips: finalTips };
     }
 
     private mockSimulationResponse(now: string) {
