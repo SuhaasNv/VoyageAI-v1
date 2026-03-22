@@ -868,10 +868,104 @@ class GeminiLLMClient implements LLMClient {
 }
 
 // ─────────────────────────────────────────
+//  OpenAI Client (GPT-4.1 and compatible models)
+// ─────────────────────────────────────────
+
+class OpenAILLMClient implements LLMClient {
+    private readonly apiKey: string;
+    private readonly baseUrl = "https://api.openai.com/v1";
+    private readonly defaultModel = "gpt-4.1";
+
+    constructor(apiKey: string) {
+        this.apiKey = apiKey;
+    }
+
+    async execute(
+        messages: LLMMessage[],
+        options: LLMRequestOptions = {}
+    ): Promise<LLMResponse> {
+        const startTime = Date.now();
+        const model = options.model ?? this.defaultModel;
+        const timeoutMs = options.timeoutMs ?? 30_000;
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+        try {
+            const response = await fetch(`${this.baseUrl}/chat/completions`, {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${this.apiKey}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    model,
+                    messages,
+                    temperature: options.temperature ?? 0.7,
+                    max_tokens: options.maxTokens ?? 4096,
+                    response_format: options.responseFormat === "json"
+                        ? { type: "json_object" }
+                        : undefined,
+                }),
+                signal: controller.signal,
+            });
+
+            clearTimeout(timeout);
+
+            if (!response.ok) {
+                let errBody: Record<string, unknown> = {};
+                try { errBody = await response.json(); } catch { /* ignore */ }
+                const openaiMessage =
+                    (errBody?.error as { message?: string })?.message ?? response.statusText;
+                throw new AIServiceError(
+                    response.status === 429 ? "RATE_LIMIT_EXCEEDED" : "LLM_ERROR",
+                    `OpenAI API error ${response.status}: ${openaiMessage}`,
+                    errBody
+                );
+            }
+
+            const data = await response.json();
+            const choice = data.choices?.[0];
+
+            if (!choice?.message?.content) {
+                throw new AIServiceError(
+                    "LLM_ERROR",
+                    `Empty response from OpenAI API (finish_reason: ${choice?.finish_reason ?? "unknown"})`
+                );
+            }
+
+            return {
+                content: choice.message.content as string,
+                modelUsed: (data.model as string) ?? model,
+                promptTokens: (data.usage?.prompt_tokens as number) ?? 0,
+                completionTokens: (data.usage?.completion_tokens as number) ?? 0,
+                totalTokens: (data.usage?.total_tokens as number) ?? 0,
+                latencyMs: Date.now() - startTime,
+                provider: "openai",
+            };
+        } catch (err) {
+            clearTimeout(timeout);
+            if (err instanceof AIServiceError) throw err;
+            if ((err as Error).name === "AbortError") {
+                throw new AIServiceError(
+                    "TIMEOUT",
+                    `OpenAI request timed out after ${timeoutMs}ms`
+                );
+            }
+            throw new AIServiceError(
+                "LLM_ERROR",
+                `OpenAI request failed: ${(err as Error).message}`,
+                err
+            );
+        }
+    }
+}
+
+// ─────────────────────────────────────────
 //  LLM Client Factory
 // ─────────────────────────────────────────
 
-export type LLMProvider = "mock" | "groq" | "gemini";
+export type LLMProvider = "mock" | "groq" | "gemini" | "openai";
 
 class LLMClientFactory {
     private static instance: LLMClient | null = null;
@@ -886,10 +980,11 @@ class LLMClientFactory {
 
         const isProduction = process.env.NODE_ENV === "production";
 
-        if (isProduction && (resolvedProvider === "mock" || !["groq", "gemini"].includes(resolvedProvider))) {
+        const validProviders = ["groq", "gemini", "openai"];
+        if (isProduction && (resolvedProvider === "mock" || !validProviders.includes(resolvedProvider))) {
             throw new AIServiceError(
                 "LLM_ERROR",
-                `LLM_PROVIDER must be "groq" or "gemini" in production. Got: "${resolvedProvider}". MockLLMClient is not permitted in production.`
+                `LLM_PROVIDER must be "groq", "gemini", or "openai" in production. Got: "${resolvedProvider}". MockLLMClient is not permitted in production.`
             );
         }
 
@@ -904,6 +999,12 @@ class LLMClientFactory {
                 const key = process.env.GEMINI_API_KEY;
                 if (!key) throw new AIServiceError("LLM_ERROR", "GEMINI_API_KEY is not set");
                 this.instance = new GeminiLLMClient(key);
+                break;
+            }
+            case "openai": {
+                const key = process.env.OPENAI_API_KEY;
+                if (!key) throw new AIServiceError("LLM_ERROR", "OPENAI_API_KEY is not set");
+                this.instance = new OpenAILLMClient(key);
                 break;
             }
             case "mock":
@@ -921,6 +1022,34 @@ class LLMClientFactory {
     /** Reset singleton — useful in tests */
     static reset(): void {
         this.instance = null;
+    }
+}
+
+/**
+ * Creates a fresh (non-singleton) LLM client for a specific provider.
+ * Use when you need a particular model regardless of the global LLM_PROVIDER
+ * setting — e.g. ResearchAgent always using OpenAI GPT-4.1.
+ */
+export function createLLMClient(provider: LLMProvider): LLMClient {
+    switch (provider) {
+        case "openai": {
+            const key = process.env.OPENAI_API_KEY;
+            if (!key) throw new AIServiceError("LLM_ERROR", "OPENAI_API_KEY is not set");
+            return new OpenAILLMClient(key);
+        }
+        case "groq": {
+            const key = process.env.GROQ_API_KEY;
+            if (!key) throw new AIServiceError("LLM_ERROR", "GROQ_API_KEY is not set");
+            return new GroqLLMClient(key);
+        }
+        case "gemini": {
+            const key = process.env.GEMINI_API_KEY;
+            if (!key) throw new AIServiceError("LLM_ERROR", "GEMINI_API_KEY is not set");
+            return new GeminiLLMClient(key);
+        }
+        case "mock":
+        default:
+            return new MockLLMClient();
     }
 }
 

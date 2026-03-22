@@ -29,7 +29,7 @@ import { logError } from "@/infrastructure/logger";
 
 export interface ModelConfig {
     /** Resolved provider for this call (informational — client is still the singleton). */
-    provider: "gemini" | "groq";
+    provider: "gemini" | "groq" | "openai";
     /** Model identifier passed to the LLM client via LLMRequestOptions.model. */
     model: string;
     temperature: number;
@@ -37,7 +37,7 @@ export interface ModelConfig {
     timeoutMs: number;
 }
 
-type Provider = "gemini" | "groq" | "mock";
+type Provider = "gemini" | "groq" | "openai" | "mock";
 
 // ─── Model name constants (overridable via env) ───────────────────────────────
 // Only gemini-2.5-flash is available — all Gemini endpoints use flash.
@@ -56,6 +56,8 @@ interface ProviderMatrix {
     gemini: Omit<ModelConfig, "provider">;
     groq: Omit<ModelConfig, "provider">;
     mock: Omit<ModelConfig, "provider">;
+    /** Optional — only endpoints that specifically target OpenAI need this. */
+    openai?: Omit<ModelConfig, "provider">;
 }
 
 const CONFIGS: Record<string, (intent?: string) => ProviderMatrix> = {
@@ -131,6 +133,16 @@ const CONFIGS: Record<string, (intent?: string) => ProviderMatrix> = {
         groq: { model: GROQ_FAST, temperature: 0.7, maxTokens: 512, timeoutMs: 10_000 },
         mock: { model: "mock", temperature: 0.7, maxTokens: 512, timeoutMs: 5_000 },
     }),
+
+    // ── Research Agent (Evan) — attraction/hotel/restaurant enrichment ─────────
+    // Primary: GPT-4.1 (openai) for high-quality grounded structured output.
+    // Fallback: Gemini Flash / Groq Strong when OPENAI_API_KEY is absent.
+    research: () => ({
+        openai: { model: "gpt-4.1",    temperature: 0.5, maxTokens: 4096, timeoutMs: 45_000 },
+        gemini: { model: GEMINI_FLASH, temperature: 0.5, maxTokens: 4096, timeoutMs: 45_000 },
+        groq:   { model: GROQ_STRONG,  temperature: 0.5, maxTokens: 4096, timeoutMs: 40_000 },
+        mock:   { model: "mock",       temperature: 0.5, maxTokens: 4096, timeoutMs: 15_000 },
+    }),
 };
 
 const DEFAULT_MATRIX: ProviderMatrix = {
@@ -146,9 +158,10 @@ function resolveProvider(): Provider {
     // Validate the declared provider actually has an API key available.
     if (env === "gemini" && process.env.GEMINI_API_KEY) return "gemini";
     if (env === "groq" && process.env.GROQ_API_KEY) return "groq";
+    if (env === "openai" && process.env.OPENAI_API_KEY) return "openai";
     // In production, a misconfigured provider (key missing) is a critical bug —
     // log at error level so it surfaces in observability tooling.
-    if (process.env.NODE_ENV === "production" && (env === "gemini" || env === "groq")) {
+    if (process.env.NODE_ENV === "production" && (env === "gemini" || env === "groq" || env === "openai")) {
         logError(`[modelRouter] LLM_PROVIDER="${env}" set but API key is absent — falling back to mock`, {
             provider: env,
         });
@@ -179,7 +192,12 @@ export function selectModelConfig({
 
     if (provider === "gemini") return { provider: "gemini", ...matrix.gemini };
     if (provider === "groq") return { provider: "groq", ...matrix.groq };
-    // mock — report provider as "mock" so callers can branch correctly in tests
+    if (provider === "openai") {
+        // Use openai-specific config if the endpoint declares one; otherwise fall
+        // back to the gemini matrix so temperature/maxTokens are still meaningful.
+        return { provider: "openai", ...(matrix.openai ?? matrix.gemini) };
+    }
+    // mock — report provider as "gemini" so callers see a real-shaped config in tests
     return { provider: "gemini" as const, ...matrix.mock };
 }
 
