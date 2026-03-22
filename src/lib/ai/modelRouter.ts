@@ -9,18 +9,12 @@
  * safety-layer logic unchanged.
  *
  * Provider precedence (runtime):
- *   1. LLM_PROVIDER env var ("gemini" | "groq" | "mock")
- *   2. API key availability cross-check
- *   3. Fallback to mock for dev/CI
+ *   PRIMARY  → OpenAI  (LLM_PROVIDER=openai, OPENAI_API_KEY set)
+ *   FALLBACK → Gemini  (GEMINI_API_KEY set — automatic via executeWithRetry)
+ *   DEV/CI   → Mock    (no keys configured)
  *
- * Fallback between providers is already handled by executeWithRetry in llm.ts
- * (Gemini fallback after primary exhausted). This module only selects the
- * *starting* configuration for each call.
- *
- * Model names are overridable via env vars so deployments can pin versions:
- *   GEMINI_FLASH_MODEL  (default: gemini-2.5-flash)  ← only Gemini model used
- *   GROQ_FAST_MODEL     (default: llama-3.1-8b-instant)
- *   GROQ_STRONG_MODEL   (default: llama-3.3-70b-versatile)
+ * Model name is overridable via env var:
+ *   GEMINI_FLASH_MODEL  (default: gemini-2.5-flash)
  */
 
 import { logError } from "@/infrastructure/logger";
@@ -29,7 +23,7 @@ import { logError } from "@/infrastructure/logger";
 
 export interface ModelConfig {
     /** Resolved provider for this call (informational — client is still the singleton). */
-    provider: "gemini" | "groq" | "openai";
+    provider: "gemini" | "openai";
     /** Model identifier passed to the LLM client via LLMRequestOptions.model. */
     model: string;
     temperature: number;
@@ -37,14 +31,11 @@ export interface ModelConfig {
     timeoutMs: number;
 }
 
-type Provider = "gemini" | "groq" | "openai" | "mock";
+type Provider = "gemini" | "openai" | "mock";
 
 // ─── Model name constants (overridable via env) ───────────────────────────────
-// Only gemini-2.5-flash is available — all Gemini endpoints use flash.
 
 const GEMINI_FLASH = process.env.GEMINI_FLASH_MODEL ?? process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
-const GROQ_FAST = process.env.GROQ_FAST_MODEL ?? "llama-3.1-8b-instant";
-const GROQ_STRONG = process.env.GROQ_STRONG_MODEL ?? "llama-3.3-70b-versatile";
 
 // ─── Per-endpoint config table ────────────────────────────────────────────────
 //
@@ -53,109 +44,97 @@ const GROQ_STRONG = process.env.GROQ_STRONG_MODEL ?? "llama-3.3-70b-versatile";
 // ignores the model string but the rest of the pipeline sees a real shape.
 
 interface ProviderMatrix {
+    openai: Omit<ModelConfig, "provider">;
     gemini: Omit<ModelConfig, "provider">;
-    groq: Omit<ModelConfig, "provider">;
     mock: Omit<ModelConfig, "provider">;
-    /** Optional — only endpoints that specifically target OpenAI need this. */
-    openai?: Omit<ModelConfig, "provider">;
 }
 
 const CONFIGS: Record<string, (intent?: string) => ProviderMatrix> = {
 
     // ── Landing page prompt bar ────────────────────────────────────────────────
-    // QUESTION → fast flash, low tokens (streaming QA needs low latency)
-    // CREATE_TRIP → extraction JSON, very low temperature
     landing: (intent) => {
         const isCreate = intent === "CREATE_TRIP";
         return {
+            openai: { model: isCreate ? "gpt-4.1-mini" : "gpt-4.1-mini", temperature: isCreate ? 0.2 : 0.7, maxTokens: isCreate ? 400 : 800, timeoutMs: isCreate ? 15_000 : 25_000 },
             gemini: { model: GEMINI_FLASH, temperature: isCreate ? 0.2 : 0.7, maxTokens: isCreate ? 400 : 800, timeoutMs: isCreate ? 15_000 : 25_000 },
-            groq: { model: GROQ_FAST, temperature: isCreate ? 0.2 : 0.7, maxTokens: isCreate ? 400 : 800, timeoutMs: isCreate ? 12_000 : 20_000 },
             mock: { model: "mock", temperature: isCreate ? 0.2 : 0.7, maxTokens: isCreate ? 400 : 800, timeoutMs: 5_000 },
         };
     },
 
     // ── Full itinerary generation ──────────────────────────────────────────────
-    // Large token budget for multi-day itineraries; flash handles this well.
     itinerary: () => ({
+        openai: { model: "gpt-4.1", temperature: 0.7, maxTokens: 8192, timeoutMs: 60_000 },
         gemini: { model: GEMINI_FLASH, temperature: 0.7, maxTokens: 8192, timeoutMs: 60_000 },
-        groq: { model: GROQ_STRONG, temperature: 0.7, maxTokens: 8192, timeoutMs: 60_000 },
         mock: { model: "mock", temperature: 0.7, maxTokens: 8192, timeoutMs: 60_000 },
     }),
 
     // ── Structured diff reoptimization ────────────────────────────────────────
-    // Low temperature for deterministic diff edits.
     reoptimize: () => ({
+        openai: { model: "gpt-4.1", temperature: 0.3, maxTokens: 8192, timeoutMs: 45_000 },
         gemini: { model: GEMINI_FLASH, temperature: 0.3, maxTokens: 8192, timeoutMs: 45_000 },
-        groq: { model: GROQ_STRONG, temperature: 0.3, maxTokens: 8192, timeoutMs: 45_000 },
         mock: { model: "mock", temperature: 0.3, maxTokens: 8192, timeoutMs: 30_000 },
     }),
 
     // ── Conversational chat companion ──────────────────────────────────────────
-    // Balanced config — fast model sufficient, moderate tokens for responses.
     chat: () => ({
+        openai: { model: "gpt-4.1-mini", temperature: 0.7, maxTokens: 2048, timeoutMs: 30_000 },
         gemini: { model: GEMINI_FLASH, temperature: 0.7, maxTokens: 2048, timeoutMs: 30_000 },
-        groq: { model: GROQ_FAST, temperature: 0.7, maxTokens: 2048, timeoutMs: 25_000 },
         mock: { model: "mock", temperature: 0.7, maxTokens: 2048, timeoutMs: 15_000 },
     }),
 
     // ── Packing list ───────────────────────────────────────────────────────────
-    // Moderate complexity — strong Groq model handles categorisation well.
     packing: () => ({
+        openai: { model: "gpt-4.1-mini", temperature: 0.7, maxTokens: 4096, timeoutMs: 30_000 },
         gemini: { model: GEMINI_FLASH, temperature: 0.7, maxTokens: 4096, timeoutMs: 30_000 },
-        groq: { model: GROQ_STRONG, temperature: 0.7, maxTokens: 4096, timeoutMs: 25_000 },
         mock: { model: "mock", temperature: 0.7, maxTokens: 4096, timeoutMs: 15_000 },
     }),
 
     // ── Trip risk simulation ───────────────────────────────────────────────────
     simulation: () => ({
+        openai: { model: "gpt-4.1-mini", temperature: 0.7, maxTokens: 4096, timeoutMs: 30_000 },
         gemini: { model: GEMINI_FLASH, temperature: 0.7, maxTokens: 4096, timeoutMs: 30_000 },
-        groq: { model: GROQ_STRONG, temperature: 0.7, maxTokens: 4096, timeoutMs: 25_000 },
         mock: { model: "mock", temperature: 0.7, maxTokens: 4096, timeoutMs: 15_000 },
     }),
 
     // ── NL → trip params extraction ───────────────────────────────────────────
     "create-trip": () => ({
+        openai: { model: "gpt-4.1-mini", temperature: 0.3, maxTokens: 512, timeoutMs: 15_000 },
         gemini: { model: GEMINI_FLASH, temperature: 0.3, maxTokens: 512, timeoutMs: 15_000 },
-        groq: { model: GROQ_FAST, temperature: 0.3, maxTokens: 512, timeoutMs: 10_000 },
         mock: { model: "mock", temperature: 0.3, maxTokens: 512, timeoutMs: 5_000 },
     }),
 
     // ── Ticket / booking text extraction ──────────────────────────────────────
     ticket: () => ({
+        openai: { model: "gpt-4.1-mini", temperature: 0.2, maxTokens: 512, timeoutMs: 15_000 },
         gemini: { model: GEMINI_FLASH, temperature: 0.2, maxTokens: 512, timeoutMs: 10_000 },
-        groq: { model: GROQ_FAST, temperature: 0.2, maxTokens: 512, timeoutMs: 10_000 },
         mock: { model: "mock", temperature: 0.2, maxTokens: 512, timeoutMs: 5_000 },
     }),
 
     // ── Budget constraint suggestions ─────────────────────────────────────────
-    // Very low temperature — deterministic, short JSON output only.
     budget: () => ({
+        openai: { model: "gpt-4.1-mini", temperature: 0.3, maxTokens: 400, timeoutMs: 15_000 },
         gemini: { model: GEMINI_FLASH, temperature: 0.3, maxTokens: 400, timeoutMs: 15_000 },
-        groq: { model: GROQ_FAST, temperature: 0.3, maxTokens: 400, timeoutMs: 12_000 },
         mock: { model: "mock", temperature: 0.3, maxTokens: 400, timeoutMs: 5_000 },
     }),
 
     // ── Dashboard contextual suggestions ──────────────────────────────────────
     suggestions: () => ({
+        openai: { model: "gpt-4.1-mini", temperature: 0.7, maxTokens: 512, timeoutMs: 15_000 },
         gemini: { model: GEMINI_FLASH, temperature: 0.7, maxTokens: 512, timeoutMs: 10_000 },
-        groq: { model: GROQ_FAST, temperature: 0.7, maxTokens: 512, timeoutMs: 10_000 },
         mock: { model: "mock", temperature: 0.7, maxTokens: 512, timeoutMs: 5_000 },
     }),
 
-    // ── Research Agent (Evan) — attraction/hotel/restaurant enrichment ─────────
-    // Primary: GPT-4.1 (openai) for high-quality grounded structured output.
-    // Fallback: Gemini Flash / Groq Strong when OPENAI_API_KEY is absent.
+    // ── Research Agent — attraction/hotel/restaurant enrichment ───────────────
     research: () => ({
-        openai: { model: "gpt-4.1",    temperature: 0.5, maxTokens: 4096, timeoutMs: 45_000 },
+        openai: { model: "gpt-4.1", temperature: 0.5, maxTokens: 4096, timeoutMs: 45_000 },
         gemini: { model: GEMINI_FLASH, temperature: 0.5, maxTokens: 4096, timeoutMs: 45_000 },
-        groq:   { model: GROQ_STRONG,  temperature: 0.5, maxTokens: 4096, timeoutMs: 40_000 },
         mock:   { model: "mock",       temperature: 0.5, maxTokens: 4096, timeoutMs: 15_000 },
     }),
 };
 
 const DEFAULT_MATRIX: ProviderMatrix = {
+    openai: { model: "gpt-4.1-mini", temperature: 0.7, maxTokens: 2048, timeoutMs: 30_000 },
     gemini: { model: GEMINI_FLASH, temperature: 0.7, maxTokens: 2048, timeoutMs: 30_000 },
-    groq: { model: GROQ_FAST, temperature: 0.7, maxTokens: 2048, timeoutMs: 25_000 },
     mock: { model: "mock", temperature: 0.7, maxTokens: 2048, timeoutMs: 15_000 },
 };
 
@@ -163,18 +142,14 @@ const DEFAULT_MATRIX: ProviderMatrix = {
 
 function resolveProvider(): Provider {
     const env = (process.env.LLM_PROVIDER ?? "mock") as Provider;
-    // Validate the declared provider actually has an API key available.
-    if (env === "gemini" && process.env.GEMINI_API_KEY) return "gemini";
-    if (env === "groq" && process.env.GROQ_API_KEY) return "groq";
     if (env === "openai" && process.env.OPENAI_API_KEY) return "openai";
-    // In production, a misconfigured provider (key missing) is a critical bug —
-    // log at error level so it surfaces in observability tooling.
-    if (process.env.NODE_ENV === "production" && (env === "gemini" || env === "groq" || env === "openai")) {
+    if (env === "gemini" && process.env.GEMINI_API_KEY) return "gemini";
+    // In production, a misconfigured provider (key missing) is a critical bug.
+    if (process.env.NODE_ENV === "production" && (env === "openai" || env === "gemini")) {
         logError(`[modelRouter] LLM_PROVIDER="${env}" set but API key is absent — falling back to mock`, {
             provider: env,
         });
     }
-    // In dev/CI with no key configured the mock is always safe.
     return "mock";
 }
 
@@ -198,15 +173,10 @@ export function selectModelConfig({
     const provider = resolveProvider();
     const matrix = (CONFIGS[endpoint]?.(intent)) ?? DEFAULT_MATRIX;
 
+    if (provider === "openai") return { provider: "openai", ...matrix.openai };
     if (provider === "gemini") return { provider: "gemini", ...matrix.gemini };
-    if (provider === "groq") return { provider: "groq", ...matrix.groq };
-    if (provider === "openai") {
-        // Use openai-specific config if the endpoint declares one; otherwise fall
-        // back to the gemini matrix so temperature/maxTokens are still meaningful.
-        return { provider: "openai", ...(matrix.openai ?? matrix.gemini) };
-    }
-    // mock — report provider as "gemini" so callers see a real-shaped config in tests
-    return { provider: "gemini" as const, ...matrix.mock };
+    // mock — report provider as "openai" so callers see a real-shaped config in tests
+    return { provider: "openai" as const, ...matrix.mock };
 }
 
 /**

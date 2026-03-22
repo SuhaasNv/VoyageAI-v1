@@ -3,14 +3,14 @@
  *
  * Architecture:
  * - Implements the LLMClient interface for easy swap to real providers
- * - Supports: Groq (Llama 3.1/3.3), Gemini 1.5 Flash, OpenAI GPT-4o
- * - Structured for real integration — just swap the execute() implementation
+ * - Primary: OpenAI (gpt-4.1 / gpt-4.1-mini, per-agent model routing)
+ * - Fallback: Gemini 2.5 Flash (used automatically if OpenAI fails)
  * - Includes retry logic, timeout handling, and response parsing
  *
- * To integrate a real LLM:
- * 1. Set LLM_PROVIDER env var to "groq" | "gemini" | "openai"
- * 2. Set the corresponding API key env var
- * 3. The LLMClientFactory will return the correct implementation
+ * To configure:
+ * 1. Set LLM_PROVIDER=openai in .env
+ * 2. Set OPENAI_API_KEY (required) and GEMINI_API_KEY (fallback)
+ * 3. LLMClientFactory.create({ agent }) returns the right scoped client
  */
 
 import { AIErrorSchema, type AIError } from "./schemas";
@@ -760,102 +760,6 @@ class MockLLMClient implements LLMClient {
 }
 
 // ─────────────────────────────────────────
-//  Groq Client (llama-3.1-8b-instant via OpenAI-compatible endpoint)
-// ─────────────────────────────────────────
-
-class GroqLLMClient implements LLMClient {
-    private readonly apiKey: string;
-    private readonly baseUrl = "https://api.groq.com/openai/v1";
-    private readonly defaultModel = "llama-3.1-8b-instant";
-
-    constructor(apiKey: string) {
-        this.apiKey = apiKey;
-    }
-
-    async execute(
-        messages: LLMMessage[],
-        options: LLMRequestOptions = {}
-    ): Promise<LLMResponse> {
-        const startTime = Date.now();
-        const model = options.model ?? this.defaultModel;
-        const timeoutMs = options.timeoutMs ?? 25000;
-
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
-        try {
-            const response = await fetch(`${this.baseUrl}/chat/completions`, {
-                method: "POST",
-                headers: {
-                    Authorization: `Bearer ${this.apiKey}`,
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    model,
-                    messages,
-                    temperature: options.temperature ?? 0.7,
-                    max_tokens: options.maxTokens ?? 4096,
-                    // Groq supports JSON mode for structured outputs
-                    response_format: options.responseFormat === "json"
-                        ? { type: "json_object" }
-                        : undefined,
-                }),
-                signal: controller.signal,
-            });
-
-            clearTimeout(timeout);
-
-            if (!response.ok) {
-                let errBody: Record<string, unknown> = {};
-                try { errBody = await response.json(); } catch { /* ignore */ }
-                const groqMessage = (errBody?.error as { message?: string })?.message
-                    ?? response.statusText;
-                throw new AIServiceError(
-                    response.status === 429 ? "RATE_LIMIT_EXCEEDED" : "LLM_ERROR",
-                    `Groq API error ${response.status}: ${groqMessage}`,
-                    errBody
-                );
-            }
-
-            const data = await response.json();
-            const choice = data.choices?.[0];
-
-            if (!choice?.message?.content) {
-                throw new AIServiceError(
-                    "LLM_ERROR",
-                    `Empty response from Groq API (finish_reason: ${choice?.finish_reason ?? "unknown"})`
-                );
-            }
-
-            return {
-                content: choice.message.content as string,
-                modelUsed: (data.model as string) ?? model,
-                promptTokens: (data.usage?.prompt_tokens as number) ?? 0,
-                completionTokens: (data.usage?.completion_tokens as number) ?? 0,
-                totalTokens: (data.usage?.total_tokens as number) ?? 0,
-                latencyMs: Date.now() - startTime,
-                provider: "groq",
-            };
-        } catch (err) {
-            clearTimeout(timeout);
-            if (err instanceof AIServiceError) throw err;
-            if ((err as Error).name === "AbortError") {
-                throw new AIServiceError(
-                    "TIMEOUT",
-                    `Groq request timed out after ${timeoutMs}ms`
-                );
-            }
-            throw new AIServiceError(
-                "LLM_ERROR",
-                `Groq request failed: ${(err as Error).message}`,
-                err
-            );
-        }
-    }
-}
-
-
-// ─────────────────────────────────────────
 //  Gemini Client Stub (Real Integration Ready)
 // ─────────────────────────────────────────
 
@@ -1007,7 +911,7 @@ class OpenAILLMClient implements LLMClient {
 //  LLM Client Factory
 // ─────────────────────────────────────────
 
-export type LLMProvider = "mock" | "groq" | "gemini" | "openai";
+export type LLMProvider = "mock" | "gemini" | "openai";
 
 // ── Per-agent model routing ───────────────────────────────────────────────────
 
@@ -1064,7 +968,7 @@ export type CreateOptions =
 
 class LLMClientFactory {
     /**
-     * Base singleton: the raw provider client (OpenAILLMClient, GroqLLMClient, …).
+     * Base singleton: the raw provider client (OpenAILLMClient, GeminiLLMClient, …).
      * AgentScopedLLMClient wraps this with a per-agent model string — it is NOT
      * cached itself so each create({ agent }) call returns a fresh lightweight wrapper
      * around the same underlying client.
@@ -1099,22 +1003,16 @@ class LLMClientFactory {
         if (this.baseInstance) return this.baseInstance;
 
         const isProduction = process.env.NODE_ENV === "production";
-        const validProviders: LLMProvider[] = ["groq", "gemini", "openai"];
+        const validProviders: LLMProvider[] = ["gemini", "openai"];
 
         if (isProduction && (provider === "mock" || !validProviders.includes(provider))) {
             throw new AIServiceError(
                 "LLM_ERROR",
-                `LLM_PROVIDER must be "groq", "gemini", or "openai" in production. Got: "${provider}". MockLLMClient is not permitted in production.`
+                `LLM_PROVIDER must be "openai" or "gemini" in production. Got: "${provider}". MockLLMClient is not permitted in production.`
             );
         }
 
         switch (provider) {
-            case "groq": {
-                const key = process.env.GROQ_API_KEY;
-                if (!key) throw new AIServiceError("LLM_ERROR", "GROQ_API_KEY is not set");
-                this.baseInstance = new GroqLLMClient(key);
-                break;
-            }
             case "gemini": {
                 const key = process.env.GEMINI_API_KEY;
                 if (!key) throw new AIServiceError("LLM_ERROR", "GEMINI_API_KEY is not set");
@@ -1157,11 +1055,6 @@ export function createLLMClient(provider: LLMProvider): LLMClient {
             const key = process.env.OPENAI_API_KEY;
             if (!key) throw new AIServiceError("LLM_ERROR", "OPENAI_API_KEY is not set");
             return new OpenAILLMClient(key);
-        }
-        case "groq": {
-            const key = process.env.GROQ_API_KEY;
-            if (!key) throw new AIServiceError("LLM_ERROR", "GROQ_API_KEY is not set");
-            return new GroqLLMClient(key);
         }
         case "gemini": {
             const key = process.env.GEMINI_API_KEY;
@@ -1211,12 +1104,12 @@ export async function executeWithRetry(
                     throw err; // these don't fallback since they are logic/data errors
                 }
 
-                // If rate limited and we have a fallback available, try it instead of retrying
+                // If rate limited and a fallback exists, skip straight to it
                 if (err.code === "RATE_LIMIT_EXCEEDED") {
-                    const hasOpenAIFallback = !(client instanceof OpenAILLMClient) && process.env.OPENAI_API_KEY;
-                    const hasGeminiFallback = !(client instanceof GeminiLLMClient) && process.env.GEMINI_API_KEY;
-                    const hasGroqFallback = !(client instanceof GroqLLMClient) && process.env.GROQ_API_KEY;
-                    if (hasOpenAIFallback || hasGeminiFallback || hasGroqFallback) {
+                    const hasFallback =
+                        (!(client instanceof OpenAILLMClient) && process.env.OPENAI_API_KEY) ||
+                        (!(client instanceof GeminiLLMClient) && process.env.GEMINI_API_KEY);
+                    if (hasFallback) {
                         shouldFallback = true;
                         break;
                     } else {
@@ -1235,72 +1128,47 @@ export async function executeWithRetry(
                 });
                 await new Promise((resolve) => setTimeout(resolve, delay));
             } else {
-                const hasOpenAIFallback = !(client instanceof OpenAILLMClient) && process.env.OPENAI_API_KEY;
-                const hasGeminiFallback = !(client instanceof GeminiLLMClient) && process.env.GEMINI_API_KEY;
-                const hasGroqFallback = !(client instanceof GroqLLMClient) && process.env.GROQ_API_KEY;
-                if (hasOpenAIFallback || hasGeminiFallback || hasGroqFallback) {
+                const hasFallback =
+                    (!(client instanceof OpenAILLMClient) && process.env.OPENAI_API_KEY) ||
+                    (!(client instanceof GeminiLLMClient) && process.env.GEMINI_API_KEY);
+                if (hasFallback) {
                     shouldFallback = true;
                 }
             }
         }
     }
 
-    // Fallback: try OpenAI → Gemini → Groq in priority order when primary fails
+    // Fallback: try OpenAI → Gemini in priority order when primary fails
     if (shouldFallback) {
         if (!(client instanceof OpenAILLMClient) && process.env.OPENAI_API_KEY) {
-            logError("Primary LLM failed, trying OpenAI fallback", lastError);
+            logInfo("[LLM] Primary failed — falling back to OpenAI", { primaryError: lastError?.message });
             try {
                 const fallbackClient = new OpenAILLMClient(process.env.OPENAI_API_KEY);
-                const fallbackOptions = { ...options, timeoutMs: options.timeoutMs ?? 25_000 };
-                const fallbackResponse = await fallbackClient.execute(messages, fallbackOptions);
+                const fallbackResponse = await fallbackClient.execute(messages, { ...options, timeoutMs: options.timeoutMs ?? 25_000 });
                 logLLMUsage(fallbackResponse, {
                     requestId: getRequestId(),
                     endpoint: getRequestPathname() ?? undefined,
                 }).catch(() => { });
                 return fallbackResponse;
             } catch (fallbackErr) {
-                logError("OpenAI fallback failed", fallbackErr);
-                // continue to Gemini/Groq arms below
+                logError("[LLM] OpenAI fallback failed", fallbackErr);
+                // continue to Gemini
             }
         }
         if (!(client instanceof GeminiLLMClient) && process.env.GEMINI_API_KEY) {
-            logError("Primary LLM failed, trying Gemini fallback", lastError);
+            logInfo("[LLM] Primary failed — falling back to Gemini", { primaryError: lastError?.message });
             try {
                 const fallbackClient = new GeminiLLMClient(process.env.GEMINI_API_KEY);
-                const fallbackOptions = { ...options, timeoutMs: options.timeoutMs ?? 25000 };
-                const fallbackResponse = await fallbackClient.execute(messages, fallbackOptions);
+                const fallbackResponse = await fallbackClient.execute(messages, { ...options, timeoutMs: options.timeoutMs ?? 30_000 });
                 logLLMUsage(fallbackResponse, {
                     requestId: getRequestId(),
                     endpoint: getRequestPathname() ?? undefined,
                 }).catch(() => { });
                 return fallbackResponse;
             } catch (fallbackErr) {
-                logError("Gemini fallback failed", fallbackErr);
+                logError("[LLM] Gemini fallback failed", fallbackErr);
                 if (process.env.NODE_ENV !== "production") {
-                    logInfo("[LLM] Both providers failed, using mock fallback (dev only)");
-                    return new MockLLMClient().execute(messages, options);
-                }
-                throw new AIServiceError("LLM_ERROR", "All AI providers failed", {
-                    primaryError: lastError?.message,
-                    fallbackError: (fallbackErr as Error).message,
-                });
-            }
-        }
-        if (!(client instanceof GroqLLMClient) && process.env.GROQ_API_KEY) {
-            logError("Primary LLM failed, trying Groq fallback", lastError);
-            try {
-                const fallbackClient = new GroqLLMClient(process.env.GROQ_API_KEY);
-                const fallbackOptions = { ...options, timeoutMs: options.timeoutMs ?? 25000 };
-                const fallbackResponse = await fallbackClient.execute(messages, fallbackOptions);
-                logLLMUsage(fallbackResponse, {
-                    requestId: getRequestId(),
-                    endpoint: getRequestPathname() ?? undefined,
-                }).catch(() => { });
-                return fallbackResponse;
-            } catch (fallbackErr) {
-                logError("Groq fallback failed", fallbackErr);
-                if (process.env.NODE_ENV !== "production") {
-                    logInfo("[LLM] Both providers failed, using mock fallback (dev only)");
+                    logInfo("[LLM] All providers failed, using mock fallback (dev only)");
                     return new MockLLMClient().execute(messages, options);
                 }
                 throw new AIServiceError("LLM_ERROR", "All AI providers failed", {

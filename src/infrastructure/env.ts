@@ -16,9 +16,8 @@ const EnvSchema = z
         NODE_ENV: z.enum(["development", "production", "test"]).optional(),
         ACCESS_TOKEN_EXPIRY_MS: z.coerce.number().optional(),
         REFRESH_TOKEN_EXPIRY_MS: z.coerce.number().optional(),
-        LLM_PROVIDER: z.enum(["groq", "gemini", "openai", "mock"]).optional(),
+        LLM_PROVIDER: z.enum(["gemini", "openai", "mock"]).optional(),
         OPENAI_API_KEY: z.string().optional(),
-        GROQ_API_KEY: z.string().optional(),
         GEMINI_API_KEY: z.string().optional(),
         GEMINI_MODEL: z.string().optional(),
         UPSTASH_REDIS_REST_URL: z.string().optional(),
@@ -30,14 +29,11 @@ const EnvSchema = z
     })
     .superRefine((data, ctx) => {
         if (!isProduction) return;
-        if (!data.LLM_PROVIDER || !["groq", "gemini", "openai"].includes(data.LLM_PROVIDER)) {
-            ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["LLM_PROVIDER"], message: "LLM_PROVIDER must be openai, groq, or gemini in production" });
+        if (!data.LLM_PROVIDER || !["gemini", "openai"].includes(data.LLM_PROVIDER)) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["LLM_PROVIDER"], message: "LLM_PROVIDER must be openai or gemini in production" });
         }
         if (data.LLM_PROVIDER === "openai" && !(data.OPENAI_API_KEY?.trim())) {
             ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["OPENAI_API_KEY"], message: "OPENAI_API_KEY is required when LLM_PROVIDER is openai" });
-        }
-        if (data.LLM_PROVIDER === "groq" && !(data.GROQ_API_KEY?.trim())) {
-            ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["GROQ_API_KEY"], message: "GROQ_API_KEY is required when LLM_PROVIDER is groq" });
         }
         if (data.LLM_PROVIDER === "gemini" && !(data.GEMINI_API_KEY?.trim())) {
             ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["GEMINI_API_KEY"], message: "GEMINI_API_KEY is required when LLM_PROVIDER is gemini" });
@@ -87,7 +83,6 @@ function getEnvInput() {
         REFRESH_TOKEN_EXPIRY_MS: process.env.REFRESH_TOKEN_EXPIRY_MS,
         LLM_PROVIDER: process.env.LLM_PROVIDER,
         OPENAI_API_KEY: process.env.OPENAI_API_KEY,
-        GROQ_API_KEY: process.env.GROQ_API_KEY,
         GEMINI_API_KEY: process.env.GEMINI_API_KEY,
         GEMINI_MODEL: process.env.GEMINI_MODEL,
         UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,
