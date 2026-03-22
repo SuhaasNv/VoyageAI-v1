@@ -4,14 +4,14 @@
  */
 
 import { NextRequest } from "next/server";
-import { getAuthContext } from "@/lib/api/request";
-import { successResponse, unauthorizedResponse } from "@/lib/api/response";
+import { successResponse } from "@/lib/api/response";
 import { runWithRequestContext } from "@/lib/requestContext";
+import { requireAdminApiAuth } from "@/lib/admin";
 
 export async function POST(req: NextRequest) {
     return runWithRequestContext(req, async () => {
-        const auth = getAuthContext(req);
-        if (!auth) return unauthorizedResponse();
+        const adminAuth = requireAdminApiAuth(req);
+        if (!adminAuth.ok) return adminAuth.response;
 
         const url = process.env.UPSTASH_REDIS_REST_URL;
         const token = process.env.UPSTASH_REDIS_REST_TOKEN;

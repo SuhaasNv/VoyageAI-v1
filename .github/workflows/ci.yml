@@ -75,5 +75,8 @@ jobs:
       - name: 9. Circular dependency detection
         run: npx madge --circular --extensions ts,tsx src/
 
-      - name: 10. Next.js production build
+      - name: 10. Unit tests (Vitest)
+        run: npm test
+
+      - name: 11. Next.js production build
         run: npm run build

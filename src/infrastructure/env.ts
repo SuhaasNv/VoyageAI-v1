@@ -26,6 +26,10 @@ const EnvSchema = z
         GOOGLE_CLIENT_SECRET: z.string().optional(),
         NEXT_PUBLIC_APP_URL: z.string().optional(),
         PEXELS_API_KEY: z.string().optional(),
+        // Comma-separated extra admin emails; merged with hardcoded defaults in src/lib/admin.ts.
+        ADMIN_EMAILS: z.string().optional(),
+        // Optional Bright Data SERP key; tool degrades gracefully when absent.
+        BRIGHT_DATA_API_KEY: z.string().optional(),
     })
     .superRefine((data, ctx) => {
         if (!isProduction) return;
@@ -91,6 +95,8 @@ function getEnvInput() {
         GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
         NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
         PEXELS_API_KEY: process.env.PEXELS_API_KEY,
+        ADMIN_EMAILS: process.env.ADMIN_EMAILS,
+        BRIGHT_DATA_API_KEY: process.env.BRIGHT_DATA_API_KEY,
     };
     if (isProduction) return raw;
     return {

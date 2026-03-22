@@ -152,7 +152,17 @@ function memoryRateLimit(key: string, opts: RateLimitOptions): RateLimitResult {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Public API – cascades through tiers; in production throws on Redis/DB failure
+// Public API
+//
+// Failure policy (intentional, security-first):
+//   PRODUCTION  – fail-closed: any infrastructure error propagates as an
+//                 exception so the calling route returns 500 rather than
+//                 silently bypassing rate limiting. This prevents brute-force
+//                 attacks from succeeding during a Redis or DB outage.
+//                 Alert on the thrown error via your observability platform.
+//   DEVELOPMENT – fail-open with fallback: Redis error → DB, DB error → memory.
+//                 The in-memory tier is not suitable for production because it
+//                 is per-process and does not survive restarts.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const isProduction = process.env.NODE_ENV === "production";
@@ -169,15 +179,21 @@ export async function rateLimit(
         try {
             return await redisRateLimit(key, opts);
         } catch (err) {
-            if (isProduction) throw err;
-            logError("[rateLimit] Upstash error, falling back", err);
+            if (isProduction) {
+                logError("[rateLimit] Upstash unavailable in production — failing closed", err);
+                throw err;
+            }
+            logError("[rateLimit] Upstash error, falling back to DB", err);
         }
     }
 
     try {
         return await dbRateLimit(key, opts);
     } catch (err) {
-        if (isProduction) throw err;
+        if (isProduction) {
+            logError("[rateLimit] DB unavailable in production — failing closed", err);
+            throw err;
+        }
         logError("[rateLimit] DB error, falling back to memory store", err);
     }
 

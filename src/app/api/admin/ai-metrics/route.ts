@@ -8,16 +8,13 @@
 
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getAuthContext } from "@/lib/api/request";
 import {
     successResponse,
-    unauthorizedResponse,
-    forbiddenResponse,
     internalErrorResponse,
 } from "@/lib/api/response";
 import { runWithRequestContext } from "@/lib/requestContext";
 import { logError } from "@/infrastructure/logger";
-import { isAdminPayload } from "@/lib/admin";
+import { requireAdminApiAuth } from "@/lib/admin";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -53,12 +50,8 @@ export interface ProviderRow {
 
 export async function GET(req: NextRequest) {
     return runWithRequestContext(req, async () => {
-        // 1. Auth
-        const auth = getAuthContext(req);
-        if (!auth) return unauthorizedResponse();
-
-        // 2. Admin gate
-        if (!isAdminPayload(auth.user)) return forbiddenResponse();
+        const adminAuth = requireAdminApiAuth(req);
+        if (!adminAuth.ok) return adminAuth.response;
 
         try {
             // 3. Run all aggregations in parallel
