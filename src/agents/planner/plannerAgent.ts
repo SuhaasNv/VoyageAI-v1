@@ -1,5 +1,5 @@
 import {
-    getLLMClient,
+    LLMClientFactory,
     AIServiceError,
     parseJSONResponse,
 } from "@/lib/ai/llm";
@@ -154,7 +154,7 @@ export class PlannerAgent {
     private readonly client: LLMClient;
 
     constructor(client?: LLMClient) {
-        this.client = client ?? getLLMClient();
+        this.client = client ?? LLMClientFactory.create({ agent: "planner" });
     }
 
     async run(input: string): Promise<TripContext> {

@@ -365,7 +365,7 @@ Return ONLY valid JSON — no markdown, no explanation, no extra keys:
 export class LogisticsAgent {
     async run(context: EnrichedTripContext): Promise<OptimizedTripContext> {
         const preprocessed = preprocessContext(context);
-        const client = LLMClientFactory.create();
+        const client = LLMClientFactory.create({ agent: "logistics" });
 
         const messages = [
             { role: "system" as const, content: SYSTEM_PROMPT },

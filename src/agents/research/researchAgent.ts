@@ -15,7 +15,7 @@
  * cost totals, modify dates/duration, or call other agents.
  */
 
-import { getLLMClient, createLLMClient, executeWithRetry, parseJSONResponse } from "../../lib/ai/llm";
+import { LLMClientFactory, executeWithRetry, parseJSONResponse } from "../../lib/ai/llm";
 import { selectModelConfig } from "../../lib/ai/modelRouter";
 import { buildFullPrompt } from "../../lib/ai/prompts/index";
 import { logError, logInfo } from "@/infrastructure/logger";
@@ -332,18 +332,11 @@ Instructions:
             task,
         });
 
-        // Prefer GPT-4.1 (OpenAI) for the Research Agent; fall back to the
-        // globally-configured provider if OPENAI_API_KEY is not available.
-        const client = process.env.OPENAI_API_KEY
-            ? createLLMClient("openai")
-            : getLLMClient();
+        const client = LLMClientFactory.create({ agent: "research" });
 
         const modelConfig = selectModelConfig({ endpoint: "research" });
         const llmOptions = {
             ...modelConfig,
-            // Always target gpt-4.1 when we have an OpenAI key, regardless of
-            // what the global LLM_PROVIDER resolves to.
-            model: process.env.OPENAI_API_KEY ? "gpt-4.1" : modelConfig.model,
             responseFormat: "json" as const,
             retries: 1,
         };

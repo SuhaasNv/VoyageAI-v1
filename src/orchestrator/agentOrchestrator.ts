@@ -98,7 +98,7 @@ async function defaultDecideNextAction(
     const fallback: { action: OrchestratorAction } = { action: "reoptimize_budget" };
 
     try {
-        const client = LLMClientFactory.create();
+        const client = LLMClientFactory.create({ agent: "orchestrator" });
         const summary = JSON.stringify({
             issue: input.issue,
             destination: (input.context as { destination?: string })?.destination,

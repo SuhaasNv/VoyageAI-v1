@@ -959,92 +959,46 @@ class GeminiLLMClient implements LLMClient {
 //  OpenAI Client (GPT-4.1 and compatible models)
 // ─────────────────────────────────────────
 
-class OpenAILLMClient implements LLMClient {
-    private readonly apiKey: string;
-    private readonly baseUrl = "https://api.openai.com/v1";
-    private readonly defaultModel = "gpt-4.1";
+import {
+    OpenAIClient as _OpenAIClient,
+    OpenAIRequestError,
+} from "@/infrastructure/llm/openaiClient";
 
-    constructor(apiKey: string) {
-        this.apiKey = apiKey;
+/** Wraps OpenAIClient so it satisfies LLMClient.execute() used throughout the codebase. */
+class OpenAILLMClient implements LLMClient {
+    readonly inner: _OpenAIClient;
+
+    constructor(apiKey: string, defaultModel?: string) {
+        this.inner = new _OpenAIClient(apiKey, defaultModel ?? "gpt-4.1");
     }
 
     async execute(
         messages: LLMMessage[],
         options: LLMRequestOptions = {}
     ): Promise<LLMResponse> {
-        const startTime = Date.now();
-        const model = options.model ?? this.defaultModel;
-        const timeoutMs = options.timeoutMs ?? 30_000;
-
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
         try {
-            const response = await fetch(`${this.baseUrl}/chat/completions`, {
-                method: "POST",
-                headers: {
-                    Authorization: `Bearer ${this.apiKey}`,
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    model,
-                    messages,
-                    temperature: options.temperature ?? 0.7,
-                    max_tokens: options.maxTokens ?? 4096,
-                    response_format: options.responseFormat === "json"
-                        ? { type: "json_object" }
-                        : undefined,
-                }),
-                signal: controller.signal,
+            const result = await this.inner.chat({
+                messages,
+                model: options.model,
+                temperature: options.temperature,
+                maxTokens: options.maxTokens,
+                json: options.responseFormat === "json",
+                timeoutMs: options.timeoutMs,
             });
-
-            clearTimeout(timeout);
-
-            if (!response.ok) {
-                let errBody: Record<string, unknown> = {};
-                try { errBody = await response.json(); } catch { /* ignore */ }
-                const openaiMessage =
-                    (errBody?.error as { message?: string })?.message ?? response.statusText;
-                throw new AIServiceError(
-                    response.status === 429 ? "RATE_LIMIT_EXCEEDED" : "LLM_ERROR",
-                    `OpenAI API error ${response.status}: ${openaiMessage}`,
-                    errBody
-                );
-            }
-
-            const data = await response.json();
-            const choice = data.choices?.[0];
-
-            if (!choice?.message?.content) {
-                throw new AIServiceError(
-                    "LLM_ERROR",
-                    `Empty response from OpenAI API (finish_reason: ${choice?.finish_reason ?? "unknown"})`
-                );
-            }
-
             return {
-                content: choice.message.content as string,
-                modelUsed: (data.model as string) ?? model,
-                promptTokens: (data.usage?.prompt_tokens as number) ?? 0,
-                completionTokens: (data.usage?.completion_tokens as number) ?? 0,
-                totalTokens: (data.usage?.total_tokens as number) ?? 0,
-                latencyMs: Date.now() - startTime,
+                content: result.content,
+                modelUsed: result.modelUsed,
+                promptTokens: result.promptTokens,
+                completionTokens: result.completionTokens,
+                totalTokens: result.totalTokens,
+                latencyMs: result.latencyMs,
                 provider: "openai",
             };
         } catch (err) {
-            clearTimeout(timeout);
-            if (err instanceof AIServiceError) throw err;
-            if ((err as Error).name === "AbortError") {
-                throw new AIServiceError(
-                    "TIMEOUT",
-                    `OpenAI request timed out after ${timeoutMs}ms`
-                );
+            if (err instanceof OpenAIRequestError) {
+                throw new AIServiceError(err.code, err.message, err.details);
             }
-            throw new AIServiceError(
-                "LLM_ERROR",
-                `OpenAI request failed: ${(err as Error).message}`,
-                err
-            );
+            throw new AIServiceError("LLM_ERROR", `OpenAI request failed: ${(err as Error).message}`, err);
         }
     }
 }
@@ -1055,44 +1009,123 @@ class OpenAILLMClient implements LLMClient {
 
 export type LLMProvider = "mock" | "groq" | "gemini" | "openai";
 
+// ── Per-agent model routing ───────────────────────────────────────────────────
+
+/**
+ * Supported agent roles.  Determines which OpenAI model is injected as the
+ * default when LLM_PROVIDER=openai.  "default" is used by getLLMClient() and
+ * any callsite that does not have a named role.
+ */
+export type AgentRole =
+    | "planner"
+    | "logistics"
+    | "research"
+    | "budget"
+    | "safety"
+    | "orchestrator"
+    | "default";
+
+/**
+ * Model assigned to each agent when the provider is OpenAI.
+ * Reasoning/planning roles get gpt-4.1; evaluation/small roles get gpt-4.1-mini.
+ */
+const AGENT_MODELS: Record<AgentRole, string> = {
+    planner:      "gpt-4.1",
+    logistics:    "gpt-4.1",
+    research:     "gpt-4.1-mini",
+    budget:       "gpt-4.1-mini",
+    safety:       "gpt-4.1-mini",
+    orchestrator: "gpt-4.1-mini",
+    default:      "gpt-4.1-mini",
+};
+
+/**
+ * Lightweight LLMClient wrapper that injects the per-agent model as a default.
+ * Callers can still override by passing options.model explicitly.
+ */
+class AgentScopedLLMClient implements LLMClient {
+    constructor(
+        private readonly inner: LLMClient,
+        private readonly agentModel: string,
+    ) {}
+
+    execute(messages: LLMMessage[], options: LLMRequestOptions = {}): Promise<LLMResponse> {
+        return this.inner.execute(messages, {
+            ...options,
+            model: options.model ?? this.agentModel,
+        });
+    }
+}
+
+export type CreateOptions =
+    | LLMProvider               // backward-compatible: create("openai")
+    | { agent: AgentRole }      // per-agent routing:   create({ agent: "planner" })
+    | undefined;                // env-driven default:  create()
+
 class LLMClientFactory {
-    private static instance: LLMClient | null = null;
+    /**
+     * Base singleton: the raw provider client (OpenAILLMClient, GroqLLMClient, …).
+     * AgentScopedLLMClient wraps this with a per-agent model string — it is NOT
+     * cached itself so each create({ agent }) call returns a fresh lightweight wrapper
+     * around the same underlying client.
+     */
+    private static baseInstance: LLMClient | null = null;
 
-    static create(provider?: LLMProvider): LLMClient {
-        if (this.instance) return this.instance;
+    static create(options?: CreateOptions): LLMClient {
+        // Resolve the provider string from the argument or env
+        const provider = this.resolveProvider(options);
+        const base = this.getOrCreateBase(provider);
 
-        const resolvedProvider =
-            provider ??
-            (process.env.LLM_PROVIDER as LLMProvider | undefined) ??
-            "mock";
+        // If a named agent role was requested and we are on OpenAI, wrap with scoped model
+        if (
+            options !== null &&
+            typeof options === "object" &&
+            "agent" in options &&
+            provider === "openai"
+        ) {
+            const model = AGENT_MODELS[options.agent] ?? AGENT_MODELS.default;
+            return new AgentScopedLLMClient(base, model);
+        }
+
+        return base;
+    }
+
+    private static resolveProvider(options?: CreateOptions): LLMProvider {
+        if (typeof options === "string") return options as LLMProvider;
+        return (process.env.LLM_PROVIDER as LLMProvider | undefined) ?? "mock";
+    }
+
+    private static getOrCreateBase(provider: LLMProvider): LLMClient {
+        if (this.baseInstance) return this.baseInstance;
 
         const isProduction = process.env.NODE_ENV === "production";
+        const validProviders: LLMProvider[] = ["groq", "gemini", "openai"];
 
-        const validProviders = ["groq", "gemini", "openai"];
-        if (isProduction && (resolvedProvider === "mock" || !validProviders.includes(resolvedProvider))) {
+        if (isProduction && (provider === "mock" || !validProviders.includes(provider))) {
             throw new AIServiceError(
                 "LLM_ERROR",
-                `LLM_PROVIDER must be "groq", "gemini", or "openai" in production. Got: "${resolvedProvider}". MockLLMClient is not permitted in production.`
+                `LLM_PROVIDER must be "groq", "gemini", or "openai" in production. Got: "${provider}". MockLLMClient is not permitted in production.`
             );
         }
 
-        switch (resolvedProvider) {
+        switch (provider) {
             case "groq": {
                 const key = process.env.GROQ_API_KEY;
                 if (!key) throw new AIServiceError("LLM_ERROR", "GROQ_API_KEY is not set");
-                this.instance = new GroqLLMClient(key);
+                this.baseInstance = new GroqLLMClient(key);
                 break;
             }
             case "gemini": {
                 const key = process.env.GEMINI_API_KEY;
                 if (!key) throw new AIServiceError("LLM_ERROR", "GEMINI_API_KEY is not set");
-                this.instance = new GeminiLLMClient(key);
+                this.baseInstance = new GeminiLLMClient(key);
                 break;
             }
             case "openai": {
                 const key = process.env.OPENAI_API_KEY;
                 if (!key) throw new AIServiceError("LLM_ERROR", "OPENAI_API_KEY is not set");
-                this.instance = new OpenAILLMClient(key);
+                // Default model for the raw base client; agent scoping overrides per call
+                this.baseInstance = new OpenAILLMClient(key, AGENT_MODELS.default);
                 break;
             }
             case "mock":
@@ -1100,16 +1133,16 @@ class LLMClientFactory {
                 if (isProduction) {
                     throw new AIServiceError("LLM_ERROR", "MockLLMClient is not permitted in production");
                 }
-                this.instance = new MockLLMClient();
+                this.baseInstance = new MockLLMClient();
                 break;
         }
 
-        return this.instance;
+        return this.baseInstance!;
     }
 
-    /** Reset singleton — useful in tests */
+    /** Reset singletons — used in tests. */
     static reset(): void {
-        this.instance = null;
+        this.baseInstance = null;
     }
 }
 
@@ -1180,9 +1213,10 @@ export async function executeWithRetry(
 
                 // If rate limited and we have a fallback available, try it instead of retrying
                 if (err.code === "RATE_LIMIT_EXCEEDED") {
+                    const hasOpenAIFallback = !(client instanceof OpenAILLMClient) && process.env.OPENAI_API_KEY;
                     const hasGeminiFallback = !(client instanceof GeminiLLMClient) && process.env.GEMINI_API_KEY;
                     const hasGroqFallback = !(client instanceof GroqLLMClient) && process.env.GROQ_API_KEY;
-                    if (hasGeminiFallback || hasGroqFallback) {
+                    if (hasOpenAIFallback || hasGeminiFallback || hasGroqFallback) {
                         shouldFallback = true;
                         break;
                     } else {
@@ -1201,17 +1235,34 @@ export async function executeWithRetry(
                 });
                 await new Promise((resolve) => setTimeout(resolve, delay));
             } else {
+                const hasOpenAIFallback = !(client instanceof OpenAILLMClient) && process.env.OPENAI_API_KEY;
                 const hasGeminiFallback = !(client instanceof GeminiLLMClient) && process.env.GEMINI_API_KEY;
                 const hasGroqFallback = !(client instanceof GroqLLMClient) && process.env.GROQ_API_KEY;
-                if (hasGeminiFallback || hasGroqFallback) {
+                if (hasOpenAIFallback || hasGeminiFallback || hasGroqFallback) {
                     shouldFallback = true;
                 }
             }
         }
     }
 
-    // Fallback: Gemini primary → Groq; Groq primary → Gemini
+    // Fallback: try OpenAI → Gemini → Groq in priority order when primary fails
     if (shouldFallback) {
+        if (!(client instanceof OpenAILLMClient) && process.env.OPENAI_API_KEY) {
+            logError("Primary LLM failed, trying OpenAI fallback", lastError);
+            try {
+                const fallbackClient = new OpenAILLMClient(process.env.OPENAI_API_KEY);
+                const fallbackOptions = { ...options, timeoutMs: options.timeoutMs ?? 25_000 };
+                const fallbackResponse = await fallbackClient.execute(messages, fallbackOptions);
+                logLLMUsage(fallbackResponse, {
+                    requestId: getRequestId(),
+                    endpoint: getRequestPathname() ?? undefined,
+                }).catch(() => { });
+                return fallbackResponse;
+            } catch (fallbackErr) {
+                logError("OpenAI fallback failed", fallbackErr);
+                // continue to Gemini/Groq arms below
+            }
+        }
         if (!(client instanceof GeminiLLMClient) && process.env.GEMINI_API_KEY) {
             logError("Primary LLM failed, trying Gemini fallback", lastError);
             try {

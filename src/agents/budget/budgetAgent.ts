@@ -1,4 +1,4 @@
-import { getLLMClient, executeWithRetry, parseJSONResponse } from "@/lib/ai/llm";
+import { LLMClientFactory, executeWithRetry, parseJSONResponse } from "@/lib/ai/llm";
 import { selectModelConfig } from "@/lib/ai/modelRouter";
 import { logError } from "@/infrastructure/logger";
 
@@ -182,7 +182,7 @@ export class BudgetAgent {
             styleNote;
 
         try {
-            const client = getLLMClient();
+            const client = LLMClientFactory.create({ agent: "budget" });
             const llmResponse = await executeWithRetry(
                 client,
                 [

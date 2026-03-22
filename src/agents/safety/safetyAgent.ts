@@ -211,7 +211,7 @@ function validateAndClamp(raw: unknown): SafetyResult {
 // ─────────────────────────────────────────
 
 export class SafetyAgent {
-  private readonly llmClient = LLMClientFactory.create();
+  private readonly llmClient = LLMClientFactory.create({ agent: "safety" });
 
   async run(context: BudgetedTripContext): Promise<SafeTripContext> {
     const signals = analyzeRiskSignals(context);
