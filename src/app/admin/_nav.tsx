@@ -13,7 +13,6 @@ import {
     HardDrive,
     ScrollText,
     ChevronLeft,
-    ChevronRight,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -34,7 +33,6 @@ export default function AdminNav({ email }: AdminNavProps) {
     const [collapsed, setCollapsed] = React.useState(false);
     const [isLoggingOut, setIsLoggingOut] = React.useState(false);
 
-    // Persist collapse state across sessions
     React.useEffect(() => {
         const saved = localStorage.getItem("admin-nav-collapsed");
         if (saved === "true") setCollapsed(true);
@@ -54,26 +52,46 @@ export default function AdminNav({ email }: AdminNavProps) {
 
     return (
         <aside
-            className={`relative shrink-0 flex flex-col border-r border-white/[0.06] bg-[#060A0F] transition-all duration-300 ease-in-out ${
+            className={`shrink-0 flex flex-col border-r border-white/[0.06] bg-[#060A0F] transition-[width] duration-300 ease-in-out ${
                 collapsed ? "w-[58px]" : "w-52"
             }`}
         >
-            {/* Brand */}
-            <div className={`px-4 pt-5 pb-4 border-b border-white/[0.06] flex items-center gap-2 ${collapsed ? "justify-center" : ""}`}>
-                <div className="w-6 h-6 rounded-md bg-[#10B981]/20 flex items-center justify-center shrink-0">
-                    <Shield className="w-3.5 h-3.5 text-[#10B981]" />
-                </div>
-                {!collapsed && (
-                    <div className="min-w-0 flex-1 overflow-hidden">
-                        <span className="block text-[11px] font-bold uppercase tracking-widest text-[#10B981] truncate">
-                            Admin Panel
-                        </span>
-                        <p className="text-[10px] text-slate-600 font-mono truncate">{email}</p>
+            {/* Brand + collapse (header row) */}
+            <div
+                className={
+                    collapsed
+                        ? "flex flex-col items-center gap-2 px-2 pt-4 pb-3 border-b border-white/[0.06] shrink-0"
+                        : "flex items-center justify-between gap-2 pl-3 pr-2 pt-4 pb-3 border-b border-white/[0.06] shrink-0"
+                }
+            >
+                <div className={`flex items-center gap-2 min-w-0 ${collapsed ? "" : "flex-1"}`}>
+                    <div className="w-6 h-6 rounded-md bg-[#10B981]/20 flex items-center justify-center shrink-0">
+                        <Shield className="w-3.5 h-3.5 text-[#10B981]" />
                     </div>
-                )}
+                    {!collapsed && (
+                        <div className="min-w-0 flex-1 overflow-hidden">
+                            <span className="block text-[11px] font-bold uppercase tracking-widest text-[#10B981] truncate">
+                                Admin Panel
+                            </span>
+                            <p className="text-[10px] text-slate-600 font-mono truncate">{email}</p>
+                        </div>
+                    )}
+                </div>
+
+                <button
+                    type="button"
+                    onClick={toggle}
+                    aria-label="Toggle sidebar"
+                    aria-expanded={!collapsed}
+                    className="h-8 w-8 shrink-0 rounded-full flex items-center justify-center border border-white/[0.08] bg-white/[0.04] text-slate-400 hover:bg-white/[0.08] hover:text-slate-200 hover:border-white/[0.12] transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[#060A0F]"
+                >
+                    <ChevronLeft
+                        className={`w-4 h-4 transition-transform duration-300 ease-in-out ${collapsed ? "rotate-180" : ""}`}
+                        aria-hidden
+                    />
+                </button>
             </div>
 
-            {/* Nav links */}
             <nav className="flex-1 py-3 px-2 space-y-0.5">
                 {NAV_LINKS.map(({ href, icon: Icon, label }) => {
                     const isActive =
@@ -101,7 +119,6 @@ export default function AdminNav({ email }: AdminNavProps) {
                 })}
             </nav>
 
-            {/* Footer: sign out */}
             <div className={`px-3 pb-4 pt-3 border-t border-white/[0.06] ${collapsed ? "flex justify-center" : ""}`}>
                 <button
                     type="button"
@@ -120,19 +137,6 @@ export default function AdminNav({ email }: AdminNavProps) {
                     {!collapsed && (isLoggingOut ? "Signing out…" : "Sign out")}
                 </button>
             </div>
-
-            {/* Collapse toggle — pinned to right edge */}
-            <button
-                type="button"
-                onClick={toggle}
-                className="absolute -right-3 top-[72px] z-10 w-6 h-6 rounded-full bg-[#0F1722] border border-white/[0.1] flex items-center justify-center text-slate-500 hover:text-slate-300 transition-colors shadow-lg"
-            >
-                {collapsed ? (
-                    <ChevronRight className="w-3 h-3" />
-                ) : (
-                    <ChevronLeft className="w-3 h-3" />
-                )}
-            </button>
         </aside>
     );
 }
