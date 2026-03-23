@@ -8,10 +8,12 @@
 
 export const dynamic = "force-dynamic";
 
+import { Suspense } from "react";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/admin";
 import { UserTable } from "./_table";
 import { Users, ShieldCheck, Activity, MapPin } from "lucide-react";
+import { SkeletonTable } from "../_skeleton";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -110,33 +112,41 @@ function StripCard({ icon: Icon, label, value }: {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default async function UsersPage() {
-    // Get current user id so the table can prevent self-deletion / self-demote.
-    // Layout already verified admin status, so this call is fast (cookie already read).
+async function UsersContent() {
     const caller = await requireAdmin();
-
     const { users, stats } = await getUsers();
 
     return (
-        <div className="px-8 py-8 space-y-8 max-w-6xl">
-            {/* Page title */}
+        <div className="w-full px-6 xl:px-10 2xl:px-16 py-7 space-y-6">
             <div>
                 <h1 className="text-2xl font-black text-white tracking-tight">Users</h1>
-                <p className="text-sm text-slate-500 mt-0.5">
-                    Manage accounts, roles, and access
-                </p>
+                <p className="text-sm text-slate-500 mt-0.5">Manage accounts, roles, and access</p>
             </div>
 
-            {/* Stat strip */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <StripCard icon={Users} label="Total users" value={stats.total} />
-                <StripCard icon={ShieldCheck} label="Admins" value={stats.adminCount} />
-                <StripCard icon={Activity} label="Active (7d)" value={stats.activeCount} />
-                <StripCard icon={MapPin} label="No trips yet" value={stats.noTripsCount} />
+            <div className="grid grid-cols-12 gap-4">
+                <div className="col-span-6 sm:col-span-3"><StripCard icon={Users}       label="Total users"  value={stats.total} /></div>
+                <div className="col-span-6 sm:col-span-3"><StripCard icon={ShieldCheck} label="Admins"       value={stats.adminCount} /></div>
+                <div className="col-span-6 sm:col-span-3"><StripCard icon={Activity}    label="Active (7d)"  value={stats.activeCount} /></div>
+                <div className="col-span-6 sm:col-span-3"><StripCard icon={MapPin}      label="No trips yet" value={stats.noTripsCount} /></div>
             </div>
 
-            {/* Interactive table */}
             <UserTable users={users} currentUserId={caller.sub} />
         </div>
+    );
+}
+
+export default function UsersPage() {
+    return (
+        <Suspense fallback={
+            <div className="w-full px-6 xl:px-10 2xl:px-16 py-7 space-y-6">
+                <div className="h-7 w-32 rounded bg-white/[0.06] animate-pulse" />
+                <div className="grid grid-cols-12 gap-4">
+                    {Array.from({ length: 4 }).map((_, i) => <div key={i} className="col-span-6 sm:col-span-3 h-20 rounded-xl bg-white/[0.03] border border-white/[0.06] animate-pulse" />)}
+                </div>
+                <SkeletonTable rows={8} />
+            </div>
+        }>
+            <UsersContent />
+        </Suspense>
     );
 }

@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useTransition, useMemo } from "react";
-import { Trash2, ChevronDown, Search, X, AlertTriangle, Loader2 } from "lucide-react";
-import { deleteUser, updateUserRole } from "../actions";
+import { Trash2, ChevronDown, Search, X, AlertTriangle, Loader2, Power } from "lucide-react";
+import { deleteUser, updateUserRole, toggleUserActive } from "../actions";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -11,8 +11,8 @@ export type UserRow = {
     email: string;
     name: string | null;
     role: "USER" | "ADMIN" | "MODERATOR";
-    createdAt: string;       // ISO
-    lastLoginAt: string | null; // ISO
+    createdAt: string;
+    lastLoginAt: string | null;
     isActive: boolean;
     tripCount: number;
 };
@@ -32,22 +32,43 @@ function relativeDate(iso: string | null): string {
     return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+function isRecentlyActive(iso: string | null): boolean {
+    if (!iso) return false;
+    return Date.now() - new Date(iso).getTime() < 7 * 24 * 60 * 60 * 1000;
+}
+
 const ROLE_STYLES: Record<string, string> = {
     ADMIN:     "bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/25",
     MODERATOR: "bg-amber-500/10 text-amber-400 border border-amber-500/20",
     USER:      "bg-white/[0.05] text-slate-400 border border-white/[0.08]",
 };
-
-const ROLE_LABELS: Record<string, string> = {
-    ADMIN: "Admin",
-    MODERATOR: "Mod",
-    USER: "User",
-};
+const ROLE_LABELS: Record<string, string> = { ADMIN: "Admin", MODERATOR: "Mod", USER: "User" };
 
 function RoleBadge({ role }: { role: string }) {
     return (
         <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide ${ROLE_STYLES[role] ?? ROLE_STYLES.USER}`}>
             {ROLE_LABELS[role] ?? role}
+        </span>
+    );
+}
+
+function ActivityBadge({ lastLoginAt, isActive }: { lastLoginAt: string | null; isActive: boolean }) {
+    if (!isActive) return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium border border-red-500/20 bg-red-500/10 text-red-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+            Inactive
+        </span>
+    );
+    if (isRecentlyActive(lastLoginAt)) return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium border border-[#10B981]/20 bg-[#10B981]/10 text-[#10B981]">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] animate-pulse" />
+            Active
+        </span>
+    );
+    return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium border border-white/[0.08] bg-white/[0.04] text-slate-500">
+            <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+            Idle
         </span>
     );
 }
@@ -68,39 +89,37 @@ function Avatar({ name, email }: { name: string | null; email: string }) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function UserTable({ users: initialUsers, currentUserId }: { users: UserRow[]; currentUserId: string }) {
-    const [users, setUsers] = useState(initialUsers);
-    const [search, setSearch] = useState("");
-    const [roleFilter, setRoleFilter] = useState<"ALL" | "USER" | "ADMIN" | "MODERATOR">("ALL");
+    const [users, setUsers]                 = useState(initialUsers);
+    const [search, setSearch]               = useState("");
+    const [roleFilter, setRoleFilter]       = useState<"ALL" | "USER" | "ADMIN" | "MODERATOR">("ALL");
+    const [activeFilter, setActiveFilter]   = useState<"ALL" | "active" | "inactive">("ALL");
     const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-    const [pendingId, setPendingId] = useState<string | null>(null);
-    const [errorMsg, setErrorMsg] = useState<string | null>(null);
-    const [isPending, startTransition] = useTransition();
+    const [pendingId, setPendingId]         = useState<string | null>(null);
+    const [errorMsg, setErrorMsg]           = useState<string | null>(null);
+    const [isPending, startTransition]      = useTransition();
 
     const filtered = useMemo(() => {
         const q = search.toLowerCase();
         return users.filter((u) => {
             const matchSearch = !q || u.email.toLowerCase().includes(q) || (u.name?.toLowerCase().includes(q) ?? false);
-            const matchRole = roleFilter === "ALL" || u.role === roleFilter;
-            return matchSearch && matchRole;
+            const matchRole   = roleFilter === "ALL" || u.role === roleFilter;
+            const matchActive =
+                activeFilter === "ALL" ? true :
+                activeFilter === "active" ? u.isActive :
+                !u.isActive;
+            return matchSearch && matchRole && matchActive;
         });
-    }, [users, search, roleFilter]);
+    }, [users, search, roleFilter, activeFilter]);
 
     function clearError() { setErrorMsg(null); }
 
     function handleDelete(userId: string) {
-        if (confirmDeleteId !== userId) {
-            setConfirmDeleteId(userId);
-            return;
-        }
+        if (confirmDeleteId !== userId) { setConfirmDeleteId(userId); return; }
         setPendingId(userId);
         startTransition(async () => {
             const result = await deleteUser(userId);
-            if (result.ok) {
-                setUsers((prev) => prev.filter((u) => u.id !== userId));
-                setConfirmDeleteId(null);
-            } else {
-                setErrorMsg(result.error ?? "Delete failed.");
-            }
+            if (result.ok) { setUsers((prev) => prev.filter((u) => u.id !== userId)); setConfirmDeleteId(null); }
+            else setErrorMsg(result.error ?? "Delete failed.");
             setPendingId(null);
         });
     }
@@ -109,10 +128,20 @@ export function UserTable({ users: initialUsers, currentUserId }: { users: UserR
         setPendingId(userId);
         startTransition(async () => {
             const result = await updateUserRole(userId, role);
-            if (result.ok) {
-                setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, role } : u));
+            if (result.ok) setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, role } : u));
+            else setErrorMsg(result.error ?? "Role update failed.");
+            setPendingId(null);
+        });
+    }
+
+    function handleToggleActive(userId: string) {
+        setPendingId(userId);
+        startTransition(async () => {
+            const result = await toggleUserActive(userId);
+            if (result.ok && result.isActive !== undefined) {
+                setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, isActive: result.isActive! } : u));
             } else {
-                setErrorMsg(result.error ?? "Role update failed.");
+                setErrorMsg(result.error ?? "Status update failed.");
             }
             setPendingId(null);
         });
@@ -131,7 +160,7 @@ export function UserTable({ users: initialUsers, currentUserId }: { users: UserR
 
             {/* Controls */}
             <div className="flex flex-wrap items-center gap-3">
-                <div className="relative flex-1 min-w-[200px]">
+                <div className="relative flex-1 min-w-[180px]">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
                     <input
                         value={search}
@@ -140,14 +169,13 @@ export function UserTable({ users: initialUsers, currentUserId }: { users: UserR
                         className="w-full pl-9 pr-4 py-2 rounded-lg bg-white/[0.04] border border-white/[0.08] text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-[#10B981]/40 transition-colors"
                     />
                     {search && (
-                        <button
-                            onClick={() => setSearch("")}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
-                        >
+                        <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
                             <X className="w-3 h-3" />
                         </button>
                     )}
                 </div>
+
+                {/* Role filter */}
                 <div className="relative">
                     <select
                         value={roleFilter}
@@ -161,36 +189,48 @@ export function UserTable({ users: initialUsers, currentUserId }: { users: UserR
                     </select>
                     <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
                 </div>
-                <span className="text-xs text-slate-600 ml-auto">
-                    {filtered.length} of {users.length} users
-                </span>
+
+                {/* Activity filter */}
+                <div className="relative">
+                    <select
+                        value={activeFilter}
+                        onChange={(e) => setActiveFilter(e.target.value as typeof activeFilter)}
+                        className="appearance-none pl-3 pr-8 py-2 rounded-lg bg-white/[0.04] border border-white/[0.08] text-sm text-slate-300 focus:outline-none focus:border-[#10B981]/40 cursor-pointer transition-colors"
+                    >
+                        <option value="ALL">All status</option>
+                        <option value="active">Active only</option>
+                        <option value="inactive">Inactive only</option>
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+                </div>
+
+                <span className="text-xs text-slate-600 ml-auto">{filtered.length} of {users.length}</span>
             </div>
 
             {/* Table */}
-            <div className="overflow-x-auto rounded-xl border border-white/[0.08]">
+            <div className="overflow-x-auto rounded-xl border border-white/[0.08] w-full">
                 <table className="w-full text-sm">
-                    <thead>
-                        <tr className="border-b border-white/[0.08] bg-white/[0.02]">
-                            <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-widest text-slate-500">User</th>
-                            <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-widest text-slate-500">Role</th>
-                            <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-widest text-slate-500">Trips</th>
-                            <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-widest text-slate-500 hidden md:table-cell">Joined</th>
-                            <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-widest text-slate-500 hidden lg:table-cell">Last seen</th>
-                            <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-widest text-slate-500">Actions</th>
+                    <thead className="sticky top-0 z-10">
+                        <tr className="border-b border-white/[0.08] bg-[#080C11]">
+                            <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-widest text-slate-500">User</th>
+                            <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-widest text-slate-500">Role</th>
+                            <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-widest text-slate-500 hidden sm:table-cell">Status</th>
+                            <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-widest text-slate-500">Trips</th>
+                            <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-widest text-slate-500 hidden md:table-cell">Joined</th>
+                            <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-widest text-slate-500 hidden lg:table-cell">Last seen</th>
+                            <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-widest text-slate-500">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {filtered.length === 0 && (
                             <tr>
-                                <td colSpan={6} className="px-4 py-10 text-center text-xs text-slate-600">
-                                    No users match your filters.
-                                </td>
+                                <td colSpan={7} className="px-4 py-10 text-center text-xs text-slate-600">No users match your filters.</td>
                             </tr>
                         )}
                         {filtered.map((user) => {
-                            const isLoading = isPending && pendingId === user.id;
+                            const isLoading    = isPending && pendingId === user.id;
                             const isConfirming = confirmDeleteId === user.id;
-                            const isSelf = user.id === currentUserId;
+                            const isSelf       = user.id === currentUserId;
 
                             return (
                                 <tr
@@ -200,9 +240,16 @@ export function UserTable({ users: initialUsers, currentUserId }: { users: UserR
                                     } ${isLoading ? "opacity-50" : ""}`}
                                 >
                                     {/* User identity */}
-                                    <td className="px-4 py-3">
+                                    <td className="px-4 py-2.5">
                                         <div className="flex items-center gap-3">
-                                            <Avatar name={user.name} email={user.email} />
+                                            <div className="relative">
+                                                <Avatar name={user.name} email={user.email} />
+                                                {!user.isActive && (
+                                                    <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-red-500 border-2 border-[#080C11] flex items-center justify-center">
+                                                        <span className="text-[5px] text-white font-bold">!</span>
+                                                    </span>
+                                                )}
+                                            </div>
                                             <div className="min-w-0">
                                                 <p className="text-sm text-white font-medium truncate max-w-[160px]">
                                                     {user.name ?? <span className="text-slate-500">—</span>}
@@ -214,7 +261,7 @@ export function UserTable({ users: initialUsers, currentUserId }: { users: UserR
                                     </td>
 
                                     {/* Role */}
-                                    <td className="px-4 py-3">
+                                    <td className="px-4 py-2.5">
                                         {isConfirming ? (
                                             <RoleBadge role={user.role} />
                                         ) : (
@@ -236,26 +283,25 @@ export function UserTable({ users: initialUsers, currentUserId }: { users: UserR
                                         )}
                                     </td>
 
-                                    {/* Trips */}
-                                    <td className="px-4 py-3 text-right">
-                                        <span className="text-sm text-slate-300 tabular-nums font-medium">
-                                            {user.tripCount}
-                                        </span>
+                                    {/* Activity status */}
+                                    <td className="px-4 py-2.5 hidden sm:table-cell">
+                                        <ActivityBadge lastLoginAt={user.lastLoginAt} isActive={user.isActive} />
+                                    </td>
+
+                                    {/* Trip count */}
+                                    <td className="px-4 py-2.5 text-right">
+                                        <span className="text-sm text-slate-300 tabular-nums font-medium">{user.tripCount}</span>
                                     </td>
 
                                     {/* Joined */}
-                                    <td className="px-4 py-3 text-slate-500 text-xs hidden md:table-cell">
-                                        {relativeDate(user.createdAt)}
-                                    </td>
+                                    <td className="px-4 py-2.5 text-slate-500 text-xs hidden md:table-cell">{relativeDate(user.createdAt)}</td>
 
                                     {/* Last seen */}
-                                    <td className="px-4 py-3 text-slate-500 text-xs hidden lg:table-cell">
-                                        {relativeDate(user.lastLoginAt)}
-                                    </td>
+                                    <td className="px-4 py-2.5 text-slate-500 text-xs hidden lg:table-cell">{relativeDate(user.lastLoginAt)}</td>
 
                                     {/* Actions */}
-                                    <td className="px-4 py-3">
-                                        <div className="flex items-center justify-end gap-2">
+                                    <td className="px-4 py-2.5">
+                                        <div className="flex items-center justify-end gap-1.5">
                                             {isLoading ? (
                                                 <Loader2 className="w-4 h-4 text-slate-500 animate-spin" />
                                             ) : isConfirming ? (
@@ -274,18 +320,36 @@ export function UserTable({ users: initialUsers, currentUserId }: { users: UserR
                                                     </button>
                                                 </>
                                             ) : (
-                                                <button
-                                                    onClick={() => handleDelete(user.id)}
-                                                    disabled={isSelf}
-                                                    title={isSelf ? "Cannot delete your own account" : "Delete user"}
-                                                    className={`p-1.5 rounded-lg transition-colors ${
-                                                        isSelf
-                                                            ? "text-slate-700 cursor-not-allowed"
-                                                            : "text-slate-600 hover:text-red-400 hover:bg-red-500/10"
-                                                    }`}
-                                                >
-                                                    <Trash2 className="w-3.5 h-3.5" />
-                                                </button>
+                                                <>
+                                                    {/* Toggle active */}
+                                                    <button
+                                                        onClick={() => handleToggleActive(user.id)}
+                                                        disabled={isSelf}
+                                                        title={isSelf ? "Cannot deactivate your own account" : user.isActive ? "Deactivate user" : "Activate user"}
+                                                        className={`p-1.5 rounded-lg transition-colors ${
+                                                            isSelf
+                                                                ? "text-slate-700 cursor-not-allowed"
+                                                                : user.isActive
+                                                                    ? "text-slate-600 hover:text-amber-400 hover:bg-amber-500/10"
+                                                                    : "text-amber-500 hover:text-amber-400 hover:bg-amber-500/10"
+                                                        }`}
+                                                    >
+                                                        <Power className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    {/* Delete */}
+                                                    <button
+                                                        onClick={() => handleDelete(user.id)}
+                                                        disabled={isSelf}
+                                                        title={isSelf ? "Cannot delete your own account" : "Delete user"}
+                                                        className={`p-1.5 rounded-lg transition-colors ${
+                                                            isSelf
+                                                                ? "text-slate-700 cursor-not-allowed"
+                                                                : "text-slate-600 hover:text-red-400 hover:bg-red-500/10"
+                                                        }`}
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </>
                                             )}
                                         </div>
                                     </td>

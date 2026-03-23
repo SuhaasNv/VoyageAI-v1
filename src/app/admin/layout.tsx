@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireAdmin, AdminAuthError } from "@/lib/admin";
 import AdminNav from "./_nav";
+import AdminHeader from "./_header";
 
 export const metadata = { title: "Admin — VoyageAI" };
 
@@ -23,9 +24,12 @@ export default async function AdminLayout({
     return (
         <div className="flex h-screen bg-[#080C11] text-white overflow-hidden">
             <AdminNav email={email!} />
-            <main className="flex-1 min-w-0 overflow-y-auto">
-                {children}
-            </main>
+            <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+                <AdminHeader email={email!} />
+                <main className="flex-1 min-w-0 overflow-y-auto">
+                    {children}
+                </main>
+            </div>
         </div>
     );
 }
