@@ -6,6 +6,8 @@ export const dynamic = "force-dynamic";
 
 import { Suspense } from "react";
 import { prisma } from "@/lib/prisma";
+import { requireAdmin } from "@/lib/admin";
+import { whereAiCallFailedSince } from "@/lib/metrics/aiUsageLog";
 import Link from "next/link";
 import {
     Users, Activity, UserPlus, MapPin, Zap, DollarSign,
@@ -81,8 +83,8 @@ async function getHealth(): Promise<HealthData> {
     const [stats5m, stats1h, errors5m, errors1h, count5m, count1h, activeUsers] = await Promise.all([
         prisma.aiUsageLog.aggregate({ where: { createdAt: { gte: fiveMinAgo } }, _avg: { latencyMs: true } }),
         prisma.aiUsageLog.aggregate({ where: { createdAt: { gte: oneHourAgo } }, _avg: { latencyMs: true } }),
-        prisma.aiUsageLog.count({ where: { createdAt: { gte: fiveMinAgo }, totalTokens: 0 } }),
-        prisma.aiUsageLog.count({ where: { createdAt: { gte: oneHourAgo }, totalTokens: 0 } }),
+        prisma.aiUsageLog.count({ where: whereAiCallFailedSince(fiveMinAgo) }),
+        prisma.aiUsageLog.count({ where: whereAiCallFailedSince(oneHourAgo) }),
         prisma.aiUsageLog.count({ where: { createdAt: { gte: fiveMinAgo } } }),
         prisma.aiUsageLog.count({ where: { createdAt: { gte: oneHourAgo } } }),
         prisma.user.count({ where: { lastLoginAt: { gte: twentyFourH } } }),
@@ -205,6 +207,7 @@ function HealthCard({ label, value, sub, warn = false }: {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 async function OverviewContent() {
+    await requireAdmin();
     const [d, h] = await Promise.all([getOverview(), getHealth()]);
 
     return (

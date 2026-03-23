@@ -13,6 +13,7 @@ import {
     HardDrive,
     ScrollText,
     ChevronLeft,
+    Lightbulb,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -21,8 +22,9 @@ const NAV_LINKS = [
     { href: "/admin/users",      icon: Users,           label: "Users"      },
     { href: "/admin/ai-metrics", icon: BarChart2,       label: "AI Metrics" },
     { href: "/admin/agents",     icon: Bot,             label: "Agents"     },
-    { href: "/admin/logs",       icon: ScrollText,      label: "Logs"       },
-    { href: "/admin/cache",      icon: HardDrive,       label: "Cache"      },
+    { href: "/admin/logs",         icon: ScrollText,  label: "Logs"          },
+    { href: "/admin/explanations", icon: Lightbulb,   label: "Explainability"},
+    { href: "/admin/cache",        icon: HardDrive,   label: "Cache"         },
 ];
 
 interface AdminNavProps { email: string }

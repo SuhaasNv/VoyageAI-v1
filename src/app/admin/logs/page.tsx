@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 import { Suspense } from "react";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/admin";
+import { isAiUsageLogFailure } from "@/lib/metrics/aiUsageLog";
 import LogsClient from "./_client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -53,7 +54,7 @@ async function getLogs(layer: string): Promise<LogEntry[]> {
             take: 100,
             select: {
                 id: true, createdAt: true, provider: true, modelUsed: true,
-                totalTokens: true, latencyMs: true, endpoint: true,
+                totalTokens: true, callSucceeded: true, latencyMs: true, endpoint: true,
                 requestId: true, costEstimateUsd: true,
             },
         });
@@ -62,7 +63,7 @@ async function getLogs(layer: string): Promise<LogEntry[]> {
                 id:        l.id,
                 ts:        l.createdAt.toISOString(),
                 layer:     "ai",
-                action:    l.totalTokens === 0 ? "AI_ERROR" : "AI_CALL",
+                action:    isAiUsageLogFailure(l) ? "AI_ERROR" : "AI_CALL",
                 email:     null,
                 requestId: l.requestId,
                 meta:      JSON.stringify({

@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { requireAdmin, AdminAuthError } from "@/lib/admin";
 import AdminNav from "./_nav";
 import AdminHeader from "./_header";
+import AdminAssistant from "./_assistant";
 
 export const metadata = { title: "Admin — VoyageAI" };
 
@@ -30,6 +31,7 @@ export default async function AdminLayout({
                     {children}
                 </main>
             </div>
+            <AdminAssistant />
         </div>
     );
 }

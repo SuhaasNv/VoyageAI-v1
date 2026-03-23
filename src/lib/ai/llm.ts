@@ -14,7 +14,7 @@
  */
 
 import { AIErrorSchema, type AIError } from "./schemas";
-import { logLLMUsage } from "../../services/logging/usageLogger";
+import { logLLMCallFailure, logLLMUsage } from "../../services/logging/usageLogger";
 import { getRequestId, getRequestPathname } from "@/lib/requestContext";
 import { logInfo, logError, logStructured } from "@/infrastructure/logger";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -1129,6 +1129,7 @@ export async function executeWithRetry(
 ): Promise<LLMResponse> {
     const maxRetries = options.retries ?? 3;
     const retryDelays = [1000, 2000, 4000]; // Exponential backoff
+    const t0 = Date.now();
 
     let lastError: Error | null = null;
     let shouldFallback = false;
@@ -1138,6 +1139,18 @@ export async function executeWithRetry(
         client instanceof OpenAILLMClient ? "openai"
         : client instanceof GeminiLLMClient ? "gemini"
         : "mock";
+
+    const modelUsed = options.model ?? "default";
+
+    const logFinalFailure = () => {
+        void logLLMCallFailure({
+            provider:  resolvedProvider,
+            modelUsed,
+            latencyMs: Math.max(0, Date.now() - t0),
+            requestId: getRequestId(),
+            endpoint:  getRequestPathname() ?? undefined,
+        });
+    };
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
@@ -1160,6 +1173,7 @@ export async function executeWithRetry(
                     "CONTEXT_TOO_LARGE",
                 ];
                 if (nonRetryable.includes(err.code)) {
+                    logFinalFailure();
                     throw err; // these don't fallback since they are logic/data errors
                 }
 
@@ -1172,6 +1186,7 @@ export async function executeWithRetry(
                         shouldFallback = true;
                         break;
                     } else {
+                        logFinalFailure();
                         throw err;
                     }
                 }
@@ -1234,6 +1249,7 @@ export async function executeWithRetry(
                     logInfo("[LLM] All providers failed, using mock fallback (dev only)");
                     return new MockLLMClient().execute(messages, options);
                 }
+                logFinalFailure();
                 throw new AIServiceError("LLM_ERROR", "All AI providers failed", {
                     primaryError: lastError?.message,
                     fallbackError: (fallbackErr as Error).message,
@@ -1249,6 +1265,7 @@ export async function executeWithRetry(
         return mockClient.execute(messages, options);
     }
 
+    logFinalFailure();
     throw new AIServiceError(
         "LLM_ERROR",
         `LLM request failed after ${maxRetries} retries: ${lastError?.message}`,

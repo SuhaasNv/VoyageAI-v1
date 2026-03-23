@@ -18,6 +18,7 @@
  */
 
 import { logError } from "@/infrastructure/logger";
+import { applyHealingOverrides } from "@/services/ai/healingStore";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -173,10 +174,14 @@ export function selectModelConfig({
     const provider = resolveProvider();
     const matrix = (CONFIGS[endpoint]?.(intent)) ?? DEFAULT_MATRIX;
 
-    if (provider === "openai") return { provider: "openai", ...matrix.openai };
-    if (provider === "gemini") return { provider: "gemini", ...matrix.gemini };
-    // mock — report provider as "openai" so callers see a real-shaped config in tests
-    return { provider: "openai" as const, ...matrix.mock };
+    const base =
+        provider === "openai" ? { provider: "openai" as const, ...matrix.openai } :
+        provider === "gemini" ? { provider: "gemini" as const, ...matrix.gemini } :
+        // mock — report provider as "openai" so callers see a real-shaped config in tests
+        { provider: "openai" as const, ...matrix.mock };
+
+    // Apply any active auto-healing overrides (token reduction, provider switch, timeout reduction)
+    return applyHealingOverrides(base);
 }
 
 /**

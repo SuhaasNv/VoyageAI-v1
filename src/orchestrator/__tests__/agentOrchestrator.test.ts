@@ -86,6 +86,7 @@ function makeOptimizedContext(overBudget = false, dense = false): OptimizedTripC
             { day: 1, theme: "Arrival", activities },
             { day: 2, theme: "Culture", activities: [] },
         ],
+        hotels: [{ name: "Hotel A", priceRange: "$$" as const, area: "Shinjuku", tags: ["central"] }],
         selectedHotel: { name: "Hotel A", priceRange: "$$", area: "Shinjuku", tags: [] },
     };
 }

@@ -132,6 +132,8 @@ model AiUsageLog {
   totalTokens      Int
   latencyMs        Int
   costEstimateUsd  Float    @default(0)
+  /// null = legacy row (before this column). false = explicit failure log. true = completed call.
+  callSucceeded    Boolean?
   requestId        String?
   endpoint         String?
   createdAt        DateTime @default(now())
@@ -139,7 +141,89 @@ model AiUsageLog {
   @@index([provider])
   @@index([createdAt])
   @@index([requestId])
+  @@index([callSucceeded])
   @@map("ai_usage_logs")
+}
+
+// ─────────────────────────────────────────
+//  Admin Action Log
+// ─────────────────────────────────────────
+
+model AdminActionLog {
+  id         String   @id @default(cuid())
+  /// One of the supported action types (CHECK_AI_PROVIDER, etc.)
+  actionType String
+  /// Input payload sent to the action executor.
+  payload    Json?
+  /// Result data returned by the executor.
+  result     Json?
+  success    Boolean
+  /// Admin user who triggered the action.
+  userId     String
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([actionType])
+  @@index([createdAt])
+  @@map("admin_action_logs")
+}
+
+// ─────────────────────────────────────────
+//  AI Decision Log (explainability layer)
+// ─────────────────────────────────────────
+
+model AiDecisionLog {
+  id           String   @id @default(cuid())
+  /// ASSISTANT_RESPONSE | AUTO_HEAL | AUTONOMOUS_ACTION | OPTIMIZATION
+  decisionType String
+  /// Which service produced this decision (admin_assistant | auto_healer | autonomous_runner)
+  source       String
+  /// Human-readable explanation of why the AI made this decision.
+  reasoning    String
+  /// Sanitized description of the data that informed the decision (no PII).
+  inputSummary String
+  /// 0–1 confidence derived from R², anomaly severity, or LLM assessment level.
+  confidence   Float?
+  /// What was recommended or what action was taken.
+  outcome      String
+  requestId    String?
+  /// "admin:<userId>" | "autonomous" | "scheduled"
+  triggeredBy  String?
+  createdAt    DateTime @default(now())
+
+  @@index([decisionType])
+  @@index([createdAt])
+  @@index([requestId])
+  @@map("ai_decision_logs")
+}
+
+// ─────────────────────────────────────────
+//  Agent Execution Log (structured replay)
+// ─────────────────────────────────────────
+
+model AgentExecutionLog {
+  id          String   @id @default(cuid())
+  /// Groups every step that belongs to one orchestrator pipeline run.
+  requestId   String
+  /// Agent name: planner | research | logistics | budget | safety | orchestrator
+  agentName   String
+  /// Zero-based position in the pipeline (preserves ordering).
+  stepIndex   Int
+  /// Sanitized input passed to the agent (no PII, truncated).
+  inputJson   Json?
+  /// Sanitized output produced by the agent (no PII, truncated).
+  outputJson  Json?
+  latencyMs   Int
+  success     Boolean
+  errorMsg    String?
+  /// Extra context: tokens, model, provider — from AiUsageLog if available.
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([requestId])
+  @@index([agentName])
+  @@index([createdAt])
+  @@map("agent_execution_logs")
 }
 
 // ─────────────────────────────────────────

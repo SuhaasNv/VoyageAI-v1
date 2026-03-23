@@ -44,6 +44,38 @@ export interface UsageLogMetadata {
     endpoint?: string;
 }
 
+/** Persist a failed LLM attempt (no completion) for accurate error-rate metrics. */
+export async function logLLMCallFailure(params: {
+    provider: string;
+    modelUsed: string;
+    latencyMs: number;
+    requestId?: string | null;
+    endpoint?: string | null;
+}): Promise<void> {
+    try {
+        const { prisma } = await import("@/lib/prisma");
+        await prisma.aiUsageLog.create({
+            data: {
+                provider:         params.provider,
+                modelUsed:        params.modelUsed,
+                promptTokens:     0,
+                completionTokens: 0,
+                totalTokens:      0,
+                latencyMs:        params.latencyMs,
+                costEstimateUsd:  0,
+                callSucceeded:    false,
+                requestId:        params.requestId ?? undefined,
+                endpoint:         params.endpoint ?? undefined,
+            },
+        });
+    } catch {
+        console.error(
+            "[LLM Usage] failure row DB write failed",
+            JSON.stringify({ ...params, timestamp: new Date().toISOString() }),
+        );
+    }
+}
+
 export async function logLLMUsage(
     response: LLMResponse,
     metadata?: UsageLogMetadata
@@ -72,6 +104,7 @@ export async function logLLMUsage(
                 totalTokens: payload.totalTokens,
                 latencyMs: payload.latencyMs,
                 costEstimateUsd: payload.costUsd,
+                callSucceeded: true,
                 requestId: payload.requestId ?? undefined,
                 endpoint: payload.endpoint ?? undefined,
             },

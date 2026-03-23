@@ -13,6 +13,7 @@
 
 import React from "react";
 import { HardDrive, Trash2, CheckCircle2, AlertTriangle, RefreshCw } from "lucide-react";
+import { ensureCsrfToken } from "@/lib/api";
 
 type Status = "idle" | "loading" | "success" | "error";
 
@@ -27,7 +28,12 @@ export default function CachePage() {
         setErrMsg(null);
 
         try {
-            const res = await fetch("/api/admin/clear-image-cache", { method: "POST" });
+            const csrf = await ensureCsrfToken();
+            const res = await fetch("/api/admin/clear-image-cache", {
+                method:      "POST",
+                credentials: "include",
+                headers:     { "X-CSRF-Token": csrf },
+            });
             if (!res.ok) {
                 const text = await res.text();
                 throw new Error(`HTTP ${res.status}: ${text}`);

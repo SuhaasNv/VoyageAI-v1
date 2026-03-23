@@ -10,6 +10,7 @@ import { SafetyAgent, type SafeTripContext } from "@/agents/safety/safetyAgent";
 import { LLMClientFactory, parseJSONResponse } from "@/lib/ai/llm";
 import type { LLMMessage } from "@/lib/ai/types";
 import { logStructured, generateRequestId } from "@/infrastructure/logger";
+import { runWithReplayLog } from "@/services/ai/agentReplayLogger";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -191,14 +192,26 @@ export class AgentOrchestrator {
 
     // ── Private helper: run budget then safety on a given optimized context ───
 
+    private _budgetStepIndex = 3;
+    private _safetyStepIndex = 4;
+
     private async runBudgetAndSafety(
         opt: OptimizedTripContext,
         requestId?: string,
     ): Promise<SafeTripContext | undefined> {
+        const budgetIdx = this._budgetStepIndex++;
+        const safetyIdx = this._safetyStepIndex++;
+
         let budgeted: BudgetedTripContext | undefined;
         try {
             logStructured({ layer: "orchestrator", step: "input", requestId, data: { calling: "budget" } });
-            budgeted = await this.budget.run(opt, requestId);
+            budgeted = await runWithReplayLog({
+                requestId: requestId ?? "unknown",
+                agentName: "budget", stepIndex: budgetIdx,
+                input: { selectedHotel: opt.selectedHotel?.name },
+                run: () => this.budget.run(opt, requestId),
+                buildOutputSummary: (r) => ({ totalEstimatedCost: r.budget.totalEstimatedCost, isOverBudget: r.budget.isOverBudget }),
+            });
             this.logAgent("budget", "success");
             logStructured({ layer: "orchestrator", step: "output", requestId, data: { agent: "budget", totalCost: budgeted.budget.totalEstimatedCost, isOverBudget: budgeted.budget.isOverBudget } });
         } catch (err) {
@@ -209,14 +222,19 @@ export class AgentOrchestrator {
 
         try {
             logStructured({ layer: "orchestrator", step: "input", requestId, data: { calling: "safety" } });
-            const safe = await this.safety.run(budgeted, requestId);
+            const safe = await runWithReplayLog({
+                requestId: requestId ?? "unknown",
+                agentName: "safety", stepIndex: safetyIdx,
+                input: { isOverBudget: budgeted.budget.isOverBudget },
+                run: () => this.safety.run(budgeted!, requestId),
+                buildOutputSummary: (r) => ({ riskLevel: r.safety.riskLevel, warningCount: r.safety.warnings.length }),
+            });
             this.logAgent("safety", "success");
             logStructured({ layer: "orchestrator", step: "output", requestId, data: { agent: "safety", riskLevel: safe.safety.riskLevel } });
             return safe;
         } catch (err) {
             this.logAgent("safety", "error", (err as Error).message);
             logStructured({ layer: "orchestrator", step: "error", requestId, data: { agent: "safety", error: (err as Error).message } });
-            // Fallback: pipeline continues; safety result is empty but logged as failed.
             return { ...budgeted, safety: { riskLevel: "low" as const, warnings: [], tips: [] } } as SafeTripContext;
         }
     }
@@ -225,6 +243,8 @@ export class AgentOrchestrator {
 
     async run(input: string): Promise<OrchestratorResult> {
         this.executionLog.length = 0;
+        this._budgetStepIndex = 3;
+        this._safetyStepIndex = 4;
         const requestId = generateRequestId();
         logStructured({ layer: "orchestrator", step: "start", requestId, data: { inputLength: input.length } });
 
@@ -232,7 +252,12 @@ export class AgentOrchestrator {
         let trip: TripContext;
         try {
             logStructured({ layer: "orchestrator", step: "input", requestId, data: { calling: "planner" } });
-            trip = await this.planner.run(input, requestId);
+            trip = await runWithReplayLog({
+                requestId, agentName: "planner", stepIndex: 0,
+                input: { promptLength: input.length },
+                run: () => this.planner.run(input, requestId),
+                buildOutputSummary: (r) => ({ destination: r.destination, durationDays: r.durationDays, daysPlanned: r.days.length }),
+            });
             this.logAgent("planner", "success");
             logStructured({ layer: "orchestrator", step: "output", requestId, data: { agent: "planner", destination: trip.destination, durationDays: trip.durationDays } });
         } catch (err) {
@@ -241,11 +266,16 @@ export class AgentOrchestrator {
             return { ok: false, stage: "planner", executionLog: this.executionLog, error: (err as Error).message };
         }
 
-        // Step 2: Research — store enriched for logistics re-runs inside the loop
+        // Step 2: Research
         let enriched: EnrichedTripContext;
         try {
             logStructured({ layer: "orchestrator", step: "input", requestId, data: { calling: "research", destination: trip.destination } });
-            enriched = await this.research.run(trip, requestId);
+            enriched = await runWithReplayLog({
+                requestId, agentName: "research", stepIndex: 1,
+                input: { destination: trip.destination, durationDays: trip.durationDays },
+                run: () => this.research.run(trip, requestId),
+                buildOutputSummary: (r) => ({ days: r.days.length, hotels: r.hotels.length }),
+            });
             this.logAgent("research", "success");
             logStructured({ layer: "orchestrator", step: "output", requestId, data: { agent: "research", days: enriched.days.length, hotels: enriched.hotels.length } });
         } catch (err) {
@@ -258,7 +288,12 @@ export class AgentOrchestrator {
         let optimized: OptimizedTripContext;
         try {
             logStructured({ layer: "orchestrator", step: "input", requestId, data: { calling: "logistics" } });
-            optimized = await this.logistics.run(enriched, requestId);
+            optimized = await runWithReplayLog({
+                requestId, agentName: "logistics", stepIndex: 2,
+                input: { destination: enriched.destination, daysCount: enriched.days.length, hotelsCount: enriched.hotels.length },
+                run: () => this.logistics.run(enriched, requestId),
+                buildOutputSummary: (r) => ({ selectedHotel: r.selectedHotel.name, daysOptimized: r.days.length }),
+            });
             this.logAgent("logistics", "success");
             logStructured({ layer: "orchestrator", step: "output", requestId, data: { agent: "logistics", selectedHotel: optimized.selectedHotel.name } });
         } catch (err) {

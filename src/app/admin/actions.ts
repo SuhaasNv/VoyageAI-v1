@@ -1,11 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin, AdminAuthError } from "@/lib/admin";
 import { logError } from "@/infrastructure/logger";
 
 type Role = "USER" | "ADMIN" | "MODERATOR";
+
+const RoleSchema = z.enum(["USER", "ADMIN", "MODERATOR"]);
 
 // ─── Toggle isActive ──────────────────────────────────────────────────────────
 
@@ -66,14 +69,19 @@ export async function updateUserRole(
     userId: string,
     role: Role
 ): Promise<{ ok: boolean; error?: string }> {
+    const roleValidation = RoleSchema.safeParse(role);
+    if (!roleValidation.success) {
+        return { ok: false, error: "Invalid role. Must be USER, ADMIN, or MODERATOR." };
+    }
+
     try {
         const caller = await requireAdmin();
 
-        if (caller.sub === userId && role !== "ADMIN") {
+        if (caller.sub === userId && roleValidation.data !== "ADMIN") {
             return { ok: false, error: "You cannot remove your own admin role." };
         }
 
-        await prisma.user.update({ where: { id: userId }, data: { role } });
+        await prisma.user.update({ where: { id: userId }, data: { role: roleValidation.data } });
 
         revalidatePath("/admin/users");
         revalidatePath("/admin");

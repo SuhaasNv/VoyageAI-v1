@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { successResponse, internalErrorResponse } from "@/lib/api/response";
 import { runWithRequestContext } from "@/lib/requestContext";
 import { requireAdminApiAuth } from "@/lib/admin";
+import { whereAiCallFailedSince } from "@/lib/metrics/aiUsageLog";
 
 export interface SystemHealth {
     avgLatencyMs5m:  number;
@@ -52,8 +53,8 @@ export async function GET(req: NextRequest) {
                     _avg: { latencyMs: true },
                     _count: { id: true },
                 }),
-                prisma.aiUsageLog.count({ where: { createdAt: { gte: fiveMinAgo }, totalTokens: 0 } }),
-                prisma.aiUsageLog.count({ where: { createdAt: { gte: oneHourAgo }, totalTokens: 0 } }),
+                prisma.aiUsageLog.count({ where: whereAiCallFailedSince(fiveMinAgo) }),
+                prisma.aiUsageLog.count({ where: whereAiCallFailedSince(oneHourAgo) }),
                 prisma.aiUsageLog.count({ where: { createdAt: { gte: fiveMinAgo } } }),
                 prisma.aiUsageLog.count({ where: { createdAt: { gte: oneHourAgo } } }),
                 prisma.user.count({ where: { lastLoginAt: { gte: twentyFourH } } }),

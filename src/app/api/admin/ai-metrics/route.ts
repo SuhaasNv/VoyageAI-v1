@@ -15,6 +15,7 @@ import {
 import { runWithRequestContext } from "@/lib/requestContext";
 import { logError } from "@/infrastructure/logger";
 import { requireAdminApiAuth } from "@/lib/admin";
+import { whereAiCallFailed } from "@/lib/metrics/aiUsageLog";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -61,8 +62,7 @@ export async function GET(req: NextRequest) {
                     _sum:   { totalTokens: true, costEstimateUsd: true },
                     _avg:   { latencyMs: true },
                 }),
-                // Proxy for errors: calls where the model returned 0 tokens.
-                prisma.aiUsageLog.count({ where: { totalTokens: 0 } }),
+                prisma.aiUsageLog.count({ where: whereAiCallFailed }),
                 prisma.aiUsageLog.groupBy({
                     by:       ["endpoint"],
                     _count:   { id: true },

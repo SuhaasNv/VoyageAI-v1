@@ -22,8 +22,8 @@ export async function POST(req: NextRequest) {
         const { Redis } = await import("@upstash/redis");
         const redis = new Redis({ url, token });
         const keys = await redis.keys("destination-image:*");
-        for (const key of keys) {
-            await redis.del(key);
+        if (keys.length > 0) {
+            await redis.del(...(keys as [string, ...string[]]));
         }
         return successResponse({ cleared: keys.length });
     });

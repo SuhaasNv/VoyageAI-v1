@@ -1,5 +1,5 @@
 /**
- * src/lib/rateLimiter.ts
+ * src/security/rateLimiter.ts
  *
  * Rate limiter for VoyageAI AI endpoints.
  *
@@ -104,7 +104,7 @@ function memoryCheckRateLimit(key: string): void {
 const isProduction = process.env.NODE_ENV === "production";
 
 /**
- * Enforces a sliding-window rate limit for the given key.
+ * Enforces a fixed-window rate limit for the given key.
  *
  * Key format:  ai:<userId>:<endpoint>
  *

@@ -6,6 +6,8 @@ export const dynamic = "force-dynamic";
 
 import { Suspense } from "react";
 import { prisma } from "@/lib/prisma";
+import { requireAdmin } from "@/lib/admin";
+import { whereAiCallFailed } from "@/lib/metrics/aiUsageLog";
 import { CallsBarChart, CostLineChart, ProviderDonut, TokensAreaChart, type DailyBucket } from "./_charts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -31,7 +33,7 @@ async function getMetrics(): Promise<MetricsData> {
         prisma.aiUsageLog.aggregate({
             _count: { id: true }, _sum: { totalTokens: true, costEstimateUsd: true }, _avg: { latencyMs: true },
         }),
-        prisma.aiUsageLog.count({ where: { totalTokens: 0 } }),
+        prisma.aiUsageLog.count({ where: whereAiCallFailed }),
         prisma.aiUsageLog.groupBy({
             by: ["endpoint"], _count: { id: true },
             _sum: { totalTokens: true, costEstimateUsd: true }, _avg: { latencyMs: true },
@@ -50,7 +52,7 @@ async function getMetrics(): Promise<MetricsData> {
         }),
         // Recent failures (0 tokens = error proxy)
         prisma.aiUsageLog.findMany({
-            where: { totalTokens: 0 },
+            where: whereAiCallFailed,
             orderBy: { createdAt: "desc" },
             take: 20,
             select: { id: true, endpoint: true, provider: true, modelUsed: true, latencyMs: true, createdAt: true },
@@ -157,6 +159,7 @@ function DataTable({ head, rows }: { head: string[]; rows: (string | number)[][]
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 async function MetricsContent() {
+    await requireAdmin();
     const m = await getMetrics();
 
     const endpointRows = m.byEndpoint.map((r) => [r.endpoint, fmt(r.calls), fmt(r.tokens), `${r.avgLatencyMs} ms`, fmtCost(r.costUsd)]);
@@ -236,7 +239,7 @@ async function MetricsContent() {
             <section className="space-y-2">
                 <div>
                     <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Failure Insights</p>
-                    <p className="text-[11px] text-slate-600 mt-0.5">Last 20 calls with 0 tokens returned (heuristic for errors).</p>
+                    <p className="text-[11px] text-slate-600 mt-0.5">Last 20 failed LLM calls (callSucceeded=false or legacy 0-token rows).</p>
                 </div>
                 {m.recentFailures.length === 0 ? (
                     <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-4 py-8 text-center">
@@ -248,7 +251,7 @@ async function MetricsContent() {
             </section>
 
             <p className="text-[10px] text-slate-700 pb-4">
-                Errors approximated as calls returning 0 tokens.
+                Failed calls use explicit <code className="font-mono text-slate-500">callSucceeded</code> when present; legacy rows use 0 tokens only when the flag is unset.
             </p>
         </div>
     );
