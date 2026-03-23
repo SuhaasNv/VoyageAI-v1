@@ -20,10 +20,6 @@ enum Role {
   MODERATOR
 }
 
-enum TokenFamily {
-  REFRESH
-}
-
 // ─────────────────────────────────────────
 //  User
 // ─────────────────────────────────────────
@@ -52,7 +48,6 @@ model User {
   auditLogs        AuditLog[]
   trips            Trip[]
   travelPreference TravelPreference?
-  notifications    Notification[]
   favoriteDestinations FavoriteDestination[]
 
   @@index([email])
@@ -295,23 +290,6 @@ model TravelPreference {
   updatedAt DateTime @updatedAt
 
   @@map("travel_preferences")
-}
-
-// ─────────────────────────────────────────
-//  Notification
-// ─────────────────────────────────────────
-
-model Notification {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type      String   // e.g. "TRIP_UPDATE", "SYSTEM"
-  message   String
-  isRead    Boolean  @default(false)
-  createdAt DateTime @default(now())
-
-  @@index([userId])
-  @@map("notifications")
 }
 
 // ─────────────────────────────────────────

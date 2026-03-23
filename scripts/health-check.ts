@@ -45,7 +45,7 @@ async function main() {
         { name: "Trips list (expect 401)", method: "GET", path: "/api/trips" },
         { name: "Profile (expect 401)", method: "GET", path: "/api/profile" },
         { name: "Preferences (expect 401)", method: "GET", path: "/api/preferences" },
-        { name: "Notifications (expect 401)", method: "GET", path: "/api/notifications" },
+        { name: "Favorites (expect 401)", method: "GET", path: "/api/favorites" },
     ];
 
     let passed = 0;

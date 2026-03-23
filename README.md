@@ -49,7 +49,6 @@
 | **Trip Comparison** | Compare two trips with AI analysis |
 | **Shareable Links** | Public share tokens for itineraries |
 | **Favorites** | Save favorite destinations |
-| **Notifications** | In-app notification system |
 | **Admin Panel** | User management, AI metrics, image cache control |
 
 ---
@@ -101,7 +100,6 @@ voyageai_1/
 │   │       ├── ai/            # Itinerary, packing, reoptimize, simulation, landing, compare, export
 │   │       ├── preferences/   # Travel DNA
 │   │       ├── favorites/     # Favorite destinations
-│   │       ├── notifications/
 │   │       └── admin/         # Clear cache, AI metrics
 │   ├── components/
 │   │   ├── dashboard/         # Dashboard UI, modals, sidebar
@@ -219,8 +217,6 @@ Open [http://localhost:3000](http://localhost:3000).
 |-------|--------|-------------|
 | `/api/profile` | GET, PATCH | User profile |
 | `/api/preferences` | GET, POST | Travel preferences (DNA) |
-| `/api/notifications` | GET | List notifications |
-| `/api/notifications/[id]/read` | PATCH | Mark as read |
 
 ### Trips
 
@@ -274,7 +270,6 @@ Open [http://localhost:3000](http://localhost:3000).
 | **Itinerary** | AI-generated itinerary JSON |
 | **ChatMessage** | Trip chat history |
 | **TravelPreference** | Travel DNA data |
-| **Notification** | In-app notifications |
 | **FavoriteDestination** | User favorites |
 
 ---

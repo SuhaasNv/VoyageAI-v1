@@ -12,7 +12,6 @@ import { TravelDNAOnboardingModal } from "@/ui/dashboard/TravelDNAOnboardingModa
 import { AICommandPalette } from "@/ui/dashboard/AICommandPalette";
 import { FlightTicketWizard } from "@/ui/dashboard/FlightTicketWizard";
 import { useTrips } from "@/hooks/useTrips";
-import { NotificationBell } from "@/ui/dashboard/NotificationBell";
 import type { Trip } from "@/lib/api";
 import { useMemo } from "react";
 
@@ -82,7 +81,6 @@ export default function DashboardPage() {
                             </svg>
                         </div>
                         <div className="flex items-center gap-2">
-                            <NotificationBell />
                             {/* Flight ticket import — magic feature */}
                             <button
                                 onClick={() => setShowTicketWizard(true)}
