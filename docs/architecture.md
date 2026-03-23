@@ -7,6 +7,45 @@
 
 ## Visual architecture (Mermaid)
 
+### Simple system overview (easy to explain)
+
+Use this for **quick walkthroughs** (stakeholders, interviews, README). It hides internal splits (tools vs agents, Redis, etc.) and shows the four ideas that matter: **people**, **one app**, **data**, **AI**.
+
+```mermaid
+flowchart TB
+  subgraph People["Who"]
+    U["Travelers"]
+    A["Admins"]
+  end
+
+  subgraph App["VoyageAI — one Next.js application"]
+    UI["Web UI<br/>React"]
+    API["APIs<br/>auth · trips · AI · admin"]
+    UI --> API
+  end
+
+  subgraph Data["Where data lives"]
+    DB[("PostgreSQL<br/>users · trips · itineraries · chats · logs")]
+  end
+
+  subgraph Intelligence["How AI helps"]
+    FEAT["Itineraries · chat · reoptimize · suggestions · admin assistant"]
+    LLM["OpenAI or Gemini<br/>(+ optional fallbacks)"]
+    FEAT --> LLM
+  end
+
+  U --> UI
+  A --> UI
+  API --> DB
+  API --> FEAT
+```
+
+**One-sentence version:** Users and admins use a **single Next.js app**; the app talks to **PostgreSQL** for accounts and trip data, and to **cloud LLMs** through a small **AI layer** that powers planning, chat, and operations tools.
+
+**Slightly longer:** The browser UI and server APIs live in the same codebase. Authenticated requests create or update trips and itineraries in the database. When someone asks for an AI itinerary or chat reply, the API calls the AI layer, which formats prompts and returns structured results—then the app saves what needs to persist.
+
+---
+
 ### Whole system — layers, data stores, and dual AI paths
 
 The diagram shows **how the shipped product talks to AI** (tools + routes) versus the **multi-agent pipeline** (orchestrator + agents), which shares the same LLM and persistence primitives.
