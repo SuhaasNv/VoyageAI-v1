@@ -139,9 +139,12 @@ npm install
 Create a `.env` file in the project root:
 
 ```env
-# ── Database ─────────────────────────────────────────────────────────────────
-DATABASE_URL="postgresql://user:pass@host:5432/voyageai?sslmode=require"
-DIRECT_URL="postgresql://user:pass@host:5432/voyageai?sslmode=require"
+# ── Database (e.g. Supabase Postgres) ───────────────────────────────────────
+# DATABASE_URL: use the pooled connection string from Supabase (Transaction pooler).
+# DIRECT_URL: use the direct/session connection for migrations (port 5432).
+# If you omit DIRECT_URL, Prisma migrations fall back to DATABASE_URL.
+DATABASE_URL="postgresql://..."
+DIRECT_URL="postgresql://..."
 
 # ── JWT ─────────────────────────────────────────────────────────────────────
 JWT_ACCESS_SECRET="your-64-byte-hex-access-secret"
@@ -179,12 +182,16 @@ PEXELS_API_KEY="your-pexels-api-key"
 
 **Development fallbacks:** In dev mode, `DATABASE_URL`, `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, and `CSRF_SECRET` fall back to defaults if unset. Production requires all values.
 
-### 3. Database Setup
+### 3. Database setup (Supabase)
+
+Point `.env` at your Supabase project (no local Docker Postgres required). Then:
 
 ```bash
 npx prisma generate
 npx prisma migrate dev
 ```
+
+Use `migrate deploy` instead of `migrate dev` in CI or when you only want to apply existing migrations.
 
 ### 4. Run Development Server
 
