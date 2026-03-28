@@ -21,7 +21,7 @@
 
   html,
   body {
-    @apply antialiased bg-[#10141a] text-slate-100 overflow-x-hidden min-h-screen;
+    @apply antialiased bg-[#0B0F19] text-slate-100 overflow-x-hidden min-h-screen;
     padding-bottom: env(safe-area-inset-bottom);
     scrollbar-width: none;
     -ms-overflow-style: none;
@@ -111,8 +111,8 @@
     transform: scale(1.01);
   }
 
-  /* Subtle noise texture overlay */
-  .noise-overlay {
+  /* Subtle noise texture overlay — only for non-fixed/absolute elements */
+  .noise-overlay:not(.fixed):not([style*="position"]) {
     position: relative;
   }
 
@@ -190,19 +190,19 @@
 
   /* ── Premium card system ──────────────────────────────────────────────── */
   .card-premium {
-    @apply bg-white/[0.04] backdrop-blur-xl border border-white/[0.08] rounded-2xl;
-    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2), 0 0 1px rgba(255, 255, 255, 0.05);
-    transition: all 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+    @apply bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-2xl;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .card-premium:hover {
-    @apply border-white/[0.14] bg-white/[0.06];
-    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.3), 0 0 1px rgba(255, 255, 255, 0.08);
+    @apply border-white/[0.12] bg-white/[0.05];
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.1);
     transform: translateY(-2px);
   }
 
   .card-premium:active {
-    transform: translateY(0) scale(0.995);
+    transform: translateY(0) scale(0.98);
   }
 
   /* ── AI shimmer effect ──────────────────────────────────────────────── */

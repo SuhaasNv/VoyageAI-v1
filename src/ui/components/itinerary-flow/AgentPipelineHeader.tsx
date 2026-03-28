@@ -133,7 +133,7 @@ export function AgentPipelineHeader({
                                     <div className="w-full h-full bg-white/[0.06]" />
                                     {isCompleted && (
                                         <motion.div
-                                            className="absolute inset-0 w-full bg-emerald-500/50"
+                                            className="absolute inset-0 w-full bg-gradient-to-b from-emerald-400 to-emerald-600 shadow-[0_0_8px_rgba(52,211,153,0.6)]"
                                             initial={{ height: "0%" }}
                                             animate={{ height: "100%" }}
                                             transition={prefersReduced ? { duration: 0 } : { duration: 0.4, ease: "easeOut" }}
@@ -187,7 +187,7 @@ export function AgentPipelineHeader({
                                             initial={{ scale: 0 }}
                                             animate={{ scale: 1 }}
                                             transition={{ type: "spring", stiffness: 500, damping: 25 }}
-                                            className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-[#0A0D12] flex items-center justify-center"
+                                            className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-[#0B0F19] flex items-center justify-center"
                                         >
                                             <Check className="w-2 h-2 text-white" strokeWidth={3} />
                                         </motion.span>
@@ -301,7 +301,7 @@ export function AgentPipelineHeader({
                                             initial={{ scale: 0, opacity: 0 }}
                                             animate={{ scale: 1, opacity: 1 }}
                                             transition={{ type: "spring", stiffness: 500, damping: 25 }}
-                                            className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-[#0A0D12] flex items-center justify-center"
+                                            className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-[#0B0F19] flex items-center justify-center"
                                         >
                                             <Check className="w-2 h-2 text-white" strokeWidth={3} />
                                         </motion.span>

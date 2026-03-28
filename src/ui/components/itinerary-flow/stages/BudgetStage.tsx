@@ -166,7 +166,7 @@ function DonutChart({ values, colors, labels }: { values: number[]; colors: stri
                     </text>
                 </svg>
                 {hoveredIdx !== null && (
-                    <div className="absolute top-1 right-1 bg-[#10141a] border border-white/[0.08] rounded-xl px-2 py-1 text-xs text-white pointer-events-none shadow-lg">
+                    <div className="absolute top-1 right-1 bg-[#0B0F19] border border-white/[0.08] rounded-xl px-2 py-1 text-xs text-white pointer-events-none shadow-lg">
                         {labels[hoveredIdx]}: ${Math.round(values[hoveredIdx]).toLocaleString()}
                         <br />
                         <span className="text-slate-400">{Math.round(slices[hoveredIdx].pct * 100)}%</span>
@@ -252,7 +252,7 @@ export function BudgetStage({
                         className="text-xs bg-white/[0.04] border border-white/[0.08] rounded-full px-2.5 py-1 text-slate-300 outline-none appearance-none"
                     >
                         {CURRENCIES.map((c) => (
-                            <option key={c.code} value={c.code} className="bg-[#10141a]">
+                            <option key={c.code} value={c.code} className="bg-[#0B0F19]">
                                 {c.flag} {c.code}
                             </option>
                         ))}

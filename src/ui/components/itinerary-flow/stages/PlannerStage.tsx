@@ -131,7 +131,7 @@ function PortalDropdown({
                             left: Math.min(rect.left, window.innerWidth - 246),
                             minWidth: Math.max(rect.width, 230),
                             zIndex: 99999,
-                            background: "#0d1018",
+                            background: "#0B0F19",
                             border: "1px solid rgba(255,255,255,0.12)",
                             borderRadius: 16,
                             overflow: "hidden",
@@ -329,7 +329,7 @@ export function PlannerStage({
                             radial-gradient(ellipse at 25% 60%, rgba(99,102,241,0.55) 0%, transparent 55%),
                             radial-gradient(ellipse at 75% 25%, rgba(168,85,247,0.45) 0%, transparent 50%),
                             radial-gradient(ellipse at 60% 85%, rgba(20,184,166,0.35) 0%, transparent 45%),
-                            linear-gradient(145deg, #080b12 0%, #0d1018 100%)
+                            linear-gradient(145deg, #0B0F19 0%, #06080D 100%)
                         `,
                     }} />
                 )}
@@ -465,7 +465,7 @@ export function PlannerStage({
                             >
                                 <div
                                     onClick={() => setExpandedDay(isExpanded ? null : day.day)}
-                                    className="relative bg-white/[0.035] backdrop-blur-sm border border-white/[0.06] rounded-2xl p-4 md:pl-12 flex items-center gap-4 overflow-hidden cursor-pointer transition-all duration-250 hover:bg-white/[0.06] hover:border-white/[0.12] hover:shadow-[0_8px_32px_rgba(0,0,0,0.2)] group-hover:-translate-y-0.5"
+                                    className="relative bg-white/[0.02] backdrop-blur-md border border-white/[0.08] rounded-2xl p-4 md:pl-12 flex items-center gap-4 overflow-hidden cursor-pointer transition-all duration-300 hover:bg-white/[0.04] hover:border-white/[0.15] hover:shadow-[0_8px_32px_rgba(0,0,0,0.3)] group-hover:-translate-y-1"
                                     style={{
                                         borderLeft: `3px solid ${accentColor}50`,
                                     }}

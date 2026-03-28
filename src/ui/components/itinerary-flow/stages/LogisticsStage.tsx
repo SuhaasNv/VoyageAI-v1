@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { MapPin, Navigation, Sparkles } from "lucide-react";
+import { Navigation, Sparkles } from "lucide-react";
 import { AgentThinkingCard } from "../AgentThinkingCard";
+import { LogisticsMap } from "./LogisticsMap";
 import type { StageProps, OptimizedTripContext } from "../types";
 
 const DAY_COLORS = [
@@ -22,9 +23,7 @@ interface LogisticsStageProps extends StageProps<OptimizedTripContext> {
 }
 
 export function LogisticsStage({
-    input,
     result,
-    meta,
     isLoading,
     error,
     onApprove,
@@ -36,51 +35,6 @@ export function LogisticsStage({
     const [noteOpen, setNoteOpen] = useState(false);
     const [note, setNote] = useState("");
     const [activeDay, setActiveDay] = useState(1);
-    const mapRef = useRef<HTMLDivElement>(null);
-    const mapInstance = useRef<unknown>(null);
-    const [mapLoaded, setMapLoaded] = useState(false);
-
-    useEffect(() => {
-        if (!result || !mapRef.current || mapInstance.current) return;
-
-        import("mapbox-gl").then((mapboxgl) => {
-            const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-            if (!token) return;
-
-            const mapboxglModule = mapboxgl.default;
-            mapboxglModule.accessToken = token;
-
-            const map = new mapboxglModule.Map({
-                container: mapRef.current!,
-                style: "mapbox://styles/mapbox/dark-v11",
-                center: [2.3522, 48.8566],
-                zoom: 11,
-                attributionControl: false,
-            });
-
-            mapInstance.current = map;
-
-            map.on("load", () => {
-                setMapLoaded(true);
-                result.days.forEach((day, idx) => {
-                    const color = DAY_COLORS[idx % DAY_COLORS.length];
-                    const el = document.createElement("div");
-                    el.className = `w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold border-2 border-white shadow-lg ${color}`;
-                    el.textContent = String(day.day);
-                    new mapboxglModule.Marker({ element: el })
-                        .setLngLat([2.3522 + idx * 0.01, 48.8566 + idx * 0.005])
-                        .addTo(map);
-                });
-            });
-        }).catch(() => { /* no mapbox token */ });
-
-        return () => {
-            if (mapInstance.current) {
-                (mapInstance.current as { remove: () => void }).remove();
-                mapInstance.current = null;
-            }
-        };
-    }, [result]);
 
     if (isLoading) {
         return (
@@ -195,7 +149,7 @@ export function LogisticsStage({
                                     return (
                                         <div key={slot} className="relative pl-7">
                                             {/* Slot dot */}
-                                            <div className="absolute left-[7px] top-1 w-2.5 h-2.5 rounded-full bg-[#10141a] border-2 border-white/[0.15]" />
+                                            <div className="absolute left-[7px] top-1 w-2.5 h-2.5 rounded-full bg-[#0B0F19] border-2 border-white/[0.15]" />
                                             <div className="flex items-center gap-2 mb-1.5">
                                                 <span className={`text-[10px] font-medium border rounded-full px-1.5 py-0.5 ${slotInfo.color}`}>
                                                     {slotInfo.emoji} {slotInfo.time} {slotInfo.label}
@@ -221,12 +175,12 @@ export function LogisticsStage({
                 {/* Right — Map + stats */}
                 <div className="flex flex-col gap-3">
                     <div className="relative w-full h-64 lg:h-full min-h-[240px] rounded-2xl overflow-hidden border border-white/[0.08]">
-                        {!mapLoaded && (
-                            <div className="absolute inset-0 bg-white/[0.04] animate-pulse flex items-center justify-center">
-                                <MapPin className="w-5 h-5 text-slate-600" />
-                            </div>
-                        )}
-                        <div ref={mapRef} className="w-full h-full" />
+                        <LogisticsMap
+                            destination={result.destination}
+                            days={result.days}
+                            activeDay={activeDay}
+                            selectedHotel={result.selectedHotel}
+                        />
                     </div>
 
                     {/* Route stats */}

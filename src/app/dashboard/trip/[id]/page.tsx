@@ -3,10 +3,15 @@ import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { verifyAccessToken } from "@/services/auth/tokens";
 import { ACCESS_TOKEN_COOKIE } from "@/services/auth/cookies";
-import { serializeTrip, parseStoredItinerary } from "@/lib/services/trips";
+import {
+    serializeTrip,
+    parseStoredItinerary,
+    safeTripContextToItinerary,
+    looksLikeSafeTripContext,
+} from "@/lib/services/trips";
 import { ItinerarySchema, type Itinerary } from "@/lib/ai/schemas";
 import type { ChatMessageDTO } from "@/app/api/trips/[id]/chat/route";
-import { logError } from "@/infrastructure/logger";
+import { logError, logInfo } from "@/infrastructure/logger";
 import { TripViewClient } from "@/ui/components/trip/TripViewClient";
 
 export default async function TripViewPage({ params }: { params: Promise<{ id: string }> }) {
@@ -51,11 +56,27 @@ export default async function TripViewPage({ params }: { params: Promise<{ id: s
 
     let rawItinerary: Itinerary | null = null;
     if (itineraryRow?.rawJson) {
+        // 1. Try parsing as canonical ItinerarySchema (new saves after the fix).
         const parsed = ItinerarySchema.safeParse(itineraryRow.rawJson);
         if (parsed.success) {
             rawItinerary = parsed.data;
         } else {
-            logError("[trip] Invalid rawItinerary in DB", { tripId: id, errors: parsed.error.flatten() });
+            // 2. Fallback: legacy trips saved before the fix stored SafeTripContext directly.
+            //    Detect and transform on-the-fly so the page still renders correctly.
+            if (looksLikeSafeTripContext(itineraryRow.rawJson)) {
+                try {
+                    rawItinerary = safeTripContextToItinerary(id, itineraryRow.rawJson);
+                    logInfo("[trip] Legacy SafeTripContext adapted to Itinerary", { tripId: id });
+                } catch (adaptErr) {
+                    logError("[trip] Failed to adapt legacy rawItinerary", { tripId: id, error: adaptErr });
+                }
+            } else {
+                // Unknown format — log field-level errors to aid debugging.
+                logError("[trip] Invalid rawItinerary in DB", {
+                    tripId: id,
+                    errors: parsed.error.flatten(),
+                });
+            }
         }
     }
 

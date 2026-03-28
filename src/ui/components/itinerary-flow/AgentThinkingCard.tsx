@@ -87,7 +87,7 @@ export function AgentThinkingCard({
                         {/* Pulse dot */}
                         {!isError && (
                             <motion.div
-                                className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full ${colors.fill} border-2 border-[#0A0D12]`}
+                                className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full ${colors.fill} border-2 border-[#0B0F19]`}
                                 animate={prefersReduced ? {} : { scale: [1, 1.3, 1], opacity: [1, 0.6, 1] }}
                                 transition={{ duration: 1.5, repeat: Infinity }}
                             />
@@ -161,7 +161,8 @@ export function AgentThinkingCard({
 
             {/* Skeleton */}
             {skeleton && !isError && (
-                <div className="opacity-40 pointer-events-none select-none">
+                <div className="opacity-50 pointer-events-none select-none relative">
+                    <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[#0B0F19] z-10" />
                     {skeleton}
                 </div>
             )}
@@ -173,12 +174,13 @@ export function AgentThinkingCard({
 
 function DefaultSkeleton({ colors }: { colors: ReturnType<typeof agentColorClasses> }) {
     return (
-        <div className="space-y-4">
-            <div className="h-48 bg-white/[0.04] rounded-2xl ai-shimmer" />
+        <div className="space-y-4 opacity-50 pointer-events-none select-none relative">
+            <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[#0B0F19] z-10" />
+            <div className="h-48 bg-white/[0.03] rounded-2xl ai-shimmer border border-white/[0.05]" />
             {[1, 2, 3].map((i) => (
                 <div
                     key={i}
-                    className="bg-white/[0.04] border border-white/[0.06] rounded-2xl p-4 space-y-3 ai-shimmer"
+                    className="bg-white/[0.02] border border-white/[0.05] rounded-2xl p-4 space-y-3 ai-shimmer"
                     style={{ animationDelay: `${i * 0.3}s` }}
                 >
                     <div className="flex items-center gap-3">
@@ -190,7 +192,7 @@ function DefaultSkeleton({ colors }: { colors: ReturnType<typeof agentColorClass
                     </div>
                     <div className="grid grid-cols-3 gap-2">
                         {[1, 2, 3].map((j) => (
-                            <div key={j} className="h-16 bg-white/[0.04] rounded-xl" />
+                            <div key={j} className="h-16 bg-white/[0.03] rounded-xl border border-white/[0.05]" />
                         ))}
                     </div>
                 </div>

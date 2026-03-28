@@ -333,7 +333,7 @@ export function SafetyStage({
             </div>
 
             {/* Sticky decision gate */}
-            <div className="fixed bottom-0 inset-x-0 z-30 bg-[#0A0D12]/95 backdrop-blur-xl border-t border-white/[0.08] px-4 py-4">
+            <div className="fixed bottom-0 inset-x-0 z-30 bg-[#0B0F19]/80 backdrop-blur-xl border-t border-white/[0.08] px-4 py-4">
                 <div className="max-w-2xl mx-auto flex gap-3">
                     <button
                         onClick={onSave}

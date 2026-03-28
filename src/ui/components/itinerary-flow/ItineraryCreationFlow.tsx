@@ -305,9 +305,11 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
     if (!mounted) return null;
 
     const overlay = (
-        <div className="fixed inset-0 bg-[#0A0D12] flex flex-col overflow-hidden" style={{ zIndex: 9999 }}>
+        <div className="fixed inset-0 bg-gradient-to-b from-[#0B0F19] to-[#06080D] flex flex-col overflow-hidden" style={{ zIndex: 9999 }}>
+            {/* Noise texture — rendered as a child so it doesn't conflict with position:fixed */}
+            <div className="absolute inset-0 pointer-events-none opacity-[0.03] z-0" style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E\")" }} />
             {/* ── Top bar ────────────────────────────────────────────────── */}
-            <div className="flex-shrink-0 border-b border-white/[0.06] bg-[#0A0D12]/98 backdrop-blur-2xl">
+            <div className="flex-shrink-0 border-b border-white/[0.06] bg-[#0B0F19]/98 backdrop-blur-2xl relative z-10">
                 <div className="flex items-center justify-between px-5 py-3">
                     <div className="flex items-center gap-3">
                         <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-[0_0_16px_rgba(99,102,241,0.4)]">
@@ -346,9 +348,9 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
             </div>
 
             {/* ── 3-Column Layout ────────────────────────────────────────── */}
-            <div className="flex-1 overflow-hidden flow-layout">
+            <div className="flex-1 overflow-hidden flow-layout relative z-10">
                 {/* ── LEFT SIDEBAR ── Trip meta + vertical stepper ────────── */}
-                <aside className="hidden lg:flex flex-col border-r border-white/[0.06] bg-[#0A0D12]/60 overflow-y-auto flow-scroll">
+                <aside className="hidden lg:flex flex-col border-r border-white/[0.06] bg-[#0B0F19]/60 backdrop-blur-md overflow-y-auto flow-scroll">
                     {/* Trip DNA */}
                     <div className="px-4 pt-5 pb-3 border-b border-white/[0.06]">
                         <TripDNASummaryStrip state={state} layout="vertical" />
@@ -367,8 +369,11 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
                 </aside>
 
                 {/* ── CENTER — Main stage content ─────────────────────────── */}
-                <main className="flex-1 overflow-y-auto flow-scroll">
-                    <div className="px-6 py-6 max-w-3xl mx-auto w-full">
+                <main className="flex-1 overflow-y-auto flow-scroll relative">
+                    {/* Soft radial gradient behind center content */}
+                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-gradient-to-b from-indigo-500/10 via-purple-500/5 to-transparent rounded-full blur-[100px] pointer-events-none opacity-50" />
+                    
+                    <div className="px-6 py-6 max-w-3xl mx-auto w-full relative z-10">
                         <AnimatePresence mode="wait">
                             <motion.div
                                 key={state.stage}
@@ -468,7 +473,9 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
                 </main>
 
                 {/* ── RIGHT SIDEBAR ── AI suggestions ─────────────────────── */}
-                <aside className="hidden lg:flex flex-col border-l border-white/[0.06] bg-[#0A0D12]/40 overflow-hidden">
+                <aside className="hidden lg:flex flex-col border-l border-white/[0.06] bg-[#0B0F19]/40 backdrop-blur-md overflow-hidden relative">
+                    {/* Soft glow behind AI panel */}
+                    <div className="absolute top-1/4 right-0 w-[300px] h-[400px] bg-indigo-500/10 rounded-full blur-[80px] pointer-events-none" />
                     <AISuggestionsPanel state={state} isLoading={isLoading} />
                 </aside>
             </div>

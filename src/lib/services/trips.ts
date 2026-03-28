@@ -10,7 +10,8 @@
  */
 
 import type { Trip, Itinerary as PrismaItinerary } from "@prisma/client";
-import type { Itinerary as AIItinerary } from "@/lib/ai/schemas";
+import type { Itinerary as AIItinerary, Activity as AIActivity } from "@/lib/ai/schemas";
+import type { SafeTripContext } from "@/agents/safety/safetyAgent";
 
 // ─── Itinerary types (UI event format) ───────────────────────────────────────
 
@@ -189,4 +190,130 @@ export function parseStoredItinerary(row: PrismaItinerary): ItineraryDay[] {
     } catch {
         return [];
     }
+}
+
+// ─── SafeTripContext → Itinerary adapter ──────────────────────────────────────
+
+/**
+ * Slot → time window mapping used when converting pipeline output to
+ * ItinerarySchema format (which requires HH:MM start/end times).
+ */
+const SLOT_TIMES: Record<string, { start: string; end: string }> = {
+    morning:   { start: "08:00", end: "10:30" },
+    afternoon: { start: "12:00", end: "14:30" },
+    evening:   { start: "17:00", end: "19:30" },
+};
+
+/**
+ * Maps the agent-pipeline activity types to the ActivityTypeSchema enum values
+ * used in ItinerarySchema.
+ */
+const PIPELINE_TYPE_MAP: Record<string, AIActivity["type"]> = {
+    attraction: "sightseeing",
+    experience: "cultural",
+    restaurant: "dining",
+};
+
+/**
+ * Converts a SavedTripContext (the shape persisted by /api/ai/itinerary-flow/save)
+ * into the strict ItinerarySchema format expected by TripViewPage and TripMap.
+ *
+ * Fields that don't exist in the pipeline output are filled with safe defaults:
+ *   - activity.id         → deterministic slug from day + index + name
+ *   - startTime / endTime → derived from timeSlot
+ *   - location            → { name: activity.name } (no lat/lng — geocoded on demand by TripMap)
+ *   - estimatedCost       → { amount, currency: "USD" }
+ *   - aiInsights          → safety.tips
+ *   - pacingAnalysis      → safety.warnings mapped to warnings
+ */
+export function safeTripContextToItinerary(
+    tripId: string,
+    result: SafeTripContext,
+): AIItinerary {
+    const startDate = new Date(result.startDate + "T00:00:00Z");
+
+    const days = result.days.map((day) => {
+        const dayDate = new Date(startDate);
+        dayDate.setUTCDate(dayDate.getUTCDate() + day.day - 1);
+        const dateStr = dayDate.toISOString().slice(0, 10);
+
+        const activities: AIActivity[] = day.activities.map((act, i) => {
+            const slot = SLOT_TIMES[act.timeSlot] ?? SLOT_TIMES.morning;
+            const type = PIPELINE_TYPE_MAP[act.type] ?? "sightseeing";
+            const costAmt = typeof act.estimatedCost === "number" ? act.estimatedCost : 0;
+            // Stable deterministic ID — no random UUID so re-saves are idempotent.
+            const slug = act.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24);
+            return {
+                id: `d${day.day}-a${i}-${slug}`,
+                name: act.name,
+                type,
+                startTime: slot.start,
+                endTime: slot.end,
+                duration_minutes: 90,
+                location: {
+                    name: act.name,
+                    // No lat/lng from pipeline — TripMap will geocode via activity name
+                },
+                estimatedCost: { amount: costAmt, currency: "USD" },
+                notes: act.description,
+                aiGenerated: true,
+                fatigueScore: 5,
+                tags: [act.type],
+            };
+        });
+
+        const totalCostAmount = activities.reduce(
+            (s, a) => s + a.estimatedCost.amount,
+            0,
+        );
+
+        return {
+            day: day.day,
+            date: dateStr,
+            theme: day.theme,
+            activities,
+            totalCost: { amount: totalCostAmount, currency: "USD" },
+            dailyFatigueScore: 5,
+            tips: [],
+        };
+    });
+
+    return {
+        tripId,
+        destination: result.destination,
+        startDate: result.startDate,
+        endDate: result.endDate,
+        totalDays: result.durationDays,
+        days,
+        totalEstimatedCost: {
+            amount: result.budget.totalEstimatedCost,
+            currency: "USD",
+            breakdown: {},
+        },
+        aiInsights: result.safety?.tips ?? [],
+        pacingAnalysis: {
+            overallScore: 5,
+            warnings: result.safety?.warnings ?? [],
+            suggestions: [],
+        },
+        generatedAt: new Date().toISOString(),
+        modelVersion: "pipeline-v1",
+    };
+}
+
+/**
+ * Detects whether a raw DB value looks like a SafeTripContext (pipeline format)
+ * rather than an ItinerarySchema (AI service format).
+ * Heuristic: has `budget.totalEstimatedCost` and `safety.riskLevel` but no `totalDays`.
+ */
+export function looksLikeSafeTripContext(raw: unknown): raw is SafeTripContext {
+    const obj = raw as Record<string, unknown> | null;
+    return (
+        !!obj &&
+        typeof obj === "object" &&
+        typeof obj.destination === "string" &&
+        Array.isArray(obj.days) &&
+        typeof (obj.budget as Record<string, unknown>)?.totalEstimatedCost === "number" &&
+        !("totalDays" in obj)
+    );
 }

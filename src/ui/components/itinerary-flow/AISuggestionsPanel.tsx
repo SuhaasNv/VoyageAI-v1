@@ -323,7 +323,7 @@ export function AISuggestionsPanel({ state, isLoading }: AISuggestionsPanelProps
                             <Sparkles className="w-3 h-3 text-white" />
                         </div>
                         <motion.div
-                            className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[#0A0D12]"
+                            className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[#0B0F19]"
                             style={{ backgroundColor: isLoading ? "#818cf8" : "#34d399" }}
                             animate={isLoading ? { scale: [1, 1.3, 1] } : {}}
                             transition={{ duration: 1.2, repeat: Infinity }}
@@ -361,12 +361,12 @@ export function AISuggestionsPanel({ state, isLoading }: AISuggestionsPanelProps
                                 </div>
 
                                 {/* Message bubble */}
-                                <div className={`flex-1 min-w-0 rounded-2xl rounded-tl-md px-3.5 py-2.5 ${
+                                <div className={`flex-1 min-w-0 rounded-2xl rounded-tl-md px-3.5 py-2.5 backdrop-blur-md ${
                                     msg.type === "suggestion"
-                                        ? "bg-amber-500/[0.07] border border-amber-500/15"
+                                        ? "bg-amber-500/[0.05] border border-amber-500/15"
                                         : msg.type === "celebration"
-                                        ? "bg-indigo-500/[0.07] border border-indigo-500/15"
-                                        : "bg-white/[0.04] border border-white/[0.06]"
+                                        ? "bg-indigo-500/[0.05] border border-indigo-500/15"
+                                        : "bg-white/[0.03] border border-white/[0.08]"
                                 }`}>
                                     <p className="text-[12px] leading-[1.6] text-slate-300">
                                         {isLatest && !prefersReduced ? (

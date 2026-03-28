@@ -79,7 +79,7 @@ export function ExplainabilityPanel({
                         exit={prefersReduced ? {} : { x: "100%" }}
                         transition={{ type: "spring", stiffness: 280, damping: 28 }}
                         className={[
-                            "fixed z-[61] bg-[#10141a] border-l border-white/[0.08] overflow-y-auto",
+                            "fixed z-[61] bg-[#0B0F19]/95 backdrop-blur-xl border-l border-white/[0.08] overflow-y-auto",
                             // Mobile: bottom sheet
                             "bottom-0 left-0 right-0 max-h-[85vh] rounded-t-3xl",
                             // Desktop: right drawer

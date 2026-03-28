@@ -73,10 +73,10 @@ function DraggablePoolCard({
             {...attributes}
             style={{ transform: transform ? CSS.Transform.toString(transform) : undefined }}
             onClick={onAdd}
-            className={`relative group flex-shrink-0 w-44 rounded-xl border p-3 select-none touch-none transition-all duration-200 ${
+            className={`relative group flex-shrink-0 w-44 rounded-xl border p-3 select-none touch-none backdrop-blur-md transition-all duration-300 ${
                 isDragging
                     ? "opacity-25 cursor-grabbing border-white/[0.06] bg-white/[0.02]"
-                    : "cursor-grab bg-white/[0.03] border-white/[0.09] hover:bg-white/[0.07] hover:border-teal-500/35 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(0,0,0,0.3)]"
+                    : "cursor-grab bg-white/[0.03] border-white/[0.08] hover:bg-white/[0.05] hover:border-teal-500/35 hover:-translate-y-1 hover:shadow-[0_8px_32px_rgba(0,0,0,0.3)]"
             }`}
         >
             {/* Drag affordance */}
@@ -125,12 +125,12 @@ function DroppableSlot({
     return (
         <div
             ref={setNodeRef}
-            className={`relative flex flex-col gap-2 rounded-2xl p-3.5 min-h-[104px] transition-all duration-200 ${
+            className={`relative flex flex-col gap-2 rounded-2xl p-3.5 min-h-[104px] backdrop-blur-md transition-all duration-300 ${
                 isOver
                     ? "bg-teal-500/[0.08] border-2 border-teal-400/55 shadow-[0_0_28px_rgba(20,184,166,0.18)] scale-[1.02]"
                     : isDragActive
-                    ? "bg-white/[0.04] border border-dashed border-white/[0.2]"
-                    : "bg-white/[0.04] border border-white/[0.08] hover:border-white/[0.16] hover:bg-white/[0.06]"
+                    ? "bg-white/[0.02] border border-dashed border-white/[0.2]"
+                    : "bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.15] hover:bg-white/[0.05] hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(0,0,0,0.2)]"
             }`}
         >
             {/* Remove → sends back to pool */}
@@ -152,7 +152,7 @@ function DroppableSlot({
                         transition={{ duration: 0.1 }}
                         className="absolute inset-0 rounded-2xl z-20 flex items-center justify-center backdrop-blur-[2px]"
                     >
-                        <span className="flex items-center gap-1.5 text-[11px] font-bold text-teal-200 bg-[#0a0e18]/90 border border-teal-500/30 rounded-full px-3 py-1.5 shadow-lg">
+                        <span className="flex items-center gap-1.5 text-[11px] font-bold text-teal-200 bg-[#0B0F19]/90 border border-teal-500/30 rounded-full px-3 py-1.5 shadow-lg">
                             <ArrowLeftRight className="w-3 h-3" />
                             Swap
                         </span>
@@ -184,7 +184,7 @@ function DroppableSlot({
 
 function DragGhostCard({ activity }: { activity: Activity }) {
     return (
-        <div className="w-44 rounded-xl p-3 bg-[#1b2235] border border-teal-400/50 shadow-[0_20px_60px_rgba(0,0,0,0.7)] rotate-[2.5deg] scale-[1.05] pointer-events-none">
+        <div className="w-44 rounded-xl p-3 bg-[#0B0F19] border border-teal-400/50 shadow-[0_20px_60px_rgba(0,0,0,0.7)] rotate-[2.5deg] scale-[1.05] pointer-events-none">
             <p className="text-[12px] font-bold text-white leading-snug mb-2 line-clamp-2">{activity.name}</p>
             <div className="flex items-center gap-1.5">
                 <span className={`text-[10px] font-medium border rounded-full px-1.5 py-0.5 ${TYPE_COLORS[activity.type]}`}>

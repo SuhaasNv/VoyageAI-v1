@@ -5,6 +5,7 @@ import { successResponse, unauthorizedResponse } from "@/lib/api/response";
 import { runWithRequestContext } from "@/lib/requestContext";
 import { formatErrorResponse } from "@/lib/errors";
 import { prisma } from "@/lib/prisma";
+import { safeTripContextToItinerary } from "@/lib/services/trips";
 
 const Schema = z.object({
     tripId: z.string(),
@@ -47,11 +48,17 @@ export async function POST(req: NextRequest) {
                 );
             }
 
-            // Persist the full flow result as itinerary JSON
+            // Transform SafeTripContext → ItinerarySchema format before persisting.
+            // This ensures TripViewPage / TripMap can always parse rawJson correctly.
+            const itineraryData = safeTripContextToItinerary(
+                body.data.tripId,
+                body.data.safetyResult,
+            );
+
             const itinerary = await prisma.itinerary.create({
                 data: {
                     tripId: body.data.tripId,
-                    rawJson: body.data.safetyResult as object,
+                    rawJson: itineraryData as object,
                 },
             });
 
