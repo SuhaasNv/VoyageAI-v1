@@ -52,6 +52,32 @@
     100% { background-position: -200% center; }
 }
 
+@keyframes ai-pulse {
+    0%, 100% { opacity: 0.4; transform: scale(1); }
+    50%      { opacity: 1; transform: scale(1.05); }
+}
+
+@keyframes glow-breathe {
+    0%, 100% { box-shadow: 0 0 8px var(--glow-color, rgba(99,102,241,0.3)); }
+    50%      { box-shadow: 0 0 24px var(--glow-color, rgba(99,102,241,0.5)); }
+}
+
+@keyframes gradient-shift {
+    0%   { background-position: 0% 50%; }
+    50%  { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+@keyframes float-up {
+    0%   { transform: translateY(0) scale(1); opacity: 0.6; }
+    100% { transform: translateY(-8px) scale(1.02); opacity: 1; }
+}
+
+@keyframes shimmer-slide {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+}
+
 @layer utilities {
   .mobile-container {
     @apply px-4 md:px-0;
@@ -160,6 +186,127 @@
 
   .flow-scroll::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.15);
+  }
+
+  /* ── Premium card system ──────────────────────────────────────────────── */
+  .card-premium {
+    @apply bg-white/[0.04] backdrop-blur-xl border border-white/[0.08] rounded-2xl;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2), 0 0 1px rgba(255, 255, 255, 0.05);
+    transition: all 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .card-premium:hover {
+    @apply border-white/[0.14] bg-white/[0.06];
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.3), 0 0 1px rgba(255, 255, 255, 0.08);
+    transform: translateY(-2px);
+  }
+
+  .card-premium:active {
+    transform: translateY(0) scale(0.995);
+  }
+
+  /* ── AI shimmer effect ──────────────────────────────────────────────── */
+  .ai-shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .ai-shimmer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(99, 102, 241, 0.06) 40%,
+      rgba(168, 85, 247, 0.08) 60%,
+      transparent 100%
+    );
+    animation: shimmer-slide 2.5s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  /* ── Gradient accent border ──────────────────────────────────────────── */
+  .gradient-border {
+    position: relative;
+  }
+
+  .gradient-border::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(135deg, rgba(99,102,241,0.4), rgba(168,85,247,0.3), rgba(20,184,166,0.3));
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    pointer-events: none;
+  }
+
+  /* ── Glow effects ──────────────────────────────────────────────── */
+  .glow-indigo { --glow-color: rgba(99,102,241,0.4); animation: glow-breathe 3s ease-in-out infinite; }
+  .glow-teal { --glow-color: rgba(20,184,166,0.4); animation: glow-breathe 3s ease-in-out infinite; }
+  .glow-amber { --glow-color: rgba(245,158,11,0.4); animation: glow-breathe 3s ease-in-out infinite; }
+  .glow-emerald { --glow-color: rgba(16,185,129,0.4); animation: glow-breathe 3s ease-in-out infinite; }
+  .glow-purple { --glow-color: rgba(168,85,247,0.4); animation: glow-breathe 3s ease-in-out infinite; }
+
+  /* ── Button system ──────────────────────────────────────────────── */
+  .btn-primary {
+    @apply font-bold text-sm transition-all;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6, #a855f7);
+    background-size: 200% 200%;
+    animation: gradient-shift 4s ease infinite;
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 32px rgba(99, 102, 241, 0.35);
+  }
+
+  .btn-primary:active {
+    transform: translateY(0) scale(0.98);
+  }
+
+  .btn-approve {
+    @apply font-bold text-sm transition-all;
+    background: linear-gradient(135deg, #10b981, #14b8a6, #06b6d4);
+    background-size: 200% 200%;
+    animation: gradient-shift 4s ease infinite;
+  }
+
+  .btn-approve:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 32px rgba(16, 185, 129, 0.35);
+  }
+
+  .btn-approve:active {
+    transform: translateY(0) scale(0.98);
+  }
+
+  /* ── Flow layout ──────────────────────────────────────────────── */
+  .flow-layout {
+    display: grid;
+    grid-template-columns: 260px 1fr 280px;
+    gap: 0;
+    height: 100%;
+  }
+
+  @media (max-width: 1024px) {
+    .flow-layout {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* ── Section heading ──────────────────────────────────────────────── */
+  .section-heading {
+    @apply text-xs font-bold uppercase tracking-[0.15em] text-slate-500;
+  }
+
+  /* ── AI thinking pulse ──────────────────────────────────────────────── */
+  .ai-thinking-pulse {
+    animation: ai-pulse 2s ease-in-out infinite;
   }
 
   /* Mapbox overrides for hover functionality */

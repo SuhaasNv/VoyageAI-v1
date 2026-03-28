@@ -241,7 +241,7 @@ export function BudgetStage({
         >
             {/* Header */}
             <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                <h3 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
                     <Wallet className="w-3.5 h-3.5 text-emerald-400" />
                     Budget Breakdown
                 </h3>
@@ -259,7 +259,7 @@ export function BudgetStage({
                     </select>
                     <button
                         onClick={onExplain}
-                        className="text-xs text-emerald-400 hover:text-emerald-300 border border-emerald-500/20 rounded-full px-2.5 py-0.5"
+                        className="text-xs text-emerald-400 hover:text-emerald-300 border border-emerald-500/20 rounded-full px-2.5 py-0.5 hover:scale-105 active:scale-95"
                     >
                         ? Explain
                     </button>
@@ -267,7 +267,7 @@ export function BudgetStage({
             </div>
 
             {/* Hero cost */}
-            <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-6 text-center">
+            <div className="card-premium p-6 text-center">
                 <p className="text-xs text-slate-500 uppercase tracking-widest mb-1">Estimated Total</p>
                 <p className={`text-5xl font-bold tracking-tight ${totalColor}`}>
                     <AnimatedNumber to={total} symbol={currency.symbol} />
@@ -283,19 +283,19 @@ export function BudgetStage({
             </div>
 
             {/* Donut chart */}
-            <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-5">
-                <p className="text-[11px] text-slate-500 uppercase tracking-widest mb-4">Cost Breakdown</p>
+            <div className="card-premium p-5">
+                <p className="section-heading mb-4">Cost Breakdown</p>
                 <DonutChart values={donutValues} colors={DONUT_COLORS} labels={DONUT_LABELS} />
             </div>
 
             {/* Per-day accordion */}
             <div className="space-y-2">
-                <p className="text-[11px] text-slate-500 uppercase tracking-widest">Per-Day Costs</p>
+                <p className="section-heading">Per-Day Costs</p>
                 {result.days.map((day, idx) => {
                     const dayCost = budget.costPerDay?.[idx] ?? Math.round(total / result.durationDays);
                     const isExp = expandedDays.has(day.day);
                     return (
-                        <div key={day.day} className="bg-white/[0.04] border border-white/[0.08] rounded-xl">
+                        <div key={day.day} className="bg-white/[0.04] border border-white/[0.08] rounded-xl transition-all duration-200 hover:bg-white/[0.06] hover:border-white/[0.12]">
                             <button
                                 onClick={() =>
                                     setExpandedDays((s) => {
@@ -304,7 +304,7 @@ export function BudgetStage({
                                         return n;
                                     })
                                 }
-                                className="w-full flex items-center justify-between px-4 py-3"
+                                className="w-full flex items-center justify-between px-4 py-3 hover:scale-[1.02] active:scale-[0.98]"
                             >
                                 <span className="text-sm text-slate-300 font-medium">Day {day.day} · {day.theme}</span>
                                 <div className="flex items-center gap-2">
@@ -350,14 +350,14 @@ export function BudgetStage({
             <div className="space-y-3 pt-2">
                 <button
                     onClick={() => onApprove(result)}
-                    className="w-full py-4 rounded-2xl bg-gradient-to-r from-[#10B981] to-emerald-400 hover:opacity-90 hover:scale-[1.01] text-white font-bold text-sm transition-all shadow-[0_0_32px_rgba(16,185,129,0.25)] flex items-center justify-center gap-2"
+                    className="w-full py-4 rounded-2xl btn-approve text-white flex items-center justify-center gap-2 transition-all duration-200"
                 >
                     <Sparkles className="w-4 h-4" />
                     Budget approved!
                 </button>
                 <button
                     onClick={() => onAdjust()}
-                    className="w-full py-3 rounded-2xl border border-white/[0.1] bg-white/[0.03] hover:bg-white/[0.06] text-slate-300 font-semibold text-sm transition-all"
+                    className="w-full py-3 rounded-2xl border border-white/[0.1] bg-white/[0.03] hover:bg-white/[0.06] text-slate-300 font-semibold text-sm transition-all duration-200"
                 >
                     Optimize for lower cost
                 </button>

@@ -19,6 +19,7 @@ import { useFlowState } from "./useFlowState";
 import { AgentPipelineHeader } from "./AgentPipelineHeader";
 import { TripDNASummaryStrip } from "./TripDNASummaryStrip";
 import { ExplainabilityPanel } from "./ExplainabilityPanel";
+import { AISuggestionsPanel } from "./AISuggestionsPanel";
 import { PlannerStage } from "./stages/PlannerStage";
 import { ResearchStage } from "./stages/ResearchStage";
 import { LogisticsStage } from "./stages/LogisticsStage";
@@ -305,158 +306,171 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
 
     const overlay = (
         <div className="fixed inset-0 bg-[#0A0D12] flex flex-col overflow-hidden" style={{ zIndex: 9999 }}>
-            {/* Fixed top zone */}
+            {/* ── Top bar ────────────────────────────────────────────────── */}
             <div className="flex-shrink-0 border-b border-white/[0.06] bg-[#0A0D12]/98 backdrop-blur-2xl">
-                {/* Top bar */}
-                <div className="flex items-center justify-between px-5 pt-4 pb-2">
+                <div className="flex items-center justify-between px-5 py-3">
                     <div className="flex items-center gap-3">
-                        {/* Logo dot */}
-                        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-[0_0_12px_rgba(99,102,241,0.4)]">
-                            <span className="text-[9px] font-black text-white">V</span>
+                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-[0_0_16px_rgba(99,102,241,0.4)]">
+                            <span className="text-[10px] font-black text-white">V</span>
                         </div>
                         <div>
-                            <p className="text-[11px] font-bold text-white tracking-wide leading-none">Trip Builder</p>
-                            <p className="text-[10px] text-slate-500 leading-none mt-0.5">
+                            <h1 className="text-sm font-bold text-white tracking-tight leading-none">Trip Builder</h1>
+                            <p className="text-[11px] text-slate-500 leading-none mt-0.5">
                                 {flowInput.destination}
                                 {flowInput.startDate && flowInput.endDate && (
-                                    <> · {flowInput.startDate} – {flowInput.endDate}</>
+                                    <> &middot; {flowInput.startDate} &ndash; {flowInput.endDate}</>
                                 )}
                             </p>
                         </div>
                     </div>
                     <button
                         onClick={onClose}
-                        className="w-8 h-8 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] flex items-center justify-center text-slate-500 hover:text-white transition-all"
+                        className="w-8 h-8 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] flex items-center justify-center text-slate-500 hover:text-white transition-all duration-200 hover:scale-105 active:scale-95"
                         title="Close"
                     >
                         <X className="w-3.5 h-3.5" />
                     </button>
                 </div>
 
-                {/* Pipeline header */}
-                <AgentPipelineHeader
-                    currentStage={state.stage}
-                    meta={state.meta}
-                    iteration={state.iteration}
-                    onExplain={openExplain}
-                />
-
-                {/* DNA summary strip */}
-                <TripDNASummaryStrip state={state} />
-
+                {/* Mobile-only pipeline header + DNA strip */}
+                <div className="lg:hidden">
+                    <AgentPipelineHeader
+                        currentStage={state.stage}
+                        meta={state.meta}
+                        iteration={state.iteration}
+                        onExplain={openExplain}
+                        layout="horizontal"
+                    />
+                    <TripDNASummaryStrip state={state} />
+                </div>
             </div>
 
-            {/* Scrollable stage content */}
-            <div className="flex-1 overflow-y-auto flow-scroll px-4 py-6 max-w-2xl mx-auto w-full">
-                <AnimatePresence mode="wait">
-                    <motion.div
-                        key={state.stage}
-                        variants={stageVariants}
-                        initial={prefersReduced ? {} : "initial"}
-                        animate="animate"
-                        exit={prefersReduced ? {} : "exit"}
-                        transition={stageTransition}
-                    >
-                        {/* Planner */}
-                        {(state.stage === "planner") && (
-                            <PlannerStage
-                                input={flowInput}
-                                result={state.plannerResult}
-                                meta={state.meta.planner ?? null}
-                                isLoading={isLoading}
-                                error={state.error}
-                                onApprove={(result) => { dispatch({ type: "ADVANCE" }); runResearch(result); }}
-                                onAdjust={() => {}}
-                                onExplain={() => openExplain("planner")}
-                                onRetry={() => runPlanner()}
-                                onSubmitFeedback={(fb) => runPlanner(fb)}
-                            />
-                        )}
+            {/* ── 3-Column Layout ────────────────────────────────────────── */}
+            <div className="flex-1 overflow-hidden flow-layout">
+                {/* ── LEFT SIDEBAR ── Trip meta + vertical stepper ────────── */}
+                <aside className="hidden lg:flex flex-col border-r border-white/[0.06] bg-[#0A0D12]/60 overflow-y-auto flow-scroll">
+                    {/* Trip DNA */}
+                    <div className="px-4 pt-5 pb-3 border-b border-white/[0.06]">
+                        <TripDNASummaryStrip state={state} layout="vertical" />
+                    </div>
 
-                        {/* Research */}
-                        {state.stage === "research" && (
-                            <ResearchStage
-                                input={flowInput}
-                                result={state.researchResult}
-                                meta={state.meta.research ?? null}
-                                isLoading={isLoading}
-                                error={state.error}
-                                onApprove={(result) => { dispatch({ type: "ADVANCE" }); runLogistics(result); }}
-                                onAdjust={() => {}}
-                                onExplain={() => openExplain("research")}
-                                onRetry={() => state.plannerResult && runResearch(state.plannerResult)}
-                                onSubmitFeedback={(fb) => state.plannerResult && runResearch(state.plannerResult, fb)}
-                            />
-                        )}
+                    {/* Vertical pipeline stepper */}
+                    <div className="flex-1 px-2 py-4">
+                        <AgentPipelineHeader
+                            currentStage={state.stage}
+                            meta={state.meta}
+                            iteration={state.iteration}
+                            onExplain={openExplain}
+                            layout="vertical"
+                        />
+                    </div>
+                </aside>
 
-                        {/* Logistics */}
-                        {state.stage === "logistics" && (
-                            <LogisticsStage
-                                input={flowInput}
-                                result={state.logisticsResult}
-                                meta={state.meta.logistics ?? null}
-                                isLoading={isLoading}
-                                error={state.error}
-                                onApprove={(result) => { dispatch({ type: "ADVANCE" }); runBudget(result); }}
-                                onAdjust={() => {}}
-                                onExplain={() => openExplain("logistics")}
-                                onRetry={() => state.researchResult && runLogistics(state.researchResult)}
-                                onReoptimize={() => state.researchResult && runLogistics(state.researchResult)}
-                            />
-                        )}
+                {/* ── CENTER — Main stage content ─────────────────────────── */}
+                <main className="flex-1 overflow-y-auto flow-scroll">
+                    <div className="px-6 py-6 max-w-3xl mx-auto w-full">
+                        <AnimatePresence mode="wait">
+                            <motion.div
+                                key={state.stage}
+                                variants={stageVariants}
+                                initial={prefersReduced ? {} : "initial"}
+                                animate="animate"
+                                exit={prefersReduced ? {} : "exit"}
+                                transition={stageTransition}
+                            >
+                                {/* Planner */}
+                                {(state.stage === "planner") && (
+                                    <PlannerStage
+                                        input={flowInput}
+                                        result={state.plannerResult}
+                                        meta={state.meta.planner ?? null}
+                                        isLoading={isLoading}
+                                        error={state.error}
+                                        onApprove={(result) => { dispatch({ type: "ADVANCE" }); runResearch(result); }}
+                                        onAdjust={() => {}}
+                                        onExplain={() => openExplain("planner")}
+                                        onRetry={() => runPlanner()}
+                                        onSubmitFeedback={(fb) => runPlanner(fb)}
+                                    />
+                                )}
 
-                        {/* Budget */}
-                        {state.stage === "budget" && (
-                            <BudgetStage
-                                input={flowInput}
-                                result={state.budgetResult}
-                                meta={state.meta.budget ?? null}
-                                isLoading={isLoading}
-                                error={state.error}
-                                onApprove={(result) => { dispatch({ type: "ADVANCE" }); runSafety(result); }}
-                                onAdjust={() => state.researchResult && runLogistics(state.researchResult)}
-                                onExplain={() => openExplain("budget")}
-                                onRetry={() => state.logisticsResult && runBudget(state.logisticsResult)}
-                            />
-                        )}
+                                {/* Research */}
+                                {state.stage === "research" && (
+                                    <ResearchStage
+                                        input={flowInput}
+                                        result={state.researchResult}
+                                        meta={state.meta.research ?? null}
+                                        isLoading={isLoading}
+                                        error={state.error}
+                                        onApprove={(result) => { dispatch({ type: "ADVANCE" }); runLogistics(result); }}
+                                        onAdjust={() => {}}
+                                        onExplain={() => openExplain("research")}
+                                        onRetry={() => state.plannerResult && runResearch(state.plannerResult)}
+                                        onSubmitFeedback={(fb) => state.plannerResult && runResearch(state.plannerResult, fb)}
+                                    />
+                                )}
 
-                        {/* Safety */}
-                        {(state.stage === "safety" || state.stage === "saved") && (
-                            <SafetyStage
-                                input={flowInput}
-                                result={state.safetyResult}
-                                meta={state.meta.safety ?? null}
-                                isLoading={isLoading}
-                                error={state.error}
-                                onApprove={() => handleSave()}
-                                onAdjust={() => {}}
-                                onExplain={() => openExplain("safety")}
-                                onRetry={() => state.budgetResult && runSafety(state.budgetResult)}
-                                onSave={handleSave}
-                                onRedo={() => {
-                                    resetAllAndRestart();
-                                    showToast("Starting over — Run #" + (state.iteration + 1), "info");
-                                    setTimeout(() => runPlanner(), 100);
-                                }}
-                                isSaving={isSaving}
-                            />
-                        )}
-                    </motion.div>
-                </AnimatePresence>
-            </div>
+                                {/* Logistics */}
+                                {state.stage === "logistics" && (
+                                    <LogisticsStage
+                                        input={flowInput}
+                                        result={state.logisticsResult}
+                                        meta={state.meta.logistics ?? null}
+                                        isLoading={isLoading}
+                                        error={state.error}
+                                        onApprove={(result) => { dispatch({ type: "ADVANCE" }); runBudget(result); }}
+                                        onAdjust={() => {}}
+                                        onExplain={() => openExplain("logistics")}
+                                        onRetry={() => state.researchResult && runLogistics(state.researchResult)}
+                                        onReoptimize={() => state.researchResult && runLogistics(state.researchResult)}
+                                    />
+                                )}
 
-            {/* Keyboard shortcuts bar */}
-            <div className="fixed bottom-20 left-4 z-20 hidden md:flex items-center gap-2 opacity-30 hover:opacity-70 transition-opacity">
-                {[
-                    { key: "Enter", label: "approve" },
-                    { key: "Esc", label: "close" },
-                    { key: "?", label: "explain" },
-                ].map(({ key, label }) => (
-                    <span key={key} className="text-[10px] text-slate-500 flex items-center gap-1">
-                        <kbd className="bg-white/[0.06] border border-white/[0.08] rounded px-1 py-0.5 font-mono">{key}</kbd>
-                        {label}
-                    </span>
-                ))}
+                                {/* Budget */}
+                                {state.stage === "budget" && (
+                                    <BudgetStage
+                                        input={flowInput}
+                                        result={state.budgetResult}
+                                        meta={state.meta.budget ?? null}
+                                        isLoading={isLoading}
+                                        error={state.error}
+                                        onApprove={(result) => { dispatch({ type: "ADVANCE" }); runSafety(result); }}
+                                        onAdjust={() => state.researchResult && runLogistics(state.researchResult)}
+                                        onExplain={() => openExplain("budget")}
+                                        onRetry={() => state.logisticsResult && runBudget(state.logisticsResult)}
+                                    />
+                                )}
+
+                                {/* Safety */}
+                                {(state.stage === "safety" || state.stage === "saved") && (
+                                    <SafetyStage
+                                        input={flowInput}
+                                        result={state.safetyResult}
+                                        meta={state.meta.safety ?? null}
+                                        isLoading={isLoading}
+                                        error={state.error}
+                                        onApprove={() => handleSave()}
+                                        onAdjust={() => {}}
+                                        onExplain={() => openExplain("safety")}
+                                        onRetry={() => state.budgetResult && runSafety(state.budgetResult)}
+                                        onSave={handleSave}
+                                        onRedo={() => {
+                                            resetAllAndRestart();
+                                            showToast("Starting over — Run #" + (state.iteration + 1), "info");
+                                            setTimeout(() => runPlanner(), 100);
+                                        }}
+                                        isSaving={isSaving}
+                                    />
+                                )}
+                            </motion.div>
+                        </AnimatePresence>
+                    </div>
+                </main>
+
+                {/* ── RIGHT SIDEBAR ── AI suggestions ─────────────────────── */}
+                <aside className="hidden lg:flex flex-col border-l border-white/[0.06] bg-[#0A0D12]/40 overflow-hidden">
+                    <AISuggestionsPanel state={state} isLoading={isLoading} />
+                </aside>
             </div>
 
             {/* Offline banner */}

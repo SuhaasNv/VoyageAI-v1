@@ -40,14 +40,11 @@ const DAY_THEMES = [
     { emoji: "🎨", label: "Art & Culture" },
 ];
 
-// Cycling accent hex colors for day cards (indigo → amber → purple → emerald → sky → pink)
 const CARD_ACCENT_COLORS = ["#6366f1", "#f59e0b", "#a855f7", "#10b981", "#0ea5e9", "#ec4899"];
 
 function getThemeEmoji(theme: string): string {
-    // Exact match first
     const exact = DAY_THEMES.find((t) => t.label === theme);
     if (exact) return exact.emoji;
-    // Keyword-based fallback so LLM variations still get the right emoji
     const l = theme.toLowerCase();
     if (l.includes("culture") || l.includes("landmark") || l.includes("heritage") || l.includes("historic")) return "🏛️";
     if (l.includes("nature") || l.includes("park") || l.includes("beach") || l.includes("outdoor")) return "🌿";
@@ -67,9 +64,6 @@ function getThemeEmoji(theme: string): string {
 
 
 // ─── Dropdown ─────────────────────────────────────────────────────────────────
-// Full-screen backdrop as the portal root — clicking it closes the dropdown.
-// The menu is a CHILD of the backdrop, so stopPropagation on the menu prevents
-// backdrop's onClick from firing when clicking inside the menu.
 
 interface DropdownOption { emoji: string; label: string }
 
@@ -85,13 +79,18 @@ function PortalDropdown({
     const [open, setOpen]       = useState(false);
     const [mounted, setMounted] = useState(false);
     const triggerRef            = useRef<HTMLButtonElement>(null);
+    // Ref to the dropdown's own scrollable list — scroll inside it must NOT close the menu.
+    const menuScrollRef         = useRef<HTMLDivElement>(null);
 
     useEffect(() => { setMounted(true); }, []);
 
-    // Close on scroll so the menu doesn't drift from the trigger
     useEffect(() => {
         if (!open) return;
-        const close = () => setOpen(false);
+        const close = (e: Event) => {
+            // Ignore scroll events that originate inside the dropdown's scroll container.
+            if (menuScrollRef.current?.contains(e.target as Node)) return;
+            setOpen(false);
+        };
         window.addEventListener("scroll", close, true);
         return () => window.removeEventListener("scroll", close, true);
     }, [open]);
@@ -101,34 +100,29 @@ function PortalDropdown({
         setOpen((prev) => !prev);
     }
 
-    // Compute position from the ref on every render so it always reflects current scroll
     const rect = open && triggerRef.current ? triggerRef.current.getBoundingClientRect() : null;
-
     const current = options.find((o) => o.label === value) ?? options[0];
 
     return (
         <>
-            {/* Trigger */}
             <button
                 ref={triggerRef}
                 onClick={toggle}
                 type="button"
-                className="inline-flex items-center gap-2 text-sm font-semibold text-white hover:text-indigo-300 transition-colors"
+                className="inline-flex items-center gap-2 text-sm font-semibold text-white hover:text-indigo-300 transition-colors duration-200"
             >
                 <span className="text-base leading-none">{current.emoji}</span>
                 <span>{current.label}</span>
                 <ChevronDown
-                    className={`w-3.5 h-3.5 text-slate-400 flex-shrink-0 transition-transform duration-150 ${open ? "rotate-180" : ""}`}
+                    className={`w-3.5 h-3.5 text-slate-400 flex-shrink-0 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
                 />
             </button>
 
-            {/* Portal: full-screen backdrop wraps the menu so stopPropagation works */}
             {mounted && open && rect && createPortal(
                 <div
                     style={{ position: "fixed", inset: 0, zIndex: 99998 }}
                     onClick={() => setOpen(false)}
                 >
-                    {/* Menu — child of backdrop; stopPropagation prevents backdrop close */}
                     <div
                         onClick={(e) => e.stopPropagation()}
                         style={{
@@ -144,7 +138,8 @@ function PortalDropdown({
                             boxShadow: "0 20px 60px rgba(0,0,0,0.85)",
                         }}
                     >
-                        <div style={{ padding: 6, maxHeight: 260, overflowY: "auto" }}>
+                        {/* menuScrollRef is attached here so the scroll listener knows to ignore scroll events inside */}
+                        <div ref={menuScrollRef} style={{ padding: 6, maxHeight: 260, overflowY: "auto" }}>
                             {options.map((opt) => (
                                 <button
                                     key={opt.label}
@@ -218,23 +213,34 @@ export function PlannerStage({
     const [departureMorning, setDepartureMorning]  = useState(DEPARTURE_MORNING[0].label);
     const [feedback,         setFeedback]          = useState("");
     const [heroError,        setHeroError]         = useState(false);
+    const [expandedDay,      setExpandedDay]       = useState<number | null>(null);
 
-    // Sync when a new result arrives from the planner agent
     const prevPlannerResultRef = useRef<TripContext | null>(null);
     if (result !== prevPlannerResultRef.current) {
         prevPlannerResultRef.current = result;
         if (result) {
             setLocalResult(result);
-            const sIdx = ["relaxed","balanced","adventure","luxury","budget"]
-                .indexOf(result.preferences?.style ?? "balanced");
-            if (sIdx >= 0) { setStyleIdx(sIdx); setOrigStyleIdx(sIdx); }
-            const pIdx = ["slow","moderate","fast"]
-                .indexOf(result.preferences?.pace ?? "moderate");
-            if (pIdx >= 0) { setPaceIdx(pIdx); setOrigPaceIdx(pIdx); }
+
+            // Resolve style index — fall back to "balanced" (1) for any unrecognised value
+            // so orig and current are always in sync after a fresh result arrives.
+            const STYLES = ["relaxed", "balanced", "adventure", "luxury", "budget"] as const;
+            const sIdx = Math.max(0, STYLES.indexOf((result.preferences?.style ?? "balanced") as typeof STYLES[number])) || 1;
+            setStyleIdx(sIdx);
+            setOrigStyleIdx(sIdx);
+
+            // Resolve pace index — fall back to "moderate" (1)
+            const PACES = ["slow", "moderate", "fast"] as const;
+            const pIdx = Math.max(0, PACES.indexOf((result.preferences?.pace ?? "moderate") as typeof PACES[number])) || 1;
+            setPaceIdx(pIdx);
+            setOrigPaceIdx(pIdx);
+
+            // Reset arrival / departure selectors so they don't hold stale user
+            // picks that would keep hasChanges === true after a successful re-plan.
+            setArrivalSuffix(ARRIVAL_ACTIVITIES[0].label);
+            setDepartureMorning(DEPARTURE_MORNING[0].label);
         }
     }
 
-    // Any user edit → show Re-plan instead of "Looks good"
     const hasChanges =
         styleIdx !== origStyleIdx ||
         paceIdx !== origPaceIdx ||
@@ -283,7 +289,7 @@ export function PlannerStage({
                     <div className="space-y-3 animate-pulse">
                         <div className="h-64 bg-white/[0.04] rounded-2xl" />
                         <div className="h-28 bg-white/[0.04] rounded-2xl" />
-                        {[1,2,3,4].map((i) => <div key={i} className="h-16 bg-white/[0.04] rounded-2xl" />)}
+                        {[1,2,3,4].map((i) => <div key={i} className="h-20 bg-white/[0.04] rounded-2xl" />)}
                     </div>
                 }
             />
@@ -306,11 +312,10 @@ export function PlannerStage({
             initial={prefersReduced ? {} : { opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-            className="space-y-5"
+            className="space-y-6"
         >
             {/* ── Hero banner ───────────────────────────────────────────── */}
-            <div className="relative rounded-2xl overflow-hidden h-64">
-                {/* Background: destination photo or rich gradient fallback */}
+            <div className="relative rounded-2xl overflow-hidden h-56 md:h-64 gradient-border">
                 {!heroError ? (
                     <img
                         src={heroUrl}
@@ -329,37 +334,34 @@ export function PlannerStage({
                     }} />
                 )}
 
-                {/* Cinematic vignette overlay */}
                 <div className="absolute inset-0" style={{
                     background: "linear-gradient(to top, rgba(5,7,12,0.95) 0%, rgba(5,7,12,0.45) 45%, rgba(5,7,12,0.15) 100%)",
                 }} />
-                {/* Subtle top fade */}
                 <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-black/40 to-transparent" />
 
-                {/* Destination info — floating at bottom */}
-                <div className="absolute bottom-0 left-0 right-0 px-5 pb-5">
+                <div className="absolute bottom-0 left-0 right-0 px-6 pb-5">
                     <div className="flex items-end justify-between gap-4">
                         <div className="min-w-0">
                             <div className="flex items-center gap-1.5 mb-2">
                                 <MapPin className="w-3 h-3 text-indigo-400/70 flex-shrink-0" />
                                 <span className="text-[9px] font-bold text-indigo-400/70 uppercase tracking-[0.15em]">Your Destination</span>
                             </div>
-                            <h2 className="text-4xl font-black text-white leading-none tracking-tight drop-shadow-2xl truncate">
+                            <h2 className="text-3xl md:text-4xl font-black text-white leading-none tracking-tight drop-shadow-2xl truncate">
                                 {localResult.destination}
                             </h2>
-                            <div className="flex items-center gap-2 mt-2 flex-wrap">
+                            <div className="flex items-center gap-2 mt-2.5 flex-wrap">
                                 <span className="text-[11px] text-white/50 font-medium">
                                     {localResult.startDate} → {localResult.endDate}
                                 </span>
-                                <span className="text-white/25">·</span>
-                                <span className="text-[11px] font-bold text-indigo-300/90 bg-indigo-500/15 border border-indigo-500/25 rounded-full px-2 py-0.5">
+                                <span className="text-white/25">&middot;</span>
+                                <span className="text-[11px] font-bold text-indigo-300/90 bg-indigo-500/15 border border-indigo-500/25 rounded-full px-2.5 py-0.5">
                                     {localResult.durationDays} days
                                 </span>
                             </div>
                         </div>
                         <button
                             onClick={onExplain}
-                            className="flex-shrink-0 text-[10px] font-semibold bg-white/10 backdrop-blur-md border border-white/15 rounded-full px-3 py-1.5 text-white/60 hover:bg-white/20 hover:text-white transition-all"
+                            className="flex-shrink-0 text-[10px] font-semibold bg-white/10 backdrop-blur-md border border-white/15 rounded-full px-3 py-1.5 text-white/60 hover:bg-white/20 hover:text-white transition-all duration-200 hover:scale-105 active:scale-95"
                         >
                             ? Why this
                         </button>
@@ -368,19 +370,22 @@ export function PlannerStage({
             </div>
 
             {/* ── Trip preferences ──────────────────────────────────────── */}
-            <div className="bg-white/[0.03] border border-white/[0.07] rounded-2xl p-4 space-y-4">
+            <div className="card-premium p-5 space-y-5">
+                <h3 className="text-sm font-bold text-white tracking-tight">Customize Your Trip</h3>
+
                 {/* Style */}
                 <div>
-                    <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-2">Trip style</p>
-                    <div className="flex gap-1.5 flex-wrap">
+                    <p className="section-heading mb-2.5">Trip style</p>
+                    <div className="flex gap-2 flex-wrap">
                         {(["relaxed","balanced","adventure","luxury","budget"] as const).map((s, i) => {
                             const icons: Record<string, string> = { relaxed:"🏖️", balanced:"⚖️", adventure:"🧗", luxury:"✨", budget:"💰" };
+                            const isSelected = styleIdx === i;
                             return (
                                 <button key={s} onClick={() => setStyleIdx(i)}
-                                    className={`text-xs rounded-full px-3 py-1.5 border transition-all font-medium ${
-                                        styleIdx === i
-                                            ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-200"
-                                            : "bg-white/[0.03] border-white/[0.06] text-slate-500 hover:text-slate-300 hover:border-white/[0.12]"
+                                    className={`text-xs rounded-xl px-3.5 py-2 border transition-all duration-200 font-medium hover:scale-[1.03] active:scale-[0.97] ${
+                                        isSelected
+                                            ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-200 shadow-[0_0_12px_rgba(99,102,241,0.2)]"
+                                            : "bg-white/[0.03] border-white/[0.06] text-slate-500 hover:text-slate-300 hover:border-white/[0.15] hover:bg-white/[0.06]"
                                     }`}>
                                     {icons[s]} {s.charAt(0).toUpperCase() + s.slice(1)}
                                 </button>
@@ -391,46 +396,54 @@ export function PlannerStage({
 
                 {/* Pace */}
                 <div>
-                    <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-2">Daily pace</p>
-                    <div className="flex gap-1.5">
+                    <p className="section-heading mb-2.5">Daily pace</p>
+                    <div className="flex gap-2">
                         {([
                             { label: "Slow",     emoji: "🐢", desc: "relaxed, fewer stops" },
                             { label: "Moderate", emoji: "🚶", desc: "balanced schedule" },
                             { label: "Fast",     emoji: "🏃", desc: "packed, see everything" },
-                        ] as const).map(({ label, emoji, desc }, i) => (
-                            <button key={label} onClick={() => setPaceIdx(i)}
-                                className={`flex-1 flex flex-col items-center gap-0.5 py-2 px-2 rounded-xl border transition-all text-center ${
-                                    paceIdx === i
-                                        ? "bg-indigo-500/15 border-indigo-500/35 text-indigo-200"
-                                        : "bg-white/[0.03] border-white/[0.06] text-slate-500 hover:text-slate-300 hover:border-white/[0.12]"
-                                }`}>
-                                <span className="text-base">{emoji}</span>
-                                <span className="text-[11px] font-semibold">{label}</span>
-                                <span className="text-[9px] opacity-60 hidden sm:block">{desc}</span>
-                            </button>
-                        ))}
+                        ] as const).map(({ label, emoji, desc }, i) => {
+                            const isSelected = paceIdx === i;
+                            return (
+                                <button key={label} onClick={() => setPaceIdx(i)}
+                                    className={`flex-1 flex flex-col items-center gap-1 py-2.5 px-2 rounded-xl border transition-all duration-200 text-center hover:scale-[1.02] active:scale-[0.98] ${
+                                        isSelected
+                                            ? "bg-indigo-500/15 border-indigo-500/35 text-indigo-200 shadow-[0_0_12px_rgba(99,102,241,0.15)]"
+                                            : "bg-white/[0.03] border-white/[0.06] text-slate-500 hover:text-slate-300 hover:border-white/[0.15]"
+                                    }`}>
+                                    <span className="text-lg">{emoji}</span>
+                                    <span className="text-[11px] font-bold">{label}</span>
+                                    <span className="text-[9px] opacity-60 hidden sm:block">{desc}</span>
+                                </button>
+                            );
+                        })}
                     </div>
                 </div>
 
                 {localResult.preferences?.budget && (
-                    <div className="flex items-center gap-2 pt-1 border-t border-white/[0.05]">
-                        <span className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Budget</span>
-                        <span className="text-sm font-bold text-emerald-400">${localResult.preferences.budget.toLocaleString()}</span>
+                    <div className="flex items-center gap-3 pt-2 border-t border-white/[0.06]">
+                        <span className="section-heading">Budget</span>
+                        <span className="text-base font-bold text-emerald-400">${localResult.preferences.budget.toLocaleString()}</span>
                     </div>
                 )}
             </div>
 
-            {/* ── Day-by-day cards ─────────────────────────────────────── */}
-            <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                    <div className="h-px flex-1 bg-white/[0.06]" />
-                    <p className="text-[10px] text-slate-500 uppercase tracking-[0.18em] font-bold whitespace-nowrap">
+            {/* ── Day-by-day timeline cards ─────────────────────────────── */}
+            <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                    <div className="h-px flex-1 bg-gradient-to-r from-transparent via-white/[0.08] to-transparent" />
+                    <h3 className="text-sm font-bold text-white tracking-tight whitespace-nowrap flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
                         Day-by-Day Blueprint
-                    </p>
-                    <div className="h-px flex-1 bg-white/[0.06]" />
+                    </h3>
+                    <div className="h-px flex-1 bg-gradient-to-r from-transparent via-white/[0.08] to-transparent" />
                 </div>
-                <p className="text-[11px] text-slate-600 text-center -mt-1">Tap any theme to change it</p>
-                <div className="space-y-2">
+                <p className="text-[11px] text-slate-600 text-center">Tap any theme to customize</p>
+
+                <div className="space-y-2.5 relative">
+                    {/* Timeline line */}
+                    <div className="absolute left-[22px] top-4 bottom-4 w-px bg-gradient-to-b from-indigo-500/30 via-purple-500/20 to-rose-500/30 hidden md:block" />
+
                     {localResult.days.map((day, idx) => {
                         const isFirst = day.day === 1;
                         const isLast  = day.day === totalDays;
@@ -440,83 +453,126 @@ export function PlannerStage({
                             ? "#f43f5e"
                             : CARD_ACCENT_COLORS[(idx - 1) % CARD_ACCENT_COLORS.length];
                         const bgEmoji = isFirst ? "🛬" : isLast ? "🛫" : getThemeEmoji(day.theme);
+                        const isExpanded = expandedDay === day.day;
 
                         return (
                             <motion.div
                                 key={day.day}
-                                initial={prefersReduced ? {} : { opacity: 0, y: 10 }}
+                                initial={prefersReduced ? {} : { opacity: 0, y: 12 }}
                                 animate={{ opacity: 1, y: 0 }}
-                                transition={{ duration: 0.25, delay: idx * 0.045 }}
-                                className="relative bg-white/[0.035] border border-white/[0.06] rounded-2xl p-4 flex items-center gap-3 overflow-hidden hover:bg-white/[0.055] transition-colors"
-                                style={{ borderLeft: `3px solid ${accentColor}40` }}
+                                transition={{ duration: 0.3, delay: idx * 0.05 }}
+                                className="relative group"
                             >
-                                {/* Faded emoji backdrop */}
-                                <span
-                                    className="absolute right-4 top-1/2 -translate-y-1/2 text-6xl select-none pointer-events-none"
-                                    style={{ opacity: 0.08 }}
+                                <div
+                                    onClick={() => setExpandedDay(isExpanded ? null : day.day)}
+                                    className="relative bg-white/[0.035] backdrop-blur-sm border border-white/[0.06] rounded-2xl p-4 md:pl-12 flex items-center gap-4 overflow-hidden cursor-pointer transition-all duration-250 hover:bg-white/[0.06] hover:border-white/[0.12] hover:shadow-[0_8px_32px_rgba(0,0,0,0.2)] group-hover:-translate-y-0.5"
+                                    style={{
+                                        borderLeft: `3px solid ${accentColor}50`,
+                                    }}
                                 >
-                                    {bgEmoji}
-                                </span>
-
-                                {/* Day badge */}
-                                <div className="flex flex-col items-center gap-0.5 flex-shrink-0 w-9">
-                                    <div
-                                        className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-black"
-                                        style={{
-                                            background: `${accentColor}1a`,
-                                            border: `1px solid ${accentColor}30`,
-                                            color: accentColor,
-                                        }}
-                                    >
-                                        {day.day}
-                                    </div>
+                                    {/* Faded emoji backdrop */}
                                     <span
-                                        className="text-[7px] font-black tracking-[0.12em] uppercase"
-                                        style={{ color: `${accentColor}60` }}
+                                        className="absolute right-4 top-1/2 -translate-y-1/2 text-6xl select-none pointer-events-none opacity-[0.06] group-hover:opacity-[0.1] transition-opacity duration-300"
                                     >
-                                        DAY
+                                        {bgEmoji}
                                     </span>
-                                </div>
 
-                                <div className="flex-1 min-w-0">
-                                    {isFirst ? (
-                                        <div className="flex items-center gap-1.5 flex-wrap">
-                                            <span className="text-base">🛬</span>
-                                            <span className="text-sm font-semibold text-teal-300 flex-shrink-0">Arrival &</span>
-                                            <PortalDropdown
-                                                options={arrivalOptions}
-                                                value={arrivalSuffix}
-                                                onChange={setArrivalSuffix}
-                                            />
+                                    {/* Day number badge */}
+                                    <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
+                                        <div
+                                            className="w-11 h-11 rounded-xl flex items-center justify-center text-lg font-black transition-all duration-250 group-hover:scale-110"
+                                            style={{
+                                                background: `${accentColor}15`,
+                                                border: `1.5px solid ${accentColor}35`,
+                                                color: accentColor,
+                                                boxShadow: `0 0 16px ${accentColor}15`,
+                                            }}
+                                        >
+                                            {day.day}
                                         </div>
-                                    ) : isLast ? (
-                                        <div className="space-y-1.5">
+                                        <span
+                                            className="text-[7px] font-black tracking-[0.14em] uppercase"
+                                            style={{ color: `${accentColor}55` }}
+                                        >
+                                            DAY
+                                        </span>
+                                    </div>
+
+                                    {/* Content */}
+                                    <div className="flex-1 min-w-0">
+                                        {isFirst ? (
                                             <div className="flex items-center gap-1.5 flex-wrap">
-                                                <span className="text-[10px] text-slate-500 flex-shrink-0">Morning:</span>
+                                                <span className="text-base">🛬</span>
+                                                <span className="text-sm font-semibold text-teal-300 flex-shrink-0">Arrival &</span>
                                                 <PortalDropdown
-                                                    options={departureOptions}
-                                                    value={departureMorning}
-                                                    onChange={setDepartureMorning}
+                                                    options={arrivalOptions}
+                                                    value={arrivalSuffix}
+                                                    onChange={setArrivalSuffix}
                                                 />
                                             </div>
-                                            <div className="flex items-center gap-1.5">
-                                                <span className="text-base">🛫</span>
-                                                <span className="text-sm font-semibold text-rose-300">Departure</span>
-                                                <span className="text-[9px] text-slate-600 border border-white/[0.06] rounded-full px-1.5 py-0.5">fixed</span>
+                                        ) : isLast ? (
+                                            <div className="space-y-1.5">
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                    <span className="text-[10px] text-slate-500 flex-shrink-0">Morning:</span>
+                                                    <PortalDropdown
+                                                        options={departureOptions}
+                                                        value={departureMorning}
+                                                        onChange={setDepartureMorning}
+                                                    />
+                                                </div>
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="text-base">🛫</span>
+                                                    <span className="text-sm font-semibold text-rose-300">Departure</span>
+                                                    <span className="text-[9px] text-slate-600 border border-white/[0.06] rounded-full px-1.5 py-0.5">fixed</span>
+                                                </div>
                                             </div>
-                                        </div>
-                                    ) : (
-                                        <PortalDropdown
-                                            options={DAY_THEMES}
-                                            value={day.theme}
-                                            onChange={(newTheme) =>
-                                                setLocalResult((r) =>
-                                                    r ? { ...r, days: r.days.map((d) => d.day === day.day ? { ...d, theme: newTheme } : d) } : r
-                                                )
-                                            }
-                                        />
-                                    )}
+                                        ) : (
+                                            <div>
+                                                <PortalDropdown
+                                                    options={DAY_THEMES}
+                                                    value={day.theme}
+                                                    onChange={(newTheme) =>
+                                                        setLocalResult((r) =>
+                                                            r ? { ...r, days: r.days.map((d) => d.day === day.day ? { ...d, theme: newTheme } : d) } : r
+                                                        )
+                                                    }
+                                                />
+                                                <p className="text-[10px] text-slate-600 mt-1">
+                                                    {getThemeEmoji(day.theme)} Activities will match this theme
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Expand indicator */}
+                                    <ChevronDown
+                                        className={`w-4 h-4 text-slate-600 flex-shrink-0 transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
+                                    />
                                 </div>
+
+                                {/* Expanded detail */}
+                                <AnimatePresence>
+                                    {isExpanded && (
+                                        <motion.div
+                                            initial={{ height: 0, opacity: 0 }}
+                                            animate={{ height: "auto", opacity: 1 }}
+                                            exit={{ height: 0, opacity: 0 }}
+                                            transition={{ duration: 0.25 }}
+                                            className="overflow-hidden"
+                                        >
+                                            <div className="px-4 md:pl-12 pb-3 pt-2 border-t border-white/[0.04] mt-0">
+                                                <p className="text-xs text-slate-500 leading-relaxed">
+                                                    {isFirst
+                                                        ? "Arrive, settle in, and get oriented with your surroundings."
+                                                        : isLast
+                                                        ? "Make the most of your last morning before heading to the airport."
+                                                        : `Explore ${day.theme.toLowerCase()} — the research agent will find specific activities for this theme.`
+                                                    }
+                                                </p>
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
                             </motion.div>
                         );
                     })}
@@ -524,7 +580,7 @@ export function PlannerStage({
             </div>
 
             {/* ── Decision gate ─────────────────────────────────────────── */}
-            <div className="pt-4 pb-2">
+            <div className="pt-2 pb-2">
                 <AnimatePresence mode="wait">
                     {hasChanges ? (
                         <motion.div
@@ -542,12 +598,12 @@ export function PlannerStage({
                                 onChange={(e) => setFeedback(e.target.value)}
                                 placeholder="Optional: add extra notes… e.g. 'fewer museums, more food experiences'"
                                 rows={2}
-                                className="w-full bg-white/[0.04] border border-white/[0.08] focus:border-indigo-500/40 rounded-xl px-4 py-3 text-white text-sm placeholder:text-slate-600 outline-none resize-none transition-all"
+                                className="w-full bg-white/[0.04] border border-white/[0.08] focus:border-indigo-500/40 focus:ring-1 focus:ring-indigo-500/20 rounded-xl px-4 py-3 text-white text-sm placeholder:text-slate-600 outline-none resize-none transition-all duration-200"
                             />
                             <button
                                 onClick={handleReplan}
                                 disabled={isLoading}
-                                className="w-full py-4 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-400 hover:opacity-90 hover:scale-[1.01] text-white font-bold text-sm transition-all shadow-[0_0_28px_rgba(99,102,241,0.3)] flex items-center justify-center gap-2.5 disabled:opacity-50"
+                                className="w-full py-4 rounded-2xl btn-primary text-white flex items-center justify-center gap-2.5 disabled:opacity-50"
                             >
                                 {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
                                 Re-plan with my changes
@@ -562,13 +618,13 @@ export function PlannerStage({
                         >
                             <button
                                 onClick={() => onApprove(localResult!)}
-                                className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:opacity-90 hover:scale-[1.01] text-white font-bold text-sm transition-all shadow-[0_0_32px_rgba(16,185,129,0.25)] flex items-center justify-center gap-2.5"
+                                className="w-full py-4 rounded-2xl btn-approve text-white flex items-center justify-center gap-2.5"
                             >
                                 <Sparkles className="w-4 h-4" />
                                 This plan looks good — find activities
                                 <ArrowRight className="w-4 h-4" />
                             </button>
-                            <p className="text-xs text-slate-600 text-center mt-2">
+                            <p className="text-[11px] text-slate-600 text-center mt-2.5">
                                 Change any theme or preference above to adjust first
                             </p>
                         </motion.div>

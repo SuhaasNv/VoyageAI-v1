@@ -153,13 +153,13 @@ export function SafetyStage({
         >
             {/* Header */}
             <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                <h3 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
                     <Shield className="w-3.5 h-3.5 text-purple-400" />
                     Safety Briefing & Final Review
                 </h3>
                 <button
                     onClick={onExplain}
-                    className="text-xs text-purple-400 hover:text-purple-300 border border-purple-500/20 rounded-full px-2.5 py-0.5"
+                    className="text-xs text-purple-400 hover:text-purple-300 border border-purple-500/20 rounded-full px-2.5 py-0.5 hover:scale-105 active:scale-95 transition-transform duration-200"
                 >
                     ? Explain
                 </button>
@@ -216,7 +216,7 @@ export function SafetyStage({
 
             {/* Section 2 — Complete Itinerary */}
             <div className="space-y-4">
-                <h3 className="text-lg font-bold text-white">
+                <h3 className="text-xl font-bold text-white tracking-tight">
                     Your Complete Trip · {destination}
                 </h3>
 
@@ -230,14 +230,14 @@ export function SafetyStage({
                             initial={prefersReduced ? {} : { opacity: 0, y: 12 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ duration: 0.3, delay: 0.15 + idx * 0.08 }}
-                            className="bg-white/[0.04] border border-white/[0.08] rounded-2xl overflow-hidden"
+                            className="card-premium overflow-hidden hover:-translate-y-0.5 transition-all duration-250"
                         >
                             {/* Day header */}
                             <div className="px-4 py-3.5 bg-white/[0.02] border-b border-white/[0.04] flex items-center gap-3">
                                 <div className="w-9 h-9 rounded-xl bg-purple-500/15 border border-purple-500/25 flex items-center justify-center text-sm font-bold text-purple-300">
                                     {day.day}
                                 </div>
-                                <span className="text-base font-semibold text-white flex-1">{day.theme}</span>
+                                <span className="text-base font-bold text-white flex-1">{day.theme}</span>
                                 <span className="text-sm font-semibold text-slate-300">${Math.round(dayCost).toLocaleString()}</span>
                             </div>
 
@@ -249,7 +249,7 @@ export function SafetyStage({
                                     const slotMeta = SLOT_META[slot];
                                     return (
                                         <div key={slot}>
-                                            <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 px-4 pt-2.5 pb-1">
+                                            <p className="section-heading px-4 pt-2.5 pb-1">
                                                 {slotMeta.label}
                                             </p>
                                             {acts.map((act, i) => (
@@ -316,8 +316,8 @@ export function SafetyStage({
             </div>
 
             {/* Section 3 — Trip Score */}
-            <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-5 space-y-4">
-                <p className="text-sm font-bold text-white">How your trip scores</p>
+            <div className="card-premium p-5 space-y-4">
+                <p className="text-base font-bold text-white">How your trip scores</p>
                 <div className="space-y-3">
                     {scores.map((s, idx) => (
                         <ScoreBar
@@ -338,7 +338,7 @@ export function SafetyStage({
                     <button
                         onClick={onSave}
                         disabled={isSaving}
-                        className="flex-1 py-4 rounded-2xl bg-gradient-to-r from-[#10B981] to-emerald-400 text-white font-bold text-base shadow-[0_0_32px_rgba(16,185,129,0.3)] flex items-center justify-center gap-2 hover:opacity-90 transition-all disabled:opacity-60"
+                        className="btn-approve flex-1 py-4 rounded-2xl text-white font-bold text-base flex items-center justify-center gap-2 transition-all duration-200 disabled:opacity-60"
                     >
                         {isSaving ? (
                             <Loader2 className="w-5 h-5 animate-spin" />
@@ -349,7 +349,7 @@ export function SafetyStage({
                     </button>
                     <button
                         onClick={onRedo}
-                        className="px-5 py-4 rounded-2xl border border-white/[0.1] bg-white/[0.03] text-slate-300 font-semibold text-sm flex items-center gap-2 hover:bg-white/[0.06] transition-all"
+                        className="px-5 py-4 rounded-2xl border border-white/[0.1] bg-white/[0.03] text-slate-300 font-semibold text-sm flex items-center gap-2 hover:bg-white/[0.06] transition-all duration-200"
                     >
                         <RotateCcw className="w-4 h-4" />
                         Refine Plan

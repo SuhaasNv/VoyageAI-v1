@@ -119,13 +119,13 @@ export function LogisticsStage({
         >
             {/* Header */}
             <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                    <Navigation className="w-3.5 h-3.5 text-amber-400" />
+                <h3 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
+                    <Navigation className="w-5 h-5 text-amber-400" />
                     Route Optimization
                 </h3>
                 <button
                     onClick={onExplain}
-                    className="text-xs text-amber-400 hover:text-amber-300 border border-amber-500/20 rounded-full px-2.5 py-0.5"
+                    className="text-xs text-amber-400 hover:text-amber-300 border border-amber-500/20 rounded-full px-2.5 py-0.5 transition-transform duration-200 hover:scale-105 active:scale-95"
                 >
                     ? Explain
                 </button>
@@ -140,7 +140,7 @@ export function LogisticsStage({
                     { label: "Hotel", value: result.selectedHotel?.name ?? "—" },
                 ].map((stat) => (
                     <div key={stat.label} className="text-center overflow-hidden">
-                        <p className="text-xs text-slate-500">{stat.label}</p>
+                        <p className="section-heading">{stat.label}</p>
                         <p className="text-sm text-white font-semibold truncate">{stat.value}</p>
                     </div>
                 ))}
@@ -156,7 +156,7 @@ export function LogisticsStage({
                             <button
                                 key={day.day}
                                 onClick={() => setActiveDay(day.day)}
-                                className={`flex-shrink-0 rounded-full px-3.5 py-1 text-sm font-semibold transition-all ${
+                                className={`flex-shrink-0 rounded-full px-3.5 py-1 text-sm font-semibold transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] ${
                                     activeDay === day.day
                                         ? "bg-amber-500/15 border border-amber-500/30 text-amber-300"
                                         : "bg-white/[0.03] border border-white/[0.06] text-slate-500 hover:text-slate-300"
@@ -175,7 +175,7 @@ export function LogisticsStage({
                             animate={{ opacity: 1, x: 0 }}
                             exit={prefersReduced ? {} : { opacity: 0, x: -12 }}
                             transition={{ duration: 0.2 }}
-                            className="bg-white/[0.04] border border-white/[0.07] rounded-2xl p-4"
+                            className="card-premium p-4"
                         >
                             <div className="flex items-center gap-2 mb-3">
                                 <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold text-white ${DAY_COLORS[(activeDay - 1) % DAY_COLORS.length]}`}>
@@ -230,17 +230,17 @@ export function LogisticsStage({
                     </div>
 
                     {/* Route stats */}
-                    <div className="bg-white/[0.04] border border-white/[0.07] rounded-2xl p-4 grid grid-cols-3 gap-3">
-                        <div className="text-center">
-                            <p className="text-xs text-slate-500 mb-0.5">Activities</p>
+                    <div className="card-premium p-4 grid grid-cols-3 gap-3">
+                        <div className="text-center transition-transform duration-200 hover:-translate-y-0.5">
+                            <p className="section-heading mb-0.5">Activities</p>
                             <p className="text-lg font-bold text-white">{totalActivities}</p>
                         </div>
-                        <div className="text-center border-x border-white/[0.06]">
-                            <p className="text-xs text-slate-500 mb-0.5">Hotel</p>
+                        <div className="text-center border-x border-white/[0.06] transition-transform duration-200 hover:-translate-y-0.5">
+                            <p className="section-heading mb-0.5">Hotel</p>
                             <p className="text-sm font-bold text-white truncate px-1">{result.selectedHotel?.name ?? "—"}</p>
                         </div>
-                        <div className="text-center">
-                            <p className="text-xs text-slate-500 mb-0.5">Efficiency</p>
+                        <div className="text-center transition-transform duration-200 hover:-translate-y-0.5">
+                            <p className="section-heading mb-0.5">Efficiency</p>
                             <div className="flex items-center justify-center">
                                 <svg width="36" height="36" viewBox="0 0 36 36">
                                     <circle cx="18" cy="18" r="14" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="3" />
@@ -266,7 +266,7 @@ export function LogisticsStage({
             <div className="space-y-3 pt-2">
                 <button
                     onClick={() => onApprove(result)}
-                    className="w-full py-4 rounded-2xl bg-gradient-to-r from-[#10B981] to-emerald-400 hover:opacity-90 hover:scale-[1.01] text-white font-bold text-sm transition-all shadow-[0_0_32px_rgba(16,185,129,0.25)] flex items-center justify-center gap-2"
+                    className="w-full py-4 rounded-2xl btn-approve text-white flex items-center justify-center gap-2 transition-all duration-200"
                 >
                     <Sparkles className="w-4 h-4" />
                     Route is optimized!
@@ -274,7 +274,7 @@ export function LogisticsStage({
 
                 <button
                     onClick={() => setNoteOpen((o) => !o)}
-                    className="w-full py-3 rounded-2xl border border-white/[0.1] bg-white/[0.03] hover:bg-white/[0.06] text-slate-300 font-semibold text-sm transition-all"
+                    className="w-full py-3 rounded-2xl border border-white/[0.1] bg-white/[0.03] hover:bg-white/[0.06] text-slate-300 font-semibold text-sm transition-all duration-200"
                 >
                     Re-optimize
                 </button>
@@ -297,7 +297,7 @@ export function LogisticsStage({
                                 />
                                 <button
                                     onClick={() => { onReoptimize(note); setNoteOpen(false); setNote(""); }}
-                                    className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-white text-sm font-semibold transition-all"
+                                    className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-white text-sm font-semibold transition-all duration-200"
                                 >
                                     Re-run optimization
                                 </button>
