@@ -5,7 +5,7 @@ export interface PlannerDayTheme {
 
 export interface PlannerPreferences {
     budget?: number;
-    style?: "luxury" | "budget" | "balanced" | "adventure" | "relaxed";
+    style?: string;
     pace?: "slow" | "moderate" | "fast";
 }
 

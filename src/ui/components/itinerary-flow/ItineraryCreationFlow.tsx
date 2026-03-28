@@ -68,42 +68,6 @@ function Toast({ message, variant = "success" }: { message: string; variant?: "s
 
 // ─── Session resume banner ────────────────────────────────────────────────────
 
-function ResumeBanner({
-    sessionDestination,
-    onResume,
-    onDiscard,
-}: {
-    sessionDestination: string;
-    onResume: () => void;
-    onDiscard: () => void;
-}) {
-    return (
-        <motion.div
-            initial={{ opacity: 0, y: -12 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mx-4 mt-2 bg-white/[0.06] border border-white/[0.1] rounded-2xl px-4 py-3 flex items-center justify-between gap-3"
-        >
-            <p className="text-sm text-slate-300">
-                Resume planning <span className="text-white font-semibold">{sessionDestination}</span>?
-            </p>
-            <div className="flex gap-2 flex-shrink-0">
-                <button
-                    onClick={onResume}
-                    className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition-colors px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-full"
-                >
-                    Resume
-                </button>
-                <button
-                    onClick={onDiscard}
-                    className="text-xs font-semibold text-slate-500 hover:text-slate-300 transition-colors"
-                >
-                    Start fresh
-                </button>
-            </div>
-        </motion.div>
-    );
-}
-
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: ItineraryCreationFlowProps) {
@@ -111,8 +75,7 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
     const prefersReduced = useReducedMotion();
     const flowInput: FlowInput = { ...input, tripId };
 
-    const { state, dispatch, resetAllAndRestart, savedSession, resumeSavedSession, discardSavedSession } =
-        useFlowState(flowInput);
+    const { state, dispatch, resetAllAndRestart } = useFlowState(flowInput);
 
     const [isLoading, setIsLoading] = useState(false);
     const [explainOpen, setExplainOpen] = useState(false);
@@ -236,9 +199,16 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
         setIsLoading(true);
         dispatch({ type: "SET_LOADING", stage: "research" });
         try {
-            const context = feedback
-                ? { ...plannerResult, _feedback: feedback }
+            // Merge the user's original multi-vibe style (e.g. "relaxed, adventure") back into the
+            // planner result before forwarding to research. The planner LLM only emits single-token
+            // styles (its VALID_STYLES guard drops anything else), so without this merge the
+            // downstream agents would only see whatever single style the LLM happened to infer.
+            const mergedResult: TripContext = input.style
+                ? { ...plannerResult, preferences: { ...plannerResult.preferences, style: input.style } }
                 : plannerResult;
+            const context = feedback
+                ? { ...mergedResult, _feedback: feedback }
+                : mergedResult;
             const data = await callApi<EnrichedTripContext & { _meta: { durationMs: number; confidence: number; dataSources: string[]; decisionsLog: string[] } }>("research", context);
             const { _meta, ...result } = data;
             dispatch({ type: "SET_RESEARCH", result, meta: _meta });
@@ -328,8 +298,7 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
         setExplainOpen(true);
     }
 
-    const activeExplainStage: Exclude<FlowStage, "saved"> =
-        explainStage === "saved" ? "safety" : explainStage;
+    const activeExplainStage: Exclude<FlowStage, "saved"> = explainStage;
 
     // Don't render on server — portal needs document.body
     if (!mounted) return null;
@@ -375,14 +344,6 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
                 {/* DNA summary strip */}
                 <TripDNASummaryStrip state={state} />
 
-                {/* Session resume banner */}
-                {savedSession && (
-                    <ResumeBanner
-                        sessionDestination={savedSession.input.destination}
-                        onResume={resumeSavedSession}
-                        onDiscard={discardSavedSession}
-                    />
-                )}
             </div>
 
             {/* Scrollable stage content */}

@@ -296,41 +296,25 @@ Text: ${prompt}`;
         const stream = new ReadableStream({
             async start(controller) {
                 try {
-                    const apiKey = process.env.GEMINI_API_KEY;
-                    const provider = process.env.LLM_PROVIDER ?? "mock";
-
-                    if (provider === "mock") {
-                        // ── Mock streaming (dev/CI) ───────────────────────────
-                        const mockText = buildMockQAResponse(prompt);
-                        for (let i = 0; i < mockText.length; i++) {
-                            if (abort.signal.aborted) break;
-                            accumulated += mockText[i];
-                            controller.enqueue(encoder.encode(mockText[i]));
-                            await sleep(12);
-                        }
-                    } else {
-                        // ── Groq / other non-streaming provider ───────────────
-                        const client = getLLMClient();
-                        const qaCfg = selectModelConfig({ endpoint: "landing", intent: "QUESTION" });
-                        const response = await executeWithRetry(
-                            client,
-                            [
-                                {
-                                    role: "system",
-                                    content:
-                                        TRAVEL_QA_SYSTEM + (memCtx ? `\n\n${memCtx}` : ""),
-                                },
-                                { role: "user", content: prompt },
-                            ],
-                            { ...qaCfg }
-                        );
-                        accumulated = response.content;
-                        for (let i = 0; i < response.content.length; i++) {
-                            if (abort.signal.aborted) break;
-                            controller.enqueue(encoder.encode(response.content[i]));
-                            // Flush every 25 chars to keep streaming feel
-                            if (i % 25 === 0) await sleep(0);
-                        }
+                    const client = getLLMClient();
+                    const qaCfg = selectModelConfig({ endpoint: "landing", intent: "QUESTION" });
+                    const response = await executeWithRetry(
+                        client,
+                        [
+                            {
+                                role: "system",
+                                content:
+                                    TRAVEL_QA_SYSTEM + (memCtx ? `\n\n${memCtx}` : ""),
+                            },
+                            { role: "user", content: prompt },
+                        ],
+                        { ...qaCfg }
+                    );
+                    accumulated = response.content;
+                    for (let i = 0; i < response.content.length; i++) {
+                        if (abort.signal.aborted) break;
+                        controller.enqueue(encoder.encode(response.content[i]));
+                        if (i % 25 === 0) await sleep(0);
                     }
 
                     // Persist both turns only on successful, non-aborted generation.
@@ -586,25 +570,4 @@ Text: ${prompt}`;
 
 function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function buildMockQAResponse(prompt: string): string {
-    const dest = extractFirstDestinationWord(prompt);
-    return (
-        `Great question! ${dest ? `${dest} is a wonderful choice. ` : ""}VoyageAI specialises ` +
-        `in crafting personalised travel itineraries powered by cutting-edge AI. ` +
-        `Whether you're looking for hidden gems, budget tips, or luxury escapes, ` +
-        `we have you covered.\n\n` +
-        `Our AI analyses real-time data including weather patterns, local events, ` +
-        `crowd levels, and traveller reviews to build day-by-day plans tailored to your ` +
-        `travel style and budget. Each itinerary includes activity timing, cost estimates, ` +
-        `transport logistics, and smart packing lists.\n\n` +
-        `To create a complete personalised trip plan, sign up for free and let our AI ` +
-        `design your perfect journey — from arrival to departure.`
-    );
-}
-
-function extractFirstDestinationWord(prompt: string): string {
-    const match = prompt.match(/\b(?:to|in|for|visit|visiting|explore|exploring)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/);
-    return match?.[1] ?? "";
 }

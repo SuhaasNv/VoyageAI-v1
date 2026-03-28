@@ -50,7 +50,7 @@ export type OptimizedDay = {
     activities: ScheduledActivity[];
 };
 
-export type OptimizedTripContext = EnrichedTripContext & {
+export type OptimizedTripContext = Omit<EnrichedTripContext, "days"> & {
     days: OptimizedDay[];
     selectedHotel: HotelOption;
 };
@@ -226,9 +226,11 @@ function scoreHotel(hotel: HotelOption, context: EnrichedTripContext): number {
     if (hotel.priceRange === "$$$$" && budget !== undefined && budget < BUDGET_LUXURY_THRESHOLD) {
         score -= 10;
     }
-    // Style affinity
-    const style = context.preferences?.style?.toLowerCase() ?? "";
-    if (style && hotel.tags.some((t) => t.toLowerCase().includes(style))) score += 2;
+    // Style affinity — supports comma-separated multi-style strings
+    const styleTokens = context.preferences?.style
+        ? context.preferences.style.toLowerCase().split(",").map((s) => s.trim()).filter(Boolean)
+        : [];
+    if (styleTokens.length > 0 && hotel.tags.some((t) => styleTokens.some((s) => t.toLowerCase().includes(s)))) score += 2;
 
     return score;
 }

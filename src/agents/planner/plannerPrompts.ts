@@ -30,12 +30,17 @@ OUTPUT SCHEMA:
 
 DAY THEME RULES:
 - Themes must be generic descriptors — NO specific place names.
-- Follow this pattern as a guide (adapt to destination type):
-  Day 1: Arrival & Orientation
-  Day 2: Culture & Landmarks
-  Day 3: Nature & Relaxation
-  Day 4: Local Life & Markets
-  Day 5: Hidden Gems & Departure Prep
+- CRITICAL: Every day MUST have a UNIQUE theme. Never repeat the same theme across different days.
+- Day 1 is always arrival/orientation; the last day is always departure-prep/farewell.
+- Choose themes from this diverse pool (pick what fits the destination and trip style):
+    Culture & Landmarks | Nature & Relaxation | Local Life & Markets | Hidden Gems |
+    Adventure & Thrills | Leisure & Free Time | City Sightseeing | Shopping & Souvenirs |
+    Food & Culinary | Art & Culture | Coastal & Beaches | Nightlife & Entertainment |
+    Day Trip & Excursion | Wellness & Spa | History & Architecture | Festivals & Events |
+    Mountain & Hiking | River & Waterfront | Desert & Dunes | Temples & Spirituality
+- Vary themes meaningfully based on the destination. Dubai → Desert & Dunes, Gold Souk,
+  Coastal & Beaches. Kyoto → Temples & Spirituality, Art & Culture, Nature & Relaxation.
+  Paris → Art & Culture, Food & Culinary, City Sightseeing.
 - days array length MUST equal durationDays exactly.
 - day numbers must be sequential starting from 1.
 

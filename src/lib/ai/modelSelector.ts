@@ -96,7 +96,6 @@ const PRICE_PER_1M_TOKENS: Record<string, number> = {
     "gemini-2.5-flash":  (0.15 + 0.60) / 2,   // $0.375
     "gemini-2.5-pro":    (1.25 + 10.0) / 2,   // $5.625
     "gemini-1.5-flash":  (0.075 + 0.30)/ 2,   // $0.1875
-    "mock":              0,
 };
 
 function staticCostPerCall(model: string, avgTokens = 1500): number {
@@ -343,8 +342,7 @@ export function selectModel(opts: SelectModelOptions): SelectionResult {
         return true;
     });
 
-    // If no configured provider is available, fall back to the first candidate
-    // (the LLM stack will use mock / whatever is configured)
+    // If no configured provider is available, still rank candidates (calls will fail until keys exist)
     const pool = available.length > 0 ? available : candidates;
 
     // Attempt data-driven scoring

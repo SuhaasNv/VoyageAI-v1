@@ -53,9 +53,12 @@ const GENERIC_THEMES = [
     "Culture & Landmarks",
     "Nature & Relaxation",
     "Local Life & Markets",
-    "Hidden Gems & Exploration",
-    "Day Trip & Discovery",
-    "Leisure & Reflection",
+    "Hidden Gems",
+    "Food & Culinary",
+    "City Sightseeing",
+    "Art & Culture",
+    "Adventure & Thrills",
+    "Leisure & Free Time",
 ];
 
 function genericTheme(day: number): string {

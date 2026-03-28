@@ -88,12 +88,12 @@ function budgetHint(preferences?: TripContext["preferences"], durationDays = 1):
     return "luxury";
 }
 
-/** Map a style preference to a price range cap for hotel filtering. */
+/** Map a style preference to a price range cap for hotel filtering. Supports comma-separated multi-style strings. */
 function maxHotelPriceRange(style?: string): PriceRange {
     if (!style) return "$$$$";
-    const lower = style.toLowerCase();
-    if (lower === "luxury") return "$$$$";
-    if (lower === "adventure" || lower === "relaxed") return "$$$";
+    const styles = style.toLowerCase().split(",").map((s) => s.trim());
+    if (styles.some((s) => s === "luxury")) return "$$$$";
+    if (styles.some((s) => s === "adventure" || s === "relaxed")) return "$$$";
     return "$$$$";
 }
 
@@ -183,7 +183,9 @@ function validateAndSanitize(
             const theme = (inputDays.get(dayNum) ?? (typeof d.theme === "string" ? d.theme : "")).trim();
 
             const rawActivities = Array.isArray(d.activities) ? (d.activities as unknown[]) : [];
-            const isAdventureStyle = style?.toLowerCase() === "adventure";
+            const styleTokens = style ? style.toLowerCase().split(",").map((s) => s.trim()) : [];
+            const isAdventureStyle = styleTokens.includes("adventure");
+            const isRelaxedStyle = styleTokens.includes("relaxed");
 
             const activities: Activity[] = rawActivities
                 .filter((a): a is Record<string, unknown> => typeof a === "object" && a !== null)
@@ -192,8 +194,8 @@ function validateAndSanitize(
                     return name.trim().length > 0;
                 })
                 .filter((a) => {
-                    // For relaxed style, deprioritise adventure — keep only 1 max
-                    if (style?.toLowerCase() === "relaxed" && a.type === "adventure") return false;
+                    // For relaxed-only style, deprioritise adventure activities
+                    if (isRelaxedStyle && !isAdventureStyle && a.type === "adventure") return false;
                     return true;
                 })
                 .reduce<Activity[]>((acc, a) => {

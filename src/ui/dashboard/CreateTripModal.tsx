@@ -25,7 +25,7 @@ export function CreateTripModal({ isOpen, onClose, onFlowStart }: CreateTripModa
     const [destination, setDestination] = useState("");
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
-    const [selectedVibe, setSelectedVibe] = useState<string | null>(null);
+    const [selectedVibes, setSelectedVibes] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -43,7 +43,9 @@ export function CreateTripModal({ isOpen, onClose, onFlowStart }: CreateTripModa
 
             if (onFlowStart) {
                 // Launch the full agent pipeline flow
-                const style = VIBES.find((v) => v.label === selectedVibe)?.style;
+                const style = selectedVibes.length
+                    ? selectedVibes.map((lbl) => VIBES.find((v) => v.label === lbl)?.style ?? lbl).join(", ")
+                    : undefined;
                 onFlowStart(trip.id, {
                     tripId: trip.id,
                     destination: destination.trim(),
@@ -149,13 +151,19 @@ export function CreateTripModal({ isOpen, onClose, onFlowStart }: CreateTripModa
                             <label className="text-sm font-semibold text-slate-300">Travel Vibe</label>
                             <div className="flex flex-wrap gap-2">
                                 {VIBES.map(({ label }) => {
-                                    const isSelected = selectedVibe === label;
+                                    const isSelected = selectedVibes.includes(label);
                                     return (
                                         <button
                                             key={label}
                                             type="button"
                                             disabled={isLoading}
-                                            onClick={() => setSelectedVibe((v) => (v === label ? null : label))}
+                                            onClick={() =>
+                                                setSelectedVibes((prev) =>
+                                                    prev.includes(label)
+                                                        ? prev.filter((v) => v !== label)
+                                                        : [...prev, label]
+                                                )
+                                            }
                                             className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-all duration-200 ease-out disabled:opacity-50 ${
                                                 isSelected
                                                     ? "border-indigo-500/50 bg-indigo-500/15 text-indigo-300 shadow-[0_0_12px_rgba(99,102,241,0.2)]"

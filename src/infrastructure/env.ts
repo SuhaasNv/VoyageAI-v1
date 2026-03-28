@@ -16,7 +16,7 @@ const EnvSchema = z
         NODE_ENV: z.enum(["development", "production", "test"]).optional(),
         ACCESS_TOKEN_EXPIRY_MS: z.coerce.number().optional(),
         REFRESH_TOKEN_EXPIRY_MS: z.coerce.number().optional(),
-        LLM_PROVIDER: z.enum(["gemini", "openai", "mock"]).optional(),
+        LLM_PROVIDER: z.enum(["gemini", "openai"]).optional(),
         OPENAI_API_KEY: z.string().optional(),
         GEMINI_API_KEY: z.string().optional(),
         GEMINI_MODEL: z.string().optional(),

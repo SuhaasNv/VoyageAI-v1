@@ -23,16 +23,13 @@ const COST_PER_1M: Record<string, { input: number; output: number }> = {
     "llama-3.3-70b-versatile": { input: 0.59, output: 0.79 },
     "llama-3.1-70b-versatile": { input: 0.59, output: 0.79 },
     "llama-3.1-405b-reasoning": { input: 3.0, output: 15.0 },
-    // Mock / free
-    "voyage-ai-mock-v1.0": { input: 0, output: 0 },
-    mock: { input: 0, output: 0 },
 };
 
 function estimateCostUsd(response: LLMResponse): number {
     const key =
         Object.keys(COST_PER_1M).find((k) =>
             response.modelUsed.toLowerCase().includes(k)
-        ) ?? (response.provider === "mock" ? "mock" : null);
+        ) ?? null;
     const rates = key ? COST_PER_1M[key] : { input: 0.1, output: 0.3 };
     const inputCost = (response.promptTokens / 1_000_000) * rates.input;
     const outputCost = (response.completionTokens / 1_000_000) * rates.output;

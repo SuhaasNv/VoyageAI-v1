@@ -1,19 +1,15 @@
 /**
- * AI Orchestration Layer — Mock LLM Client
+ * AI Orchestration Layer — OpenAI + Google Gemini
  *
- * Architecture:
- * - Implements the LLMClient interface for easy swap to real providers
- * - Primary: OpenAI (gpt-4.1 / gpt-4.1-mini, per-agent model routing)
- * - Fallback: Gemini 2.5 Flash (used automatically if OpenAI fails)
- * - Includes retry logic, timeout handling, and response parsing
+ * - Primary provider from env (LLM_PROVIDER) with key-based fallback when the preferred key is missing
+ * - OpenAI: gpt-4.1 / gpt-4.1-mini (per-agent model routing when the base client is OpenAI)
+ * - Automatic OpenAI ↔ Gemini fallback on retries when both keys are set
  *
- * To configure:
- * 1. Set LLM_PROVIDER=openai in .env
- * 2. Set OPENAI_API_KEY (required) and GEMINI_API_KEY (fallback)
- * 3. LLMClientFactory.create({ agent }) returns the right scoped client
+ * Configure: OPENAI_API_KEY and/or GEMINI_API_KEY; optional LLM_PROVIDER=openai|gemini
  */
 
 import { AIErrorSchema, type AIError } from "./schemas";
+import { resolveRealLlmProvider } from "./resolveRealLlmProvider";
 import { logLLMCallFailure, logLLMUsage } from "../../services/logging/usageLogger";
 import { getRequestId, getRequestPathname } from "@/lib/requestContext";
 import { logInfo, logError, logStructured } from "@/infrastructure/logger";
@@ -42,771 +38,6 @@ export class AIServiceError extends Error {
             details: this.details,
             retryAfter: this.retryAfter,
         };
-    }
-}
-
-// ─────────────────────────────────────────
-//  Mock LLM Client (Development & Testing)
-// ─────────────────────────────────────────
-
-/**
- * MockLLMClient — Simulates LLM responses with realistic latency.
- * Returns structurally valid mock data for all AI endpoints.
- * Production swap: replace execute() with real API call.
- */
-class MockLLMClient implements LLMClient {
-    private readonly simulatedLatencyMs = { min: 800, max: 2400 };
-
-    private static readonly CITY_COORDS: Record<string, [number, number]> = {
-        // Europe
-        "paris": [48.8566, 2.3522], "london": [51.5074, -0.1278],
-        "rome": [41.9028, 12.4964], "barcelona": [41.3851, 2.1734],
-        "amsterdam": [52.3676, 4.9041], "berlin": [52.5200, 13.4050],
-        "madrid": [40.4168, -3.7038], "vienna": [48.2082, 16.3738],
-        "prague": [50.0755, 14.4378], "lisbon": [38.7167, -9.1395],
-        "athens": [37.9838, 23.7275], "budapest": [47.4979, 19.0402],
-        "florence": [43.7696, 11.2558], "milan": [45.4642, 9.1900],
-        "venice": [45.4408, 12.3155], "zurich": [47.3769, 8.5417],
-        "copenhagen": [55.6761, 12.5683], "stockholm": [59.3293, 18.0686],
-        "brussels": [50.8503, 4.3517], "warsaw": [52.2297, 21.0122],
-        "edinburgh": [55.9533, -3.1883], "dublin": [53.3498, -6.2603],
-        // Asia
-        "tokyo": [35.6762, 139.6503], "kyoto": [35.0116, 135.7681],
-        "osaka": [34.6937, 135.5023], "bangkok": [13.7563, 100.5018],
-        "singapore": [1.3521, 103.8198], "hong kong": [22.3193, 114.1694],
-        "seoul": [37.5665, 126.9780], "beijing": [39.9042, 116.4074],
-        "shanghai": [31.2304, 121.4737], "dubai": [25.2048, 55.2708],
-        "mumbai": [19.0760, 72.8777], "delhi": [28.6139, 77.2090],
-        "bali": [-8.3405, 115.0920], "hanoi": [21.0285, 105.8542],
-        "ho chi minh": [10.8231, 106.6297], "kuala lumpur": [3.1390, 101.6869],
-        "taipei": [25.0330, 121.5654], "kathmandu": [27.7172, 85.3240],
-        // Americas
-        "new york": [40.7128, -74.0060], "los angeles": [34.0522, -118.2437],
-        "san francisco": [37.7749, -122.4194], "miami": [25.7617, -80.1918],
-        "chicago": [41.8781, -87.6298], "mexico city": [19.4326, -99.1332],
-        "toronto": [43.6532, -79.3832], "vancouver": [49.2827, -123.1207],
-        "rio de janeiro": [-22.9068, -43.1729], "buenos aires": [-34.6037, -58.3816],
-        "cancun": [21.1619, -86.8515], "havana": [23.1136, -82.3666],
-        "bogota": [4.7110, -74.0721], "lima": [-12.0464, -77.0428],
-        // Africa & Middle East
-        "cairo": [30.0444, 31.2357], "cape town": [-33.9249, 18.4241],
-        "nairobi": [-1.2921, 36.8219], "marrakech": [31.6295, -7.9811],
-        "istanbul": [41.0082, 28.9784], "tel aviv": [32.0853, 34.7818],
-        "abu dhabi": [24.4539, 54.3773],
-        // Oceania
-        "sydney": [-33.8688, 151.2093], "melbourne": [-37.8136, 144.9631],
-        "auckland": [-36.8509, 174.7645], "queenstown": [-45.0312, 168.6626],
-    };
-
-    private getCityCoords(destination: string): [number, number] | null {
-        const lower = destination.toLowerCase();
-        for (const [city, coords] of Object.entries(MockLLMClient.CITY_COORDS)) {
-            if (lower.includes(city)) return coords;
-        }
-        return null;
-    }
-
-    async execute(
-        messages: LLMMessage[],
-        options: LLMRequestOptions = {}
-    ): Promise<LLMResponse> {
-        const startTime = Date.now();
-
-        // Simulate network latency
-        const latency =
-            this.simulatedLatencyMs.min +
-            Math.random() *
-            (this.simulatedLatencyMs.max - this.simulatedLatencyMs.min);
-        await this.sleep(latency);
-
-        // Transient errors disabled for stability — re-enable for error-handling tests
-        // if (Math.random() < 0.05) { throw new AIServiceError("LLM_ERROR", "Simulated error", {}); }
-
-        const systemPrompt =
-            messages.find((m) => m.role === "system")?.content ?? "";
-        const userPrompt =
-            messages.find((m) => m.role === "user")?.content ?? "";
-
-        const responseContent = this.generateMockResponse(systemPrompt, userPrompt);
-        const totalTokens = Math.floor(
-            (systemPrompt.length + userPrompt.length + responseContent.length) / 4
-        );
-
-        return {
-            content: responseContent,
-            modelUsed: options.model ?? "voyage-ai-mock-v1.0",
-            promptTokens: Math.floor(totalTokens * 0.6),
-            completionTokens: Math.floor(totalTokens * 0.4),
-            totalTokens,
-            latencyMs: Date.now() - startTime,
-            provider: "mock",
-        };
-    }
-
-    private generateMockResponse(system: string, user: string): string {
-        const now = new Date().toISOString();
-
-        // Check both the system role message and the user message content
-        // (services embed the system prompt in the user message via buildFullPrompt)
-        const ctx = system + " " + user;
-
-        if (ctx.includes("itinerary architect") || ctx.includes("day-by-day travel itinerary") || ctx.includes("expert travel planner")) {
-            return JSON.stringify(this.mockItineraryResponse(now, user));
-        }
-        if (ctx.includes("adaptive trip intelligence")) {
-            return JSON.stringify(this.mockReoptimizeResponse(now, user));
-        }
-        if (ctx.includes("AI travel companion")) {
-            return JSON.stringify(this.mockChatResponse(now));
-        }
-        if (ctx.includes("packing advisor")) {
-            return JSON.stringify(this.mockPackingResponse(now));
-        }
-        if (ctx.includes("trip risk analyst")) {
-            return JSON.stringify(this.mockSimulationResponse(now));
-        }
-        if (ctx.includes("trip creation assistant")) {
-            return JSON.stringify(this.mockCreateTripFromTextResponse(now));
-        }
-        if (ctx.includes("ticket parser")) {
-            return JSON.stringify(this.mockExtractTripFromTicketResponse(now));
-        }
-        if (ctx.includes("contextual suggestion engine")) {
-            return JSON.stringify(this.mockDashboardSuggestionsResponse(now));
-        }
-        if (ctx.includes("Planner Agent") || ctx.includes("TripContext")) {
-            return JSON.stringify(this.mockPlannerResponse(user));
-        }
-        if (ctx.includes("travel safety analyst")) {
-            return JSON.stringify(this.mockSafetyResponse(user));
-        }
-        if (ctx.includes("travel logistics optimizer")) {
-            return this.mockLogisticsResponse(user);
-        }
-        if (ctx.includes("budget constraint suggestions")) {
-            return JSON.stringify({
-                suggestions: [
-                    "Replace luxury hotel with a mid-range option",
-                    "Swap paid experiences for free local attractions",
-                    "Reduce restaurant meals by choosing budget-friendly eateries",
-                ],
-            });
-        }
-
-        return JSON.stringify({ message: "Unknown endpoint", modelVersion: "voyage-ai-mock-v1.0" });
-    }
-
-    private mockItineraryResponse(now: string, userPrompt: string) {
-        // Default to the hardcoded values for fallback
-        let destination = "Tokyo, Japan";
-        let startDate = "2025-04-01";
-        let endDate = "2025-04-05";
-        let totalDays = 5;
-
-        // Try to extract dynamic values from the prompt
-        const destMatch = userPrompt.match(/for \*\*(.*?)\*\* from/);
-        const startMatch = userPrompt.match(/from \*\*(.*?)\*\* to/);
-        const endMatch = userPrompt.match(/to \*\*(.*?)\*\*\./);
-        const daysMatch = userPrompt.match(/exactly \*\*(\d+) days\*\*/);
-
-        if (destMatch && destMatch[1]) destination = destMatch[1];
-        if (startMatch && startMatch[1]) startDate = startMatch[1];
-        if (endMatch && endMatch[1]) endDate = endMatch[1];
-        if (daysMatch && daysMatch[1]) {
-            totalDays = parseInt(daysMatch[1], 10);
-        } else {
-            // fallback day calculation if prompt regex misses
-            try {
-                const s = new Date(startDate);
-                const e = new Date(endDate);
-                if (!isNaN(s.getTime()) && !isNaN(e.getTime())) {
-                    totalDays = Math.max(1, Math.ceil((e.getTime() - s.getTime()) / (1000 * 3600 * 24)) + 1);
-                }
-            } catch {
-                // ignore
-            }
-        }
-
-        const days = [];
-        const startTs = new Date(startDate).getTime() || Date.now();
-        const destCity = destination.split(',')[0].trim();
-        const baseCoords = this.getCityCoords(destCity);
-
-        for (let i = 0; i < totalDays; i++) {
-            const currentDayDate = new Date(startTs + i * 24 * 3600 * 1000).toISOString().split('T')[0];
-            const dayOffset = i * 0.008;
-            const coordsAct1 = baseCoords ? { lat: baseCoords[0] + dayOffset, lng: baseCoords[1] + dayOffset } : {};
-            const coordsAct2 = baseCoords ? { lat: baseCoords[0] - 0.006 + dayOffset, lng: baseCoords[1] + 0.014 + dayOffset } : {};
-            const coordsAct3 = baseCoords ? { lat: baseCoords[0] + 0.004 + dayOffset, lng: baseCoords[1] - 0.009 + dayOffset } : {};
-            days.push({
-                day: i + 1,
-                date: currentDayDate,
-                theme: `Day ${i + 1} Immersion in ${destCity}`,
-                activities: [
-                    {
-                        id: `act_${Date.now()}_${i}_1`,
-                        name: i === 0 ? `Check in at ${destCity} Hotel` : `Explore ${destCity} Historic Center`,
-                        type: i === 0 ? "accommodation" : "sightseeing",
-                        startTime: "10:00",
-                        endTime: "12:30",
-                        duration_minutes: 150,
-                        location: {
-                            name: i === 0 ? `${destCity} Central Hotel` : `${destCity} Main Square`,
-                            address: `Central District, ${destCity}`,
-                            ...coordsAct1,
-                        },
-                        estimatedCost: { amount: 20, currency: "USD" },
-                        notes: `Enjoy a wonderful morning in ${destCity}.`,
-                        aiGenerated: true,
-                        fatigueScore: 2,
-                        tags: ["morning", "discovery"],
-                    },
-                    {
-                        id: `act_${Date.now()}_${i}_2`,
-                        name: `Authentic ${destCity} Cuisine`,
-                        type: "dining",
-                        startTime: "13:00",
-                        endTime: "15:00",
-                        duration_minutes: 120,
-                        location: {
-                            name: `Famous ${destCity} Restaurant`,
-                            address: `Culinary District, ${destCity}`,
-                            ...coordsAct2,
-                        },
-                        estimatedCost: { amount: 30, currency: "USD" },
-                        notes: "A great place for a local meal.",
-                        aiGenerated: true,
-                        fatigueScore: 1,
-                        tags: ["food", "local"],
-                    },
-                    {
-                        id: `act_${Date.now()}_${i}_3`,
-                        name: `${destCity} Evening Attraction`,
-                        type: "cultural",
-                        startTime: "16:00",
-                        endTime: "19:00",
-                        duration_minutes: 180,
-                        location: {
-                            name: `${destCity} Cultural Site`,
-                            address: `Historic District, ${destCity}`,
-                            ...coordsAct3,
-                        },
-                        estimatedCost: { amount: 40, currency: "USD" },
-                        notes: "Experience the vibrant evening culture.",
-                        aiGenerated: true,
-                        fatigueScore: 3,
-                        tags: ["evening", "culture"],
-                    }
-                ],
-                totalCost: { amount: 90, currency: "USD" },
-                dailyFatigueScore: 3 + i,
-                tips: ["Stay hydrated and wear comfortable shoes."],
-            });
-        }
-
-        return {
-            tripId: `trip_${Date.now()}`,
-            destination,
-            startDate,
-            endDate,
-            totalDays,
-            days,
-            totalEstimatedCost: {
-                amount: 90 * totalDays + 600,
-                currency: "USD",
-                breakdown: {
-                    accommodation: 600,
-                    food: 30 * totalDays,
-                    activities: 60 * totalDays,
-                    transport: 200,
-                },
-            },
-            aiInsights: [
-                "Mock itinerary generator recognized your dates and adapted.",
-                "Pace is set to moderate with balanced activities.",
-            ],
-            pacingAnalysis: {
-                overallScore: 7.2,
-                warnings: [],
-                suggestions: [],
-            },
-            generatedAt: now,
-            modelVersion: "voyage-ai-mock-v1.0",
-        };
-    }
-
-    private mockReoptimizeResponse(now: string, userPrompt: string) {
-        const mockItinerary = this.mockItineraryResponse(now, userPrompt);
-        return {
-            tripId: mockItinerary.tripId,
-            originalItinerary: mockItinerary,
-            reoptimizedItinerary: {
-                ...mockItinerary,
-                aiInsights: [
-                    "Reoptimized due to weather disruption. Day 3 outdoor activities moved indoors.",
-                    "Budget adjusted: saved $120 by swapping to local ramen spots.",
-                ],
-                pacingAnalysis: {
-                    overallScore: 8.1,
-                    warnings: [],
-                    suggestions: ["Reoptimized schedule now has better pacing with weather backup plans."],
-                },
-            },
-            changesSummary: [
-                {
-                    day: 3,
-                    type: "modified",
-                    description:
-                        "Outdoor activities replaced with Teamlab Borderless (covers rain day) + indoor ramen tour.",
-                },
-                {
-                    day: 4,
-                    type: "modified",
-                    description: "Moved Harajuku shopping earlier to avoid weekend crowds.",
-                },
-            ],
-            budgetDelta: -120,
-            aiReasoning:
-                "With rain forecasted for Day 3, I swapped outdoor-heavy activities for premium indoor experiences. TeamLab Borderless provides a wow-factor alternative that aligns perfectly with your cultural and technology interests. The budget delta is negative — you'll actually save $120 with this reoptimization.",
-            reoptimizedAt: now,
-        };
-    }
-
-    private mockChatResponse(now: string) {
-        return {
-            message:
-                "Great question! The best way to get from Narita Airport to Shinjuku is the Narita Express (N'EX). It takes about 80 minutes and costs ¥3,070 (~$20 USD). With your Suica card, transit around Tokyo becomes seamless — no need to buy individual tickets. The train departs every 30 minutes!",
-            intent: "local_tips",
-            suggestedActions: [
-                {
-                    label: "Add to Itinerary Notes",
-                    action: "add_note",
-                    payload: { note: "Narita Express: ¥3,070, 80 min to Shinjuku" },
-                },
-                {
-                    label: "Show All Transport Tips",
-                    action: "show_transport_tips",
-                    payload: {},
-                },
-                {
-                    label: "Ask About Day 1 Activities",
-                    action: "chat_query",
-                    payload: { query: "What should I do on my first evening in Tokyo?" },
-                },
-            ],
-            relatedTips: [
-                "Buy your Suica card at the JR ticket machines after passport control.",
-                "The N'EX requires a reserved seat — book at least a day in advance online.",
-                "Luggage forwarding (takkyubin) from airport to hotel costs ~¥2,500 per bag.",
-            ],
-            confidenceScore: 0.94,
-            modelVersion: "voyage-ai-mock-v1.0",
-            respondedAt: now,
-        };
-    }
-
-    private mockPackingResponse(now: string) {
-        return {
-            tripId: null,
-            destination: "Tokyo, Japan",
-            totalItems: 38,
-            essentialItems: 12,
-            items: {
-                clothing: [
-                    {
-                        id: `item_${Date.now()}_1`,
-                        name: "Comfortable walking shoes",
-                        category: "clothing",
-                        quantity: 1,
-                        isEssential: true,
-                        weightGrams: 650,
-                        notes: "You'll walk 15,000+ steps/day in Tokyo. Break them in before traveling.",
-                        packed: false,
-                        aiRecommended: true,
-                        reason: "Tokyo requires extensive walking across large neighborhoods.",
-                    },
-                    {
-                        id: `item_${Date.now()}_2`,
-                        name: "Light rain jacket / packable umbrella",
-                        category: "clothing",
-                        quantity: 1,
-                        isEssential: true,
-                        weightGrams: 300,
-                        notes: "Spring in Tokyo has unpredictable showers. A packable one saves luggage space.",
-                        packed: false,
-                        aiRecommended: true,
-                        reason: "April has moderate rainfall probability in Tokyo.",
-                    },
-                    {
-                        id: `item_${Date.now()}_3`,
-                        name: "Layers / light sweater",
-                        category: "clothing",
-                        quantity: 2,
-                        isEssential: false,
-                        weightGrams: 400,
-                        notes: "Temperatures range 10-18°C in April. Layering is key.",
-                        packed: false,
-                        aiRecommended: true,
-                        reason: "Spring temperatures are variable — mornings cool, afternoons mild.",
-                    },
-                ],
-                toiletries: [
-                    {
-                        id: `item_${Date.now()}_4`,
-                        name: "Toiletry essentials (100ml rule for carry-on)",
-                        category: "toiletries",
-                        quantity: 1,
-                        isEssential: true,
-                        weightGrams: 500,
-                        notes: "Japanese convenience stores (konbini) stock most toiletries affordably.",
-                        packed: false,
-                        aiRecommended: true,
-                        reason: "Pack light — resupply at 7-Eleven or FamilyMart in Tokyo.",
-                    },
-                ],
-                electronics: [
-                    {
-                        id: `item_${Date.now()}_5`,
-                        name: "Power adapter (Type A — Japan uses flat 2-pin)",
-                        category: "electronics",
-                        quantity: 1,
-                        isEssential: true,
-                        weightGrams: 120,
-                        notes: "Japan uses Type A (same as US). Voltage is 100V — most devices auto-adapt.",
-                        packed: false,
-                        aiRecommended: true,
-                        reason: "Essential for charging all devices.",
-                    },
-                    {
-                        id: `item_${Date.now()}_6`,
-                        name: "Portable charger / power bank",
-                        category: "electronics",
-                        quantity: 1,
-                        isEssential: true,
-                        weightGrams: 250,
-                        notes: "20,000mAh recommended for full-day navigation and photography.",
-                        packed: false,
-                        aiRecommended: true,
-                        reason: "Heavy phone usage for maps, translation, and photography drains battery fast.",
-                    },
-                ],
-                documents: [
-                    {
-                        id: `item_${Date.now()}_7`,
-                        name: "Passport (valid 6+ months)",
-                        category: "documents",
-                        quantity: 1,
-                        isEssential: true,
-                        weightGrams: 40,
-                        notes: "Keep a digital copy in cloud storage and email to yourself.",
-                        packed: false,
-                        aiRecommended: true,
-                        reason: "Required for entry into Japan.",
-                    },
-                    {
-                        id: `item_${Date.now()}_8`,
-                        name: "Travel insurance documents",
-                        category: "documents",
-                        quantity: 1,
-                        isEssential: true,
-                        weightGrams: 20,
-                        notes: "Print emergency contact number for your insurer.",
-                        packed: false,
-                        aiRecommended: true,
-                        reason: "Medical emergencies in Japan can be expensive without insurance.",
-                    },
-                ],
-                medication: [],
-                gear: [],
-                entertainment: [
-                    {
-                        id: `item_${Date.now()}_9`,
-                        name: "Pocket WiFi or SIM card (pre-booked)",
-                        category: "entertainment",
-                        quantity: 1,
-                        isEssential: true,
-                        weightGrams: 100,
-                        notes: "Book Sakura Mobile or IIJmio eSIM before departure. ~$30/5 days.",
-                        packed: false,
-                        aiRecommended: true,
-                        reason: "Essential for navigation, translation, and communication in Japan.",
-                    },
-                ],
-                food: [],
-                safety: [
-                    {
-                        id: `item_${Date.now()}_10`,
-                        name: "Emergency cash (JPY)",
-                        category: "safety",
-                        quantity: 1,
-                        isEssential: true,
-                        weightGrams: 30,
-                        notes:
-                            "Keep ¥10,000–¥20,000 (~$65-$130) in cash. Many local restaurants are cash-only.",
-                        packed: false,
-                        aiRecommended: true,
-                        reason:
-                            "Japan is still largely cash-based for small transactions.",
-                    },
-                ],
-                miscellaneous: [
-                    {
-                        id: `item_${Date.now()}_11`,
-                        name: "Small day bag / backpack",
-                        category: "miscellaneous",
-                        quantity: 1,
-                        isEssential: false,
-                        weightGrams: 400,
-                        notes: "A 20-30L daypack is ideal for daily exploration.",
-                        packed: false,
-                        aiRecommended: true,
-                        reason: "Essential for carrying water, purchases, and electronics while sightseeing.",
-                    },
-                ],
-            },
-            aiTips: [
-                "Japan is extremely safe — leave the hotel-safe mindset behind and embrace lightweight packing.",
-                "Don't overpack clothes — Japanese laundromats (coin laundry) are clean, cheap, and easy.",
-                "IC Card (Suica/Pasmo) is your Tokyo lifeline — get one at the airport on Day 1.",
-                "Many ryokans (traditional inns) provide yukata robes and toiletries — call ahead.",
-                "Keep a pocket-sized umbrella — Tokyo vendors run out during sudden rain showers.",
-            ],
-            estimatedTotalWeightKg: 8.2,
-            generatedAt: now,
-            modelVersion: "voyage-ai-mock-v1.0",
-        };
-    }
-
-    private mockCreateTripFromTextResponse(now: string) {
-        return {
-            destination: "Tokyo, Japan",
-            startDate: "2025-04-01",
-            endDate: "2025-04-05",
-            budget: { total: 2000, currency: "USD" },
-            style: "creative",
-        };
-    }
-
-    private mockExtractTripFromTicketResponse(now: string) {
-        return {
-            departureCity: "New York JFK",
-            destination: "Tokyo Narita",
-            departureDate: "2025-04-01",
-            returnDate: "2025-04-08",
-        };
-    }
-
-    private mockDashboardSuggestionsResponse(now: string) {
-        return {
-            suggestions: [
-                { title: "Optimize Tokyo Itinerary", description: "Heavy walking on Day 3", action: "Review", tag: "Alert" },
-                { title: "Price Drop: flights to Reykjavik", description: "Dropped by $120 for your dates", action: "View", tag: "Savings" },
-            ],
-        };
-    }
-
-    private mockSafetyResponse(userPrompt: string) {
-        const hasOutdoor = /outdoor|park|beach|trail|walk|garden/i.test(userPrompt);
-        const hasFamous = /eiffel|colosseum|shibuya|taj|burj|louvre|big ben|times square/i.test(userPrompt);
-        const isOverBudget = /Over budget: true/i.test(userPrompt);
-        const maxActivities = parseInt(userPrompt.match(/Max activities in a single day: (\d+)/)?.[1] ?? "3", 10);
-        const isFastPace = /Fast pace preference: true/i.test(userPrompt);
-
-        const warnings: string[] = [];
-        const tips: string[] = [
-            "Stay alert in crowded tourist areas and keep valuables secure",
-            "Carry a portable charger and offline maps in case of connectivity issues",
-        ];
-
-        const effectiveMax = isFastPace ? maxActivities + 1 : maxActivities;
-
-        if (effectiveMax > 5) {
-            warnings.push("Heavy daily schedule — risk of fatigue; consider rest breaks between activities");
-        } else if (effectiveMax > 4) {
-            warnings.push("Busy itinerary detected — pace yourself and stay hydrated throughout the day");
-        }
-        if (hasOutdoor) {
-            warnings.push("Outdoor activities planned — check local weather forecasts each morning");
-            tips.push("Carry water and sunscreen for outdoor segments of the day");
-        }
-        if (hasFamous) {
-            warnings.push("Popular landmarks on the itinerary — expect large crowds, especially on weekends");
-            tips.push("Arrive at major attractions early (before 9 AM) to avoid peak crowds");
-        }
-        if (isOverBudget) {
-            warnings.push("Trip is over budget — monitor daily spending to avoid financial stress mid-trip");
-        }
-
-        const finalWarnings = warnings.slice(0, 3);
-        const finalTips = tips.slice(0, 4);
-
-        let riskLevel: "low" | "medium" | "high" = "low";
-        if (finalWarnings.length >= 3 || effectiveMax > 5) {
-            riskLevel = "high";
-        } else if (finalWarnings.length >= 1) {
-            riskLevel = "medium";
-        }
-
-        return { riskLevel, warnings: finalWarnings, tips: finalTips };
-    }
-
-    private mockSimulationResponse(now: string) {
-        return {
-            tripId: null,
-            destination: "Tokyo, Japan",
-            overallRiskScore: 2.8,
-            riskLevel: "low",
-            outcomes: [
-                {
-                    scenario: "weather_disruption",
-                    probability: 0.35,
-                    impactLevel: "low",
-                    affectedDays: [2, 3],
-                    description:
-                        "April in Tokyo has a 35% chance of significant rainfall (avg. 130mm/April). Outdoor cherry blossom viewing and Harajuku walks may be affected.",
-                    recommendations: [
-                        "Book TeamLab Borderless as indoor backup.",
-                        "Carry a compact umbrella at all times.",
-                        "Check Japan Weather Association (jwa.go.jp) daily.",
-                    ],
-                    alternativePlan: {
-                        summary:
-                            "Swap outdoor activities for Tokyo's world-class museums and indoor experiences.",
-                        keyChanges: [
-                            "Replace Harajuku outdoor stroll with Harajuku's underground shopping (Laforet)",
-                            "Add teamLab Planets immersive digital art experience",
-                            "Move Shinjuku park visit to a clear-weather day",
-                        ],
-                        budgetImpact: 45,
-                    },
-                    contingencyTips: [
-                        "TeamLab tickets must be pre-booked. Reserve now at teamlab.art/e/planets.",
-                        "Tokyo National Museum is a sublime rain-day alternative (500 yen entry).",
-                    ],
-                },
-                {
-                    scenario: "flight_delay",
-                    probability: 0.18,
-                    impactLevel: "medium",
-                    affectedDays: [1],
-                    description:
-                        "Tokyo's Narita and Haneda airports are highly efficient, but 18% of international arrivals experience delays exceeding 2 hours.",
-                    recommendations: [
-                        "Choose flights arriving before 2PM to buffer Day 1 activities.",
-                        "Don't pre-book same-day activities within 4 hours of landing.",
-                        "Japanese train connections to city center run until midnight.",
-                    ],
-                    alternativePlan: {
-                        summary:
-                            "Compress Day 1 to dinner only — Day 2 picks up the slack without losing key experiences.",
-                        keyChanges: [
-                            "Skip Day 1 afternoon sightseeing if delayed past 7PM",
-                            "Omoide Yokocho dinner remains intact regardless of delay",
-                        ],
-                        budgetImpact: 0,
-                    },
-                    contingencyTips: [
-                        "Narita has excellent airport lounges if you have Amex Platinum or Priority Pass.",
-                        "Airline compensation for EU/US flights: know your rights.",
-                    ],
-                },
-                {
-                    scenario: "budget_stress_test",
-                    probability: 0.25,
-                    impactLevel: "medium",
-                    affectedDays: [1, 2, 3, 4, 5],
-                    description:
-                        "Tokyo spending commonly runs 20-30% over budget for first-time visitors due to souvenir impulse spending and convenience store temptation.",
-                    recommendations: [
-                        "Set daily cash allowance in physical envelope system.",
-                        "Use budget tracking app (Trail Wallet or Trabee Pocket).",
-                        "Konbini meals are surprisingly good — budget $8-12/meal vs. $25+ at restaurants.",
-                    ],
-                    alternativePlan: null,
-                    contingencyTips: [
-                        "Donki (Don Quijote) for affordable souvenirs vs. airport shops.",
-                        "Free activities: Shibuya Crossing, Meiji Shrine, Yanaka neighborhood.",
-                        "Ramen or soba sets: ¥800-1,200 for a filling, authentic meal.",
-                    ],
-                },
-            ],
-            topRecommendations: [
-                "Your trip has a low overall risk profile — Tokyo is one of the world's safest destinations.",
-                "The main risks are weather-related. Pre-book indoor backup activities.",
-                "Budget slightly over to account for Tokyo's tempting shopping and food scene.",
-                "Getting comprehensive travel insurance ($30-50) is highly recommended given healthcare costs in Japan.",
-            ],
-            insuranceRecommendation:
-                "Comprehensive travel insurance with medical coverage up to $100,000 USD is strongly recommended for Japan. Japanese healthcare is excellent but expensive for tourists. Consider World Nomads or SafetyWing for competitive rates.",
-            flexibilityScore: 8.4,
-            simulatedAt: now,
-            modelVersion: "voyage-ai-mock-v1.0",
-        };
-    }
-
-    private mockPlannerResponse(userPrompt: string) {
-        const destMatch = userPrompt.match(/Travel request:\s*"([^"]+)"/);
-        const rawInput = destMatch?.[1] ?? "";
-
-        // Best-effort destination extraction from the raw input
-        const destGuessMatch = rawInput.match(/(?:to|in|visit|trip to)\s+([A-Za-z\s,]+?)(?:\s+for|\s+from|\s+in|\.|,|$)/i);
-        const destination = destGuessMatch?.[1]?.trim() ?? "Barcelona, Spain";
-        const durationDays = 4;
-
-        const today = new Date();
-        const start = new Date(today);
-        start.setDate(today.getDate() + 7);
-        const end = new Date(start);
-        end.setDate(start.getDate() + durationDays - 1);
-        const fmt = (d: Date) => d.toISOString().split("T")[0];
-
-        const themes = [
-            "Arrival & Orientation",
-            "Culture & Landmarks",
-            "Nature & Relaxation",
-            "Local Life & Departure Prep",
-        ];
-
-        return {
-            destination,
-            startDate: fmt(start),
-            endDate: fmt(end),
-            durationDays,
-            preferences: { style: "balanced", pace: "moderate" },
-            days: themes.slice(0, durationDays).map((theme, i) => ({ day: i + 1, theme })),
-        };
-    }
-
-    private sleep(ms: number): Promise<void> {
-        return new Promise((resolve) => setTimeout(resolve, ms));
-    }
-
-    /**
-     * Produces a mock logistics response that passes LogisticsAgent's merge-back
-     * validation. Parses the input EnrichedTripContext from the user prompt,
-     * assigns time slots deterministically, and picks the first hotel.
-     */
-    private mockLogisticsResponse(userPrompt: string): string {
-        try {
-            const ctx = JSON.parse(userPrompt) as {
-                days: Array<{ day: number; theme: string; activities: Array<{ name: string; type: string }> }>;
-                hotels: Array<{ name: string; priceRange: string }>;
-            };
-            const slotCycle: Array<"morning" | "afternoon" | "evening"> = ["morning", "afternoon", "evening"];
-            const days = ctx.days.map((d) => ({
-                day: d.day,
-                theme: d.theme,
-                activities: d.activities.map((act, idx) => ({
-                    name: act.name,
-                    type: act.type,
-                    timeSlot: slotCycle[idx % 3],
-                })),
-            }));
-            const selectedHotel = ctx.hotels[0] ?? { name: "Accommodation — to be confirmed", priceRange: "$$" };
-            return JSON.stringify({ days, selectedHotel });
-        } catch {
-            return JSON.stringify({ days: [], selectedHotel: { name: "Accommodation — to be confirmed", priceRange: "$$" } });
-        }
     }
 }
 
@@ -962,7 +193,7 @@ class OpenAILLMClient implements LLMClient {
 //  LLM Client Factory
 // ─────────────────────────────────────────
 
-export type LLMProvider = "mock" | "gemini" | "openai";
+export type LLMProvider = "gemini" | "openai";
 
 // ── Per-agent model routing ───────────────────────────────────────────────────
 
@@ -1000,7 +231,7 @@ const AGENT_MODELS: Record<AgentRole, string> = {
  */
 class AgentScopedLLMClient implements LLMClient {
     constructor(
-        private readonly inner: LLMClient,
+        readonly inner: LLMClient,
         private readonly agentModel: string,
     ) {}
 
@@ -1046,20 +277,28 @@ class LLMClientFactory {
     }
 
     private static resolveProvider(options?: CreateOptions): LLMProvider {
-        if (typeof options === "string") return options as LLMProvider;
-        return (process.env.LLM_PROVIDER as LLMProvider | undefined) ?? "mock";
+        if (typeof options === "string") {
+            const p = options as LLMProvider;
+            if (p !== "openai" && p !== "gemini") {
+                throw new AIServiceError("LLM_ERROR", `Invalid LLM provider: "${String(options)}"`);
+            }
+            return p;
+        }
+        try {
+            return resolveRealLlmProvider();
+        } catch (e) {
+            throw new AIServiceError("LLM_ERROR", (e as Error).message, e);
+        }
     }
 
     private static getOrCreateBase(provider: LLMProvider): LLMClient {
         if (this.baseInstance) return this.baseInstance;
 
         const isProduction = process.env.NODE_ENV === "production";
-        const validProviders: LLMProvider[] = ["gemini", "openai"];
-
-        if (isProduction && (provider === "mock" || !validProviders.includes(provider))) {
+        if (isProduction && provider !== "openai" && provider !== "gemini") {
             throw new AIServiceError(
                 "LLM_ERROR",
-                `LLM_PROVIDER must be "openai" or "gemini" in production. Got: "${provider}". MockLLMClient is not permitted in production.`
+                `LLM_PROVIDER must be "openai" or "gemini" in production. Got: "${provider}".`,
             );
         }
 
@@ -1073,17 +312,9 @@ class LLMClientFactory {
             case "openai": {
                 const key = process.env.OPENAI_API_KEY;
                 if (!key) throw new AIServiceError("LLM_ERROR", "OPENAI_API_KEY is not set");
-                // Default model for the raw base client; agent scoping overrides per call
                 this.baseInstance = new OpenAILLMClient(key, AGENT_MODELS.default);
                 break;
             }
-            case "mock":
-            default:
-                if (isProduction) {
-                    throw new AIServiceError("LLM_ERROR", "MockLLMClient is not permitted in production");
-                }
-                this.baseInstance = new MockLLMClient();
-                break;
         }
 
         return this.baseInstance!;
@@ -1112,15 +343,19 @@ export function createLLMClient(provider: LLMProvider): LLMClient {
             if (!key) throw new AIServiceError("LLM_ERROR", "GEMINI_API_KEY is not set");
             return new GeminiLLMClient(key);
         }
-        case "mock":
-        default:
-            return new MockLLMClient();
     }
 }
 
 // ─────────────────────────────────────────
 //  Retry Wrapper
 // ─────────────────────────────────────────
+
+function clientProviderLabel(client: LLMClient): "openai" | "gemini" {
+    if (client instanceof OpenAILLMClient) return "openai";
+    if (client instanceof GeminiLLMClient) return "gemini";
+    if (client instanceof AgentScopedLLMClient) return clientProviderLabel(client.inner);
+    return "openai";
+}
 
 export async function executeWithRetry(
     client: LLMClient,
@@ -1134,11 +369,7 @@ export async function executeWithRetry(
     let lastError: Error | null = null;
     let shouldFallback = false;
 
-    // Determine the underlying provider for structured trace logs
-    const resolvedProvider =
-        client instanceof OpenAILLMClient ? "openai"
-        : client instanceof GeminiLLMClient ? "gemini"
-        : "mock";
+    const resolvedProvider = clientProviderLabel(client);
 
     const modelUsed = options.model ?? "default";
 
@@ -1245,10 +476,6 @@ export async function executeWithRetry(
                 return fallbackResponse;
             } catch (fallbackErr) {
                 logError("[LLM] Gemini fallback failed", fallbackErr);
-                if (process.env.NODE_ENV !== "production") {
-                    logInfo("[LLM] All providers failed, using mock fallback (dev only)");
-                    return new MockLLMClient().execute(messages, options);
-                }
                 logFinalFailure();
                 throw new AIServiceError("LLM_ERROR", "All AI providers failed", {
                     primaryError: lastError?.message,
@@ -1256,13 +483,6 @@ export async function executeWithRetry(
                 });
             }
         }
-    }
-
-    // In development, last resort: use mock when both real providers failed
-    if (process.env.NODE_ENV !== "production") {
-        logInfo("[LLM] All providers failed, using mock fallback (dev only)");
-        const mockClient = new MockLLMClient();
-        return mockClient.execute(messages, options);
     }
 
     logFinalFailure();
