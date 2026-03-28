@@ -21,15 +21,34 @@ export function getCsrfToken(): string {
 
 // ─── Fetch options ────────────────────────────────────────────────────────────
 
+/** In-memory cache so concurrent callers share one fetch instead of racing. */
+let _csrfFetchPromise: Promise<string> | null = null;
+
 export async function ensureCsrfToken(): Promise<string> {
-  let token = getCsrfToken();
-  if (!token) {
-    if (typeof window !== "undefined") {
-      await fetch("/api/auth/csrf", { credentials: "include" });
-      token = getCsrfToken();
-    }
+  // Fast path: cookie already present
+  const cached = getCsrfToken();
+  if (cached) return cached;
+
+  if (typeof window === "undefined") return "";
+
+  // Deduplicate concurrent calls
+  if (!_csrfFetchPromise) {
+    _csrfFetchPromise = (async () => {
+      try {
+        const res = await fetch("/api/auth/csrf", { credentials: "include" });
+        if (res.ok) {
+          const json = await res.json().catch(() => ({}));
+          // Prefer the token from the response body (guaranteed fresh)
+          const fromBody = json?.data?.csrfToken as string | undefined;
+          if (fromBody) return fromBody;
+        }
+      } catch { /* ignore network errors */ }
+      // Fallback: the Set-Cookie may have landed in document.cookie by now
+      return getCsrfToken();
+    })().finally(() => { _csrfFetchPromise = null; });
   }
-  return token;
+
+  return _csrfFetchPromise;
 }
 
 async function mutatingFetchOptions(

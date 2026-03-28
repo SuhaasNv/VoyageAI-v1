@@ -1,15 +1,31 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { X, PlaneTakeoff, Navigation, Calendar, Loader2, AlertCircle } from "lucide-react";
 import { createTrip } from "@/lib/api";
+import type { FlowInput } from "@/ui/components/itinerary-flow/types";
 
-export function CreateTripModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
-    const router = useRouter();
+const VIBES = [
+    { label: "Relaxing", style: "relaxed" },
+    { label: "Adventure", style: "adventure" },
+    { label: "Culture", style: "balanced" },
+    { label: "Foodie", style: "balanced" },
+    { label: "Luxury", style: "luxury" },
+    { label: "Budget", style: "budget" },
+];
+
+interface CreateTripModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    /** When provided, launches the flow instead of redirecting directly. */
+    onFlowStart?: (tripId: string, input: FlowInput) => void;
+}
+
+export function CreateTripModal({ isOpen, onClose, onFlowStart }: CreateTripModalProps) {
     const [destination, setDestination] = useState("");
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
+    const [selectedVibe, setSelectedVibe] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -24,8 +40,22 @@ export function CreateTripModal({ isOpen, onClose }: { isOpen: boolean; onClose:
 
         try {
             const trip = await createTrip({ destination: destination.trim(), startDate, endDate });
-            onClose();
-            router.push(`/dashboard/trip/${trip.id}`);
+
+            if (onFlowStart) {
+                // Launch the full agent pipeline flow
+                const style = VIBES.find((v) => v.label === selectedVibe)?.style;
+                onFlowStart(trip.id, {
+                    tripId: trip.id,
+                    destination: destination.trim(),
+                    startDate,
+                    endDate,
+                    style,
+                });
+                onClose();
+            } else {
+                // Fallback: close without redirect (parent handles navigation)
+                onClose();
+            }
         } catch (err) {
             setError(err instanceof Error ? err.message : "Failed to create trip. Please try again.");
         } finally {
@@ -34,10 +64,10 @@ export function CreateTripModal({ isOpen, onClose }: { isOpen: boolean; onClose:
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-md p-4">
+        <div className="fixed inset-0 flex items-center justify-center bg-black/50 backdrop-blur-md p-4" style={{ zIndex: 9998 }}>
             <div
                 className="relative w-[95vw] md:w-full max-w-lg bg-white/[0.06] backdrop-blur-xl border border-white/[0.1] rounded-3xl overflow-hidden shadow-[0_8px_32px_rgba(0,0,0,0.4),0_0_1px_rgba(255,255,255,0.1)] flex flex-col"
-                onClick={e => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
             >
                 {/* Header */}
                 <div className="flex items-center justify-between p-6 border-b border-white/[0.06] relative bg-white/[0.02]">
@@ -114,14 +144,28 @@ export function CreateTripModal({ isOpen, onClose }: { isOpen: boolean; onClose:
                             </div>
                         </div>
 
+                        {/* Travel Vibe — now stateful */}
                         <div className="pt-4 border-t border-white/[0.06] space-y-3">
                             <label className="text-sm font-semibold text-slate-300">Travel Vibe</label>
                             <div className="flex flex-wrap gap-2">
-                                {['Relaxing', 'Adventure', 'Culture', 'Foodie', 'Nightlife', 'Budget'].map(vibe => (
-                                    <button key={vibe} type="button" disabled={isLoading} className="px-3 py-1.5 rounded-full border border-white/[0.08] bg-white/[0.04] text-xs font-medium text-slate-300 hover:bg-white/[0.08] hover:text-white transition-all duration-200 ease-out disabled:opacity-50">
-                                        {vibe}
-                                    </button>
-                                ))}
+                                {VIBES.map(({ label }) => {
+                                    const isSelected = selectedVibe === label;
+                                    return (
+                                        <button
+                                            key={label}
+                                            type="button"
+                                            disabled={isLoading}
+                                            onClick={() => setSelectedVibe((v) => (v === label ? null : label))}
+                                            className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-all duration-200 ease-out disabled:opacity-50 ${
+                                                isSelected
+                                                    ? "border-indigo-500/50 bg-indigo-500/15 text-indigo-300 shadow-[0_0_12px_rgba(99,102,241,0.2)]"
+                                                    : "border-white/[0.08] bg-white/[0.04] text-slate-300 hover:bg-white/[0.08] hover:text-white"
+                                            }`}
+                                        >
+                                            {label}
+                                        </button>
+                                    );
+                                })}
                             </div>
                         </div>
                     </div>
@@ -129,7 +173,9 @@ export function CreateTripModal({ isOpen, onClose }: { isOpen: boolean; onClose:
 
                 {/* Footer */}
                 <div className="p-6 border-t border-white/[0.06] bg-white/[0.02] flex justify-between items-center">
-                    <span className="text-xs text-slate-500">Step 1 of 3</span>
+                    <span className="text-xs text-slate-500">
+                        {onFlowStart ? "Launches AI Pipeline →" : "Step 1 of 3"}
+                    </span>
                     <div className="flex gap-3">
                         <button
                             onClick={onClose}
@@ -141,10 +187,11 @@ export function CreateTripModal({ isOpen, onClose }: { isOpen: boolean; onClose:
                         <button
                             onClick={handleSubmit}
                             disabled={!isValid || isLoading}
-                            className={`px-5 py-2 rounded-xl text-sm font-semibold transition-all duration-200 ease-out flex items-center gap-2 ${isValid && !isLoading
-                                ? "bg-indigo-500 hover:bg-indigo-400 text-white shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:scale-[1.02]"
-                                : "bg-white/[0.04] text-slate-500 cursor-not-allowed"
-                                }`}
+                            className={`px-5 py-2 rounded-xl text-sm font-semibold transition-all duration-200 ease-out flex items-center gap-2 ${
+                                isValid && !isLoading
+                                    ? "bg-indigo-500 hover:bg-indigo-400 text-white shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:scale-[1.02]"
+                                    : "bg-white/[0.04] text-slate-500 cursor-not-allowed"
+                            }`}
                         >
                             {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
                             {isLoading ? "Creating..." : "Generate Itinerary"}

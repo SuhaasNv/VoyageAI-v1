@@ -197,7 +197,7 @@ function validateAndSanitize(
                     return true;
                 })
                 .reduce<Activity[]>((acc, a) => {
-                    if (acc.length >= 5) return acc;
+                    if (acc.length >= 8) return acc;
                     const key = normaliseName((a.name as string) ?? "");
                     if (seenActivities.has(key)) return acc;
                     seenActivities.add(key);

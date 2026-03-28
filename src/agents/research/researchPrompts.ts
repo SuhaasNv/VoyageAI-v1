@@ -50,7 +50,9 @@ Return a JSON object with EXACTLY this shape — nothing more, nothing less:
 
 ## Hard constraints
 
-- activities: 3–5 items per day (NEVER fewer than 3, NEVER more than 5).
+- activities: EXACTLY 8 items per day — the first 4 are PRIMARY (shown selected by default),
+  and the last 4 are ALTERNATIVES (offered as swaps). NEVER fewer than 8, NEVER more than 8.
+  All 8 must be distinct and high quality.
 - hotels: MANDATORY — must contain 3–5 entries total (NOT per day). An empty
   hotels array is invalid and will cause a retry.
 - No null values in any field.

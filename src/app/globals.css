@@ -122,13 +122,44 @@
   /* Hide scrollbar for cleanly scrolling sidebars and rows */
   .hide-scrollbar {
     -ms-overflow-style: none;
-    /* IE and Edge */
     scrollbar-width: none;
-    /* Firefox */
   }
 
   .hide-scrollbar::-webkit-scrollbar {
     display: none;
+  }
+
+  /* Invisible scrollbar (no display, still scrollable) */
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Dark thin scrollbar for the flow overlay */
+  .flow-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
+  }
+
+  .flow-scroll::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .flow-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .flow-scroll::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+  }
+
+  .flow-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.15);
   }
 
   /* Mapbox overrides for hover functionality */

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { Plus, Plane } from "lucide-react";
 import { UpcomingTripsGrid } from "@/ui/dashboard/UpcomingTripsGrid";
 import { BudgetOverviewCard } from "@/ui/dashboard/BudgetOverviewCard";
@@ -11,17 +12,21 @@ import { CalendarWidget } from "@/ui/dashboard/CalendarWidget";
 import { TravelDNAOnboardingModal } from "@/ui/dashboard/TravelDNAOnboardingModal";
 import { AICommandPalette } from "@/ui/dashboard/AICommandPalette";
 import { FlightTicketWizard } from "@/ui/dashboard/FlightTicketWizard";
+import { ItineraryCreationFlow } from "@/ui/components/itinerary-flow/ItineraryCreationFlow";
 import { useTrips } from "@/hooks/useTrips";
 import type { Trip } from "@/lib/api";
-import { useMemo } from "react";
+import type { FlowInput } from "@/ui/components/itinerary-flow/types";
 
 export default function DashboardPage() {
+    const router = useRouter();
     const { trips, isLoading, setTrips } = useTrips();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [showTicketWizard, setShowTicketWizard] = useState(false);
     const [showOnboardingModal, setShowOnboardingModal] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [debouncedQuery, setDebouncedQuery] = useState("");
+    /** Active flow session — when set, the full-screen pipeline overlay renders. */
+    const [flowSession, setFlowSession] = useState<{ tripId: string; input: FlowInput } | null>(null);
 
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -127,7 +132,14 @@ export default function DashboardPage() {
 
             {/* ── Modals ────────────────────────────────────────────────────── */}
             {isModalOpen && (
-                <CreateTripModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
+                <CreateTripModal
+                    isOpen={isModalOpen}
+                    onClose={() => setIsModalOpen(false)}
+                    onFlowStart={(tripId, input) => {
+                        setIsModalOpen(false);
+                        setFlowSession({ tripId, input });
+                    }}
+                />
             )}
 
             <FlightTicketWizard
@@ -147,6 +159,19 @@ export default function DashboardPage() {
 
             {/* ── Floating AI command button ─────────────────────────────── */}
             <AICommandPalette onTripCreated={handleTripCreated} />
+
+            {/* ── Itinerary Creation Flow (full-screen pipeline overlay) ───── */}
+            {flowSession && (
+                <ItineraryCreationFlow
+                    tripId={flowSession.tripId}
+                    input={flowSession.input}
+                    onComplete={(id) => {
+                        setFlowSession(null);
+                        router.push(`/dashboard/trip/${id}`);
+                    }}
+                    onClose={() => setFlowSession(null)}
+                />
+            )}
         </div>
     );
 }
