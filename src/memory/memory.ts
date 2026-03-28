@@ -1,17 +1,24 @@
 /**
  * Session-scoped short-term conversational memory.
  *
- * Stores the last N user ↔ assistant exchanges per session in an in-memory
- * Map. When a session fills up, the two oldest messages are compressed into
- * a compact preamble string so recent context is always preserved without
- * an extra LLM call.
+ * Stores the last N user ↔ assistant exchanges per session. When a session
+ * fills up, the two oldest messages are compressed into a compact preamble
+ * so recent context is always preserved without an extra LLM call.
  *
- * Lifetime: process-scoped (Node.js server lifetime). In serverless
- * environments, sessions persist while the function instance is warm.
- * Stale sessions are pruned lazily every PRUNE_EVERY writes.
+ * Storage strategy:
+ *   Production (UPSTASH_REDIS_REST_URL set): Upstash Redis via REST API.
+ *     Each session is a JSON blob stored with a 30-minute EX TTL.
+ *     This is safe across serverless cold starts and multiple instances.
  *
- * No DB writes. No external dependencies.
+ *   Development / no Redis: In-process Map with lazy TTL pruning.
+ *     Sessions are lost on cold starts (acceptable for local dev).
+ *
+ * No external SDK required for Redis — uses the Upstash REST HTTP API
+ * (already a dependency via @upstash/redis in package.json).
  */
+
+import { Redis } from "@upstash/redis";
+import { logError } from "@/infrastructure/logger";
 
 type Role = "user" | "assistant";
 
@@ -30,9 +37,10 @@ interface Session {
 const MAX_EXCHANGES = 5;                    // 5 user+assistant pairs in full
 const MAX_MESSAGES = MAX_EXCHANGES * 2;     // = 10 raw messages max
 const MSG_CONTENT_CAP = 1_000;             // chars stored per individual message
-const SESSION_TTL_MS = 30 * 60 * 1_000;   // 30-minute inactivity TTL
+const SESSION_TTL_SEC = 30 * 60;           // 30-minute inactivity TTL (Redis EX)
+const SESSION_TTL_MS = SESSION_TTL_SEC * 1_000;
 const PREAMBLE_MAX_CHARS = 400;            // hard cap on the compressed preamble
-const PRUNE_EVERY = 30;                    // prune stale sessions every N writes
+const PRUNE_EVERY = 30;                    // in-memory fallback: prune every N writes
 
 /**
  * Hard cap for the final rendered context string.
@@ -40,19 +48,40 @@ const PRUNE_EVERY = 30;                    // prune stale sessions every N write
  */
 const MAX_CONTEXT_CHARS = 2_000;
 
-let writeCount = 0;
-const store = new Map<string, Session>();
+// ─── Redis client (optional) ──────────────────────────────────────────────────
 
-// ─────────────────────────────────────────
-//  Internal helpers
-// ─────────────────────────────────────────
+function tryCreateRedis(): Redis | null {
+    const url = process.env.UPSTASH_REDIS_REST_URL;
+    const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+    if (!url || !token) return null;
+    try {
+        return new Redis({ url, token });
+    } catch {
+        return null;
+    }
+}
+
+// Lazily initialized so the module can load without Redis in test environments.
+let _redis: Redis | null | undefined = undefined;
+
+function getRedis(): Redis | null {
+    if (_redis === undefined) _redis = tryCreateRedis();
+    return _redis;
+}
+
+// ─── In-memory fallback store ─────────────────────────────────────────────────
+
+let writeCount = 0;
+const memoryStore = new Map<string, Session>();
 
 function pruneExpiredSessions(): void {
     const threshold = Date.now() - SESSION_TTL_MS;
-    for (const [key, session] of store) {
-        if (session.lastTouchedMs < threshold) store.delete(key);
+    for (const [key, session] of memoryStore) {
+        if (session.lastTouchedMs < threshold) memoryStore.delete(key);
     }
 }
+
+// ─── Internal helpers ─────────────────────────────────────────────────────────
 
 /** Compress two messages into a single short sentence. */
 function compressPair(a: MemoryMessage, b: MemoryMessage): string {
@@ -64,56 +93,89 @@ function compressPair(a: MemoryMessage, b: MemoryMessage): string {
     return `${fmt(a)} | ${fmt(b)}`;
 }
 
-// ─────────────────────────────────────────
-//  Public API
-// ─────────────────────────────────────────
-
-/**
- * Push a new message into the session.
- *
- * When the session is at capacity (MAX_MESSAGES), the two oldest messages
- * are compressed into the session preamble and removed. This preserves
- * a rolling window of recent context without unbounded growth.
- */
-export function updateMemory(sessionId: string, role: Role, content: string): void {
-    if (++writeCount % PRUNE_EVERY === 0) pruneExpiredSessions();
-
-    const now = Date.now();
-    const session: Session = store.get(sessionId) ?? { messages: [], lastTouchedMs: now };
-
-    session.messages.push({ role, content: content.slice(0, MSG_CONTENT_CAP) });
-    session.lastTouchedMs = now;
-
-    // When over the cap, compress the oldest exchange (user + assistant = 2 messages)
-    // into the session preamble and drop them from the live list.
+function applyCapAndCompress(session: Session): Session {
     while (session.messages.length > MAX_MESSAGES) {
         const pair = session.messages.splice(0, 2);
-        // Guard: splice may return fewer than 2 if messages are somehow unpaired.
         if (pair.length < 2 || !pair[0] || !pair[1]) break;
-        const oldest = pair as [MemoryMessage, MemoryMessage];
-        const snippet = compressPair(oldest[0], oldest[1]);
+        const snippet = compressPair(pair[0] as MemoryMessage, pair[1] as MemoryMessage);
         const separator = session.preamble ? " … " : "";
         const combined = (session.preamble ?? "") + separator + snippet;
-        // Keep only the tail so the preamble never grows beyond its cap.
         session.preamble =
             combined.length > PREAMBLE_MAX_CHARS
                 ? combined.slice(combined.length - PREAMBLE_MAX_CHARS)
                 : combined;
     }
+    return session;
+}
 
-    store.set(sessionId, session);
+// ─── Redis-backed read/write ──────────────────────────────────────────────────
+
+async function redisGet(redis: Redis, sessionId: string): Promise<Session | null> {
+    try {
+        const raw = await redis.get<Session>(`mem:${sessionId}`);
+        return raw ?? null;
+    } catch (err) {
+        logError("[memory] Redis GET failed, using in-memory fallback", err);
+        return null;
+    }
+}
+
+async function redisSet(redis: Redis, sessionId: string, session: Session): Promise<void> {
+    try {
+        await redis.set(`mem:${sessionId}`, session, { ex: SESSION_TTL_SEC });
+    } catch (err) {
+        logError("[memory] Redis SET failed, falling back to in-memory store", err);
+        // Persist to in-memory store so the session is not lost for this instance.
+        memoryStore.set(sessionId, session);
+    }
+}
+
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+/**
+ * Push a new message into the session.
+ *
+ * When the session is at capacity (MAX_MESSAGES), the two oldest messages are
+ * compressed into the session preamble so recent context is always preserved.
+ */
+export async function updateMemory(sessionId: string, role: Role, content: string): Promise<void> {
+    const redis = getRedis();
+    const now = Date.now();
+
+    let session: Session;
+
+    if (redis) {
+        session = (await redisGet(redis, sessionId)) ?? { messages: [], lastTouchedMs: now };
+    } else {
+        if (++writeCount % PRUNE_EVERY === 0) pruneExpiredSessions();
+        session = memoryStore.get(sessionId) ?? { messages: [], lastTouchedMs: now };
+    }
+
+    session.messages.push({ role, content: content.slice(0, MSG_CONTENT_CAP) });
+    session.lastTouchedMs = now;
+    applyCapAndCompress(session);
+
+    if (redis) {
+        await redisSet(redis, sessionId, session);
+    } else {
+        memoryStore.set(sessionId, session);
+    }
 }
 
 /**
  * Return a formatted context block for injection above a user prompt.
  * Returns an empty string when the session has no prior history.
- *
- * The block includes:
- *   - A compact preamble for older exchanges (if any were trimmed).
- *   - The most recent MAX_EXCHANGES turns in full.
  */
-export function buildMemoryContext(sessionId: string): string {
-    const session = store.get(sessionId);
+export async function buildMemoryContext(sessionId: string): Promise<string> {
+    const redis = getRedis();
+    let session: Session | null = null;
+
+    if (redis) {
+        session = await redisGet(redis, sessionId);
+    } else {
+        session = memoryStore.get(sessionId) ?? null;
+    }
+
     if (!session) return "";
 
     const hasContent = session.messages.length > 0 || !!session.preamble;
@@ -137,8 +199,7 @@ export function buildMemoryContext(sessionId: string): string {
 
 /**
  * Hard-cap a string to `maxChars` characters, keeping the most recent tail.
- * Trims to the nearest line boundary when possible so the output starts
- * at a clean line rather than mid-sentence.
+ * Trims to the nearest line boundary when possible.
  */
 export function trimToTokenLimit(text: string, maxChars: number): string {
     if (text.length <= maxChars) return text;
@@ -147,7 +208,15 @@ export function trimToTokenLimit(text: string, maxChars: number): string {
     return boundary > 0 ? tail.slice(boundary + 1) : tail;
 }
 
-/** Remove a specific session from the store. Exposed for testing. */
-export function clearMemory(sessionId: string): void {
-    store.delete(sessionId);
+/** Remove a specific session from both Redis and the in-memory fallback. */
+export async function clearMemory(sessionId: string): Promise<void> {
+    const redis = getRedis();
+    if (redis) {
+        try {
+            await redis.del(`mem:${sessionId}`);
+        } catch {
+            // ignore
+        }
+    }
+    memoryStore.delete(sessionId);
 }

@@ -191,7 +191,7 @@ export async function POST(req: NextRequest) {
             if (!auth) {
                 // Unauthenticated: stream a capped itinerary preview.
                 // Record the user turn now; the preview stream saves the assistant turn.
-                updateMemory(sessionId, "user", prompt);
+                void updateMemory(sessionId, "user", prompt);
                 return buildPreviewStream(req, prompt, sessionId);
             }
 
@@ -243,8 +243,8 @@ Text: ${prompt}`;
                 });
 
                 // Record the completed exchange so follow-up questions carry context.
-                updateMemory(sessionId, "user", prompt);
-                updateMemory(
+                void updateMemory(sessionId, "user", prompt);
+                void updateMemory(
                     sessionId,
                     "assistant",
                     `Trip created for ${extracted.destination} (${extracted.startDate} to ${extracted.endDate}).`
@@ -278,7 +278,7 @@ Text: ${prompt}`;
         // ── Intent: QUESTION → streaming text response ────────────────────────
         // Capture prior context BEFORE recording the new user turn so the
         // injected block only contains previous exchanges, not the current one.
-        const memCtx = buildMemoryContext(sessionId);
+        const memCtx = await buildMemoryContext(sessionId);
 
         const encoder = new TextEncoder();
         const abort = new AbortController();
@@ -319,8 +319,8 @@ Text: ${prompt}`;
 
                     // Persist both turns only on successful, non-aborted generation.
                     if (!abort.signal.aborted && accumulated) {
-                        updateMemory(sessionId, "user", prompt);
-                        updateMemory(sessionId, "assistant", accumulated);
+                        void updateMemory(sessionId, "user", prompt);
+                        void updateMemory(sessionId, "assistant", accumulated);
                     }
 
                     controller.close();
@@ -523,7 +523,7 @@ Text: ${prompt}`;
 
                 // Save a compact assistant turn so follow-up questions know
                 // which destination was previewed.
-                updateMemory(
+                void updateMemory(
                     sessionId,
                     "assistant",
                     `Itinerary preview: ${extracted.destination}, ${extracted.startDate} to ${previewEndDate}. ${capped.days.length} day(s) shown.`

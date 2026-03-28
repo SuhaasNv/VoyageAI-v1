@@ -295,7 +295,6 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
         // Route line — deduplicated + midpoint-smoothed for long segments
         const rawCoords = deduped.map((p) => [p.lng, p.lat] as [number, number]);
         const coords = smoothRoute(rawCoords);
-        console.log("finalCoords:", coords);
         map.addSource("route", {
             type: "geojson",
             data: { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: [coords[0]] } },

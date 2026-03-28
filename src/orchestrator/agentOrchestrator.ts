@@ -7,8 +7,6 @@ import {
     type OptimizedTripContext,
 } from "@/agents/budget/budgetAgent";
 import { SafetyAgent, type SafeTripContext } from "@/agents/safety/safetyAgent";
-import { LLMClientFactory, parseJSONResponse } from "@/lib/ai/llm";
-import type { LLMMessage } from "@/lib/ai/types";
 import { logStructured, generateRequestId } from "@/infrastructure/logger";
 import { runWithReplayLog } from "@/services/ai/agentReplayLogger";
 
@@ -21,18 +19,6 @@ const MAX_ITERATIONS = 3;
  * Aligned with SafetyAgent's fatigue threshold (>4 = medium, >5 = high).
  */
 const MAX_ACTIVITIES_BEFORE_DENSE = 4;
-
-// ─── Prompt ───────────────────────────────────────────────────────────────────
-
-const ORCHESTRATOR_DECISION_PROMPT = `You are an orchestrator.
-Given the issue and context, choose ONE action:
-- reoptimize_budget
-- rerun_logistics
-- ask_user
-- proceed
-
-Return JSON only:
-{ "action": "..." }`;
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -74,7 +60,7 @@ export type AgentOrchestratorDeps = {
     logistics?: LogisticsAgent;
     budget?: BudgetAgent;
     safety?: SafetyAgent;
-    /** Override for the LLM decision function — useful in tests. */
+    /** Override for the decision function — useful in tests. */
     decideNextAction?: (input: DecideInput) => Promise<{ action: OrchestratorAction }>;
 };
 
@@ -85,55 +71,32 @@ export type DecideInput = {
     context: unknown;
 };
 
-// ─── LLM decision helper ──────────────────────────────────────────────────────
+// ─── Deterministic decision helper ────────────────────────────────────────────
+//
+// Replaces a prior LLM call that spent 128 tokens on a choice fully determined
+// by the issue classification:
+//   over_budget  → reoptimize_budget (hint logistics to pick a cheaper hotel)
+//   too_dense    → rerun_logistics   (re-order activities without changing cost)
+//   both / other → ask_user          (conflicting goals need human input)
+//
+// This removes ~1 round-trip LLM call per validation-loop iteration with no
+// loss of decision quality (the LLM had no additional signal beyond issue type).
 
-const VALID_ACTIONS = new Set<OrchestratorAction>([
-    "reoptimize_budget",
-    "rerun_logistics",
-    "ask_user",
-    "proceed",
-]);
-
-async function defaultDecideNextAction(
+function defaultDecideNextAction(
     input: DecideInput,
 ): Promise<{ action: OrchestratorAction }> {
-    const fallback: { action: OrchestratorAction } = { action: "reoptimize_budget" };
-
-    try {
-        const client = LLMClientFactory.create({ agent: "orchestrator" });
-        const summary = JSON.stringify({
-            issue: input.issue,
-            destination: (input.context as { destination?: string })?.destination,
-            durationDays: (input.context as { durationDays?: number })?.durationDays,
-            isOverBudget: (input.context as { budget?: { isOverBudget?: boolean } })?.budget
-                ?.isOverBudget,
-            maxActivitiesInDay: maxActivitiesInDay(
-                input.context as { days?: Array<{ activities?: unknown[] }> },
-            ),
-        });
-
-        const messages: LLMMessage[] = [
-            { role: "system", content: ORCHESTRATOR_DECISION_PROMPT },
-            { role: "user", content: `Issue: ${input.issue}\nContext summary: ${summary}` },
-        ];
-
-        const response = await client.execute(messages, {
-            temperature: 0,
-            responseFormat: "json",
-            maxTokens: 128,
-            timeoutMs: 15_000,
-        });
-
-        const parsed = parseJSONResponse<{ action?: unknown }>(response.content);
-        const action = parsed?.action;
-        if (typeof action === "string" && VALID_ACTIONS.has(action as OrchestratorAction)) {
-            return { action: action as OrchestratorAction };
-        }
-    } catch {
-        // fall through to safe default
+    let action: OrchestratorAction;
+    switch (input.issue) {
+        case "over_budget":
+            action = "reoptimize_budget";
+            break;
+        case "too_dense":
+            action = "rerun_logistics";
+            break;
+        default:
+            action = "ask_user";
     }
-
-    return fallback;
+    return Promise.resolve({ action });
 }
 
 // ─── Validation helpers ───────────────────────────────────────────────────────

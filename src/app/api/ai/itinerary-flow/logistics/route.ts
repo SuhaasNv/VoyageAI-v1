@@ -4,6 +4,7 @@ import { getAuthContext, validateBody } from "@/lib/api/request";
 import { successResponse, unauthorizedResponse } from "@/lib/api/response";
 import { runWithRequestContext } from "@/lib/requestContext";
 import { formatErrorResponse } from "@/lib/errors";
+import { logStructured } from "@/infrastructure/logger";
 import { LogisticsAgent } from "@/agents/logistics/logisticsAgent";
 
 const ActivitySchema = z.object({
@@ -51,10 +52,13 @@ export async function POST(req: NextRequest) {
         const body = await validateBody(req, Schema);
         if (!body.ok) return body.response;
 
+        const flowSessionId = req.headers.get("x-flow-session-id") ?? undefined;
+        logStructured({ layer: "agent", step: "start", data: { stage: "logistics", flowSessionId } });
+
         try {
             const t0 = Date.now();
             const agent = new LogisticsAgent();
-            const result = await agent.run(body.data);
+            const result = await agent.run(body.data, flowSessionId);
             const durationMs = Date.now() - t0;
 
             return successResponse({

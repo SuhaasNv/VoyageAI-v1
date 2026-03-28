@@ -65,16 +65,20 @@ export function AIChatDrawer({
         }
     }, [messages, isOpen]);
 
-    // ── Send chat message ─────────────────────────────────────────────────────
+    // ── Send chat message (streaming) ─────────────────────────────────────────
     async function handleSend(overrideText?: string) {
         const text = (overrideText ?? input).trim();
         if (!text || isSending) return;
 
         const optimisticId = `opt-${Date.now()}`;
+        const streamingId = `ai-${Date.now()}`;
         setMessages((prev) => [...prev, { id: optimisticId, role: "user", content: text }]);
         setInput("");
         setIsSending(true);
         setLastFailed(null);
+
+        // Add an empty assistant message that we'll fill in as tokens arrive
+        setMessages((prev) => [...prev, { id: streamingId, role: "assistant", content: "" }]);
 
         try {
             const res = await fetch("/api/ai/chat", {
@@ -92,21 +96,96 @@ export function AIChatDrawer({
                 }),
             });
 
-            const json = await res.json();
-            if (!json?.success) throw new Error(json?.error?.message ?? "AI response failed");
+            if (!res.ok) {
+                const json = await res.json().catch(() => ({})) as { error?: { message?: string } };
+                throw new Error(json?.error?.message ?? "AI response failed");
+            }
 
-            const data = json.data ?? {};
-            setMessages((prev) => [
-                ...prev,
-                {
-                    id: `ai-${Date.now()}`,
-                    role: "assistant",
-                    content: data.message ?? "I couldn't generate a response. Please try again.",
-                    suggestedActions: data.suggestedActions ?? [],
-                },
-            ]);
+            // ── Handle streaming text/plain response ──────────────────────
+            const contentType = res.headers.get("Content-Type") ?? "";
+            if (contentType.includes("text/plain") && res.body) {
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let accumulated = "";
+                let actionsJson: { suggestedActions?: SuggestedAction[] } | null = null;
+
+                // Separator between plain-text response and trailing actions JSON.
+                // The API appends \x00ACTIONS:{...} after the separator content.
+                const ACTIONS_SEPARATOR = "---ACTIONS---";
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value, { stream: true });
+
+                    // The \x00ACTIONS: sentinel is the very last thing the API sends.
+                    // Everything before it is the readable response (already contains
+                    // the text up to and including ---ACTIONS--- which we strip below).
+                    const sentinelIdx = chunk.indexOf("\x00ACTIONS:");
+                    if (sentinelIdx !== -1) {
+                        accumulated += chunk.slice(0, sentinelIdx);
+                        const actionsStr = chunk.slice(sentinelIdx + "\x00ACTIONS:".length);
+                        try {
+                            actionsJson = JSON.parse(actionsStr) as { suggestedActions?: SuggestedAction[] };
+                        } catch {
+                            // Ignore parse error — suggestedActions will be empty
+                        }
+                    } else {
+                        accumulated += chunk;
+                    }
+
+                    // Strip the separator + anything after it from the live display
+                    // so users never see "---ACTIONS---" or raw JSON in the chat bubble.
+                    const sepIdx = accumulated.indexOf(ACTIONS_SEPARATOR);
+                    const displayText = sepIdx !== -1
+                        ? accumulated.slice(0, sepIdx).trimEnd()
+                        : accumulated;
+
+                    setMessages((prev) =>
+                        prev.map((m) =>
+                            m.id === streamingId
+                                ? { ...m, content: displayText }
+                                : m
+                        )
+                    );
+                }
+
+                // Finalise: extract clean message text and suggested actions.
+                const sepIdx = accumulated.indexOf(ACTIONS_SEPARATOR);
+                const finalMessage = sepIdx !== -1
+                    ? accumulated.slice(0, sepIdx).trim()
+                    : accumulated.trim();
+
+                const suggestedActions: SuggestedAction[] = actionsJson?.suggestedActions ?? [];
+
+                setMessages((prev) =>
+                    prev.map((m) =>
+                        m.id === streamingId
+                            ? { ...m, content: finalMessage || "I couldn't generate a response. Please try again.", suggestedActions }
+                            : m
+                    )
+                );
+            } else {
+                // ── Fallback: non-streaming JSON response (Gemini path) ────
+                const json = await res.json() as { success?: boolean; error?: { message?: string }; data?: { message?: string; suggestedActions?: SuggestedAction[] } };
+                if (!json?.success) throw new Error(json?.error?.message ?? "AI response failed");
+
+                const data = json.data ?? {};
+                setMessages((prev) =>
+                    prev.map((m) =>
+                        m.id === streamingId
+                            ? {
+                                ...m,
+                                content: data.message ?? "I couldn't generate a response. Please try again.",
+                                suggestedActions: data.suggestedActions ?? [],
+                            }
+                            : m
+                    )
+                );
+            }
         } catch {
-            setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
+            setMessages((prev) => prev.filter((m) => m.id !== optimisticId && m.id !== streamingId));
             setLastFailed({ type: "send", text });
         } finally {
             setIsSending(false);
@@ -323,8 +402,8 @@ export function AIChatDrawer({
                         </div>
                     ))}
 
-                    {/* Typing indicator — TextShimmer sweep while AI is generating */}
-                    {isSending && (
+                    {/* Streaming cursor — shown only until the first token arrives */}
+                    {isSending && messages[messages.length - 1]?.content === "" && (
                         <div className="flex justify-start">
                             <div className="bg-white/[0.06] border border-white/[0.08] rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-2.5">
                                 <Sparkles className="w-3.5 h-3.5 text-indigo-400 shrink-0" />

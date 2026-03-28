@@ -4,6 +4,7 @@ import { getAuthContext, validateBody } from "@/lib/api/request";
 import { successResponse, unauthorizedResponse } from "@/lib/api/response";
 import { runWithRequestContext } from "@/lib/requestContext";
 import { formatErrorResponse } from "@/lib/errors";
+import { logStructured } from "@/infrastructure/logger";
 import { prisma } from "@/lib/prisma";
 import { safeTripContextToItinerary } from "@/lib/services/trips";
 
@@ -36,6 +37,9 @@ export async function POST(req: NextRequest) {
 
         const body = await validateBody(req, Schema);
         if (!body.ok) return body.response;
+
+        const flowSessionId = req.headers.get("x-flow-session-id") ?? undefined;
+        logStructured({ layer: "agent", step: "start", data: { stage: "save", flowSessionId } });
 
         try {
             // Verify the trip belongs to the authenticated user

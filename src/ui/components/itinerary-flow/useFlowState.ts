@@ -8,7 +8,7 @@
  * Persists to localStorage so users can resume a planning session.
  */
 
-import { useReducer, useEffect, useCallback, useRef } from "react";
+import { useReducer, useEffect, useCallback, useRef, useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 import type {
     FlowStage,
@@ -34,21 +34,23 @@ export type Action =
     | { type: "SET_SAFETY"; result: SafeTripContext; meta: FlowMetadata }
     | { type: "ADVANCE" }
     | { type: "SAVED" }
-    | { type: "RESET"; input: FlowInput; sessionId: string };
+    | { type: "RESET"; input: FlowInput; sessionId: string }
+    | { type: "RESTORE"; session: FlowState };
 
 // ─── Reducer ──────────────────────────────────────────────────────────────────
 
 function reducer(state: FlowState, action: Action): FlowState {
     switch (action.type) {
         case "SET_LOADING":
-            return { ...state, error: null };
+            return { ...state, isLoading: true, error: null };
 
         case "SET_ERROR":
-            return { ...state, error: action.error };
+            return { ...state, isLoading: false, error: action.error };
 
         case "SET_PLANNER":
             return {
                 ...state,
+                isLoading: false,
                 stage: "planner",
                 plannerResult: action.result,
                 meta: { ...state.meta, planner: action.meta },
@@ -58,6 +60,7 @@ function reducer(state: FlowState, action: Action): FlowState {
         case "SET_RESEARCH":
             return {
                 ...state,
+                isLoading: false,
                 stage: "research",
                 researchResult: action.result,
                 meta: { ...state.meta, research: action.meta },
@@ -67,6 +70,7 @@ function reducer(state: FlowState, action: Action): FlowState {
         case "SET_LOGISTICS":
             return {
                 ...state,
+                isLoading: false,
                 stage: "logistics",
                 logisticsResult: action.result,
                 meta: { ...state.meta, logistics: action.meta },
@@ -76,6 +80,7 @@ function reducer(state: FlowState, action: Action): FlowState {
         case "SET_BUDGET":
             return {
                 ...state,
+                isLoading: false,
                 stage: "budget",
                 budgetResult: action.result,
                 meta: { ...state.meta, budget: action.meta },
@@ -85,6 +90,7 @@ function reducer(state: FlowState, action: Action): FlowState {
         case "SET_SAFETY":
             return {
                 ...state,
+                isLoading: false,
                 stage: "safety",
                 safetyResult: action.result,
                 meta: { ...state.meta, safety: action.meta },
@@ -95,17 +101,20 @@ function reducer(state: FlowState, action: Action): FlowState {
             const order: FlowStage[] = ["planner", "research", "logistics", "budget", "safety", "saved"];
             const idx = order.indexOf(state.stage);
             const next = order[idx + 1] ?? "saved";
-            return { ...state, stage: next, error: null };
+            return { ...state, isLoading: false, stage: next, error: null };
         }
 
         case "SAVED":
-            return { ...state, stage: "saved", error: null };
+            return { ...state, isLoading: false, stage: "saved", error: null };
 
         case "RESET":
             return {
                 ...initialState(action.input, action.sessionId),
                 iteration: state.iteration + 1,
             };
+
+        case "RESTORE":
+            return { ...action.session, isLoading: false, error: null };
 
         default:
             return state;
@@ -117,6 +126,7 @@ function reducer(state: FlowState, action: Action): FlowState {
 function initialState(input: FlowInput, sessionId: string): FlowState {
     return {
         stage: "planner",
+        isLoading: false,
         input,
         plannerResult: null,
         researchResult: null,
@@ -181,13 +191,16 @@ export interface UseFlowStateReturn {
 export function useFlowState(input: FlowInput): UseFlowStateReturn {
     const sessionId = useRef(uuidv4()).current;
     const [state, dispatch] = useReducer(reducer, initialState(input, sessionId));
-    const savedSessionRef = useRef<FlowState | null>(null);
+    // useState so that setting a saved session triggers a re-render and the
+    // resume banner can appear in the UI.
+    const [savedSession, setSavedSession] = useState<FlowState | null>(null);
 
-    // Load saved session on mount (only once)
+    // Load saved session on mount (only once). Only offer resume if the saved
+    // session is for a different trip (same tripId would cause confusing loops).
     useEffect(() => {
         const saved = loadFromStorage();
         if (saved && saved.input.tripId !== input.tripId) {
-            savedSessionRef.current = saved;
+            setSavedSession(saved);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -206,12 +219,13 @@ export function useFlowState(input: FlowInput): UseFlowStateReturn {
     }, [input]);
 
     const resumeSavedSession = useCallback(() => {
-        // Not implemented as a state dispatch — parent component handles
-        // redirect/reload to the saved session's tripId.
-    }, []);
+        if (!savedSession) return;
+        dispatch({ type: "RESTORE", session: savedSession });
+        setSavedSession(null);
+    }, [savedSession]);
 
     const discardSavedSession = useCallback(() => {
-        savedSessionRef.current = null;
+        setSavedSession(null);
         clearStorage();
     }, []);
 
@@ -219,7 +233,7 @@ export function useFlowState(input: FlowInput): UseFlowStateReturn {
         state,
         dispatch,
         resetAllAndRestart,
-        savedSession: savedSessionRef.current,
+        savedSession,
         resumeSavedSession,
         discardSavedSession,
     };

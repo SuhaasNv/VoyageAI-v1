@@ -43,6 +43,8 @@ export interface FlowMetadata {
 
 export interface FlowState {
     stage: FlowStage;
+    /** True while a stage API call is in-flight. */
+    isLoading: boolean;
     input: FlowInput;
     plannerResult: TripContext | null;
     researchResult: EnrichedTripContext | null;
