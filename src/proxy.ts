@@ -1,7 +1,7 @@
 /**
- * middleware.ts  (Next.js Edge Middleware)
+ * proxy.ts  (Next.js 16+ request proxy, formerly middleware)
  *
- * Runs on every matched request BEFORE it reaches route handlers.
+ * Runs on every matched request BEFORE it reaches route handlers (Node.js runtime).
  *
  * Responsibilities:
  *  1. CSRF validation on state-mutating API routes (POST / PUT / PATCH / DELETE)
@@ -14,10 +14,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { checkCsrf } from "@/middleware/csrf";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Middleware
+// Proxy
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function middleware(req: NextRequest): Promise<NextResponse> {
+export async function proxy(req: NextRequest): Promise<NextResponse> {
     const { pathname } = req.nextUrl;
 
     // ── 1. CSRF validation for state-mutating API routes ──────────────────────

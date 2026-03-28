@@ -110,7 +110,7 @@ voyageai_1/
 │   ├── services/              # AI services (chat, packing, simulation, create-trip)
 │   ├── stores/                # Zustand (auth store)
 │   ├── hooks/                 # useTrips, etc.
-│   └── middleware.ts          # CSRF, security headers
+│   └── proxy.ts               # CSRF, security headers (Next.js 16+)
 ├── scripts/                   # clear-image-cache, measure-perf
 ├── docs/                      # Architecture, audits
 └── public/

@@ -10,7 +10,8 @@
     "test": "vitest run",
     "lint": "eslint",
     "clear-image-cache": "npx tsx scripts/clear-image-cache.ts",
-    "measure-perf": "npx tsx scripts/measure-dashboard-perf.ts"
+    "measure-perf": "npx tsx scripts/measure-dashboard-perf.ts",
+    "copy-db-data": "npx tsx scripts/copy-postgres-data.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
