@@ -1,0 +1,95 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://voyageai.app/schemas/OrchestratorResult",
+  "title": "OrchestratorResult",
+  "description": "Single source of truth for the pipeline result contract. Both the TypeScript AgentOrchestrator and the Python LangGraph service must produce objects that conform to this schema. Derive Zod (TS) and Pydantic (Python) models from this file — never the reverse.",
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": ["boolean", "null"],
+      "description": "true when the pipeline completed successfully without human intervention required. null when the pipeline was interrupted before a result was produced."
+    },
+    "requiresHuman": {
+      "type": ["boolean", "null"],
+      "description": "true when a human decision is needed before the pipeline can proceed or be accepted."
+    },
+    "stage": {
+      "type": ["string", "null"],
+      "enum": ["planner", "research", "logistics", "budget_safety", null],
+      "description": "The pipeline stage where an error or HITL trigger occurred. null on success."
+    },
+    "message": {
+      "type": ["string", "null"],
+      "description": "Human-readable reason for HITL or failure."
+    },
+    "context": {
+      "type": ["object", "null"],
+      "description": "The SafeTripContext (full trip data) at the point of completion or interruption.",
+      "additionalProperties": true
+    },
+    "executionLog": {
+      "type": "array",
+      "description": "Ordered log entries from each agent step and LLM decision.",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["agent", "status", "timestamp"],
+            "properties": {
+              "agent":     { "type": "string" },
+              "status":    { "type": "string", "enum": ["success", "error"] },
+              "timestamp": { "type": "number" },
+              "detail":    { "type": "string" }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["type", "issue", "action", "timestamp"],
+            "properties": {
+              "type":      { "type": "string", "const": "llm-decision" },
+              "issue":     { "type": "string" },
+              "action":    { "type": "string" },
+              "timestamp": { "type": "number" }
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "error": {
+      "type": ["string", "null"],
+      "description": "Error message when ok=false and requiresHuman is not set."
+    },
+    "executionTrace": {
+      "type": "array",
+      "description": "Per-node observability trace. Present when the pipeline includes tracing (LangGraph service only).",
+      "items": {
+        "type": "object",
+        "required": ["node", "durationMs", "iteration"],
+        "properties": {
+          "node":        { "type": "string" },
+          "durationMs":  { "type": "number" },
+          "iteration":   { "type": "number" },
+          "inputSnap":   { "type": "object", "additionalProperties": true },
+          "outputSnap":  { "type": "object", "additionalProperties": true },
+          "skipped":     { "type": "boolean" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "metrics": {
+      "type": ["object", "null"],
+      "description": "Run-level performance and decision counters. Present when the pipeline includes metrics (LangGraph service only).",
+      "required": ["latencyMs", "iterations", "agentCalls", "requiresHuman"],
+      "properties": {
+        "latencyMs":    { "type": "number" },
+        "iterations":   { "type": "number" },
+        "agentCalls":   { "type": "number" },
+        "requiresHuman":{ "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

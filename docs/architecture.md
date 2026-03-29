@@ -580,4 +580,254 @@ VoyageAI is a **Next.js monolith** with a **mature tool-based AI surface** for u
 
 ---
 
+## 15. Hybrid LangGraph integration
+
+### Overview
+
+The `feat-langraph-integration` branch adds a **Python LangGraph service** as the orchestration layer while keeping all five TypeScript agents unchanged. This separates two orthogonal concerns:
+
+| Concern | Owner |
+| ------- | ----- |
+| **Orchestration** — graph flow, conditional edges, repair loop, human-in-the-loop decisions | Python `LangGraph` |
+| **Agent capabilities** — prompts, LLM calls, structured output, Bright Data | TypeScript (unchanged) |
+
+### Architecture diagram
+
+```mermaid
+flowchart TB
+  subgraph caller ["Callers"]
+    UI["Browser / API route"]
+    TEST["Vitest / pytest"]
+  end
+
+  subgraph ts ["Next.js (TypeScript)"]
+    BRIDGE["runViaLangGraph()<br/>agentOrchestrator.ts"]
+    FALLBACK["AgentOrchestrator.run()<br/>TS fallback"]
+    INTERNAL["POST /api/internal/agent/execute<br/>X-Internal-Agent-Secret"]
+    AGENTS["PlannerAgent · ResearchAgent<br/>LogisticsAgent · BudgetAgent · SafetyAgent"]
+    REPLAY["runWithReplayLog()<br/>AgentExecutionLog (DB)"]
+  end
+
+  subgraph py ["Python LangGraph service (:8000)"]
+    GRAPH["StateGraph<br/>compiled_graph"]
+    PLNODE["planner_node"]
+    RESNODE["research_node"]
+    LOGNODE["logistics_node"]
+    BSNODE["budget_safety_node"]
+    VALNODE["validate_node<br/>repair loop ≤ 3"]
+    CLIENT["AgentClient (httpx)"]
+  end
+
+  UI --> BRIDGE
+  BRIDGE -->|"HTTP POST /run"| GRAPH
+  BRIDGE -->|"on error / no service"| FALLBACK
+  TEST --> FALLBACK
+
+  GRAPH --> PLNODE --> RESNODE --> LOGNODE --> BSNODE --> VALNODE
+  VALNODE -->|"over_budget or too_dense"| LOGNODE
+  VALNODE -->|"ask_user / exhausted"| GRAPH
+
+  PLNODE & RESNODE & LOGNODE & BSNODE --> CLIENT
+  CLIENT -->|"HTTP POST + secret"| INTERNAL
+  INTERNAL --> AGENTS
+  AGENTS --> REPLAY
+```
+
+### Call sequence: one happy-path trip
+
+```mermaid
+sequenceDiagram
+  participant Caller
+  participant Bridge as runViaLangGraph (TS)
+  participant Graph as LangGraph /run (Python)
+  participant Internal as /api/internal/agent/execute (TS)
+  participant Agent as *Agent.run() (TS)
+
+  Caller->>Bridge: runViaLangGraph("Trip to Tokyo")
+  Bridge->>Graph: POST /run {input}
+  Graph->>Internal: POST /execute {step:"planner", payload}
+  Internal->>Agent: PlannerAgent.run()
+  Agent-->>Internal: TripContext
+  Internal-->>Graph: {result: TripContext}
+  Graph->>Internal: POST /execute {step:"research", payload}
+  Internal->>Agent: ResearchAgent.run()
+  Agent-->>Internal: EnrichedTripContext
+  Internal-->>Graph: {result: EnrichedTripContext}
+  Note over Graph: … logistics → budget → safety …
+  Graph->>Graph: validate_node: ok, no issues
+  Graph-->>Bridge: OrchestratorResult {ok:true}
+  Bridge-->>Caller: OrchestratorResult
+```
+
+### Repair loop (human-in-the-loop)
+
+```mermaid
+flowchart LR
+  BS["budget_safety_node"]
+  VAL["validate_node"]
+  LOG["logistics_node"]
+  HITL(["requiresHuman: true"])
+  OK(["ok: true"])
+
+  BS --> VAL
+  VAL -->|"no issues"| OK
+  VAL -->|"over_budget → reoptimize_budget<br/>too_dense → rerun_logistics"| LOG
+  LOG --> BS
+  VAL -->|"ask_user OR loop exhausted after 3 rounds"| HITL
+```
+
+### Key files
+
+| File | Role |
+| ---- | ---- |
+| [`python/agent_graph/graph.py`](../python/agent_graph/graph.py) | LangGraph `StateGraph`; control flow, repair loop, routing |
+| [`python/agent_graph/client.py`](../python/agent_graph/client.py) | Typed `httpx` client; retries; secret header |
+| [`python/agent_graph/main.py`](../python/agent_graph/main.py) | FastAPI `POST /run`; mirrors `OrchestratorResult` |
+| [`python/agent_graph/requirements.txt`](../python/agent_graph/requirements.txt) | Pinned Python deps |
+| [`src/app/api/internal/agent/execute/route.ts`](../src/app/api/internal/agent/execute/route.ts) | Internal dispatch route; secret auth; `runWithReplayLog` |
+| [`src/orchestrator/agentOrchestrator.ts`](../src/orchestrator/agentOrchestrator.ts) | `runViaLangGraph()` bridge + fallback |
+| [`src/orchestrator/__tests__/langGraphParity.test.ts`](../src/orchestrator/__tests__/langGraphParity.test.ts) | Parity + fallback tests (unit + optional live) |
+
+### Design tradeoffs
+
+| Tradeoff | Rationale |
+| --------- | --------- |
+| **Extra HTTP hops** (1 per agent step) | Acceptable for coursework and small-scale production; eliminates complete Python re-implementation of 5 agents |
+| **LangGraph.js vs Python** | Python has more mature checkpointing, tooling, and documentation. JS considered and rejected to avoid a younger dependency surface |
+| **Separate service vs in-process** | Explicit separation makes graph control flow independently testable and observable |
+| **TS orchestrator kept as fallback** | Zero-downtime rollout; any Python service outage is invisible to users |
+| **Deterministic `decideNextAction`** | TS removes the LLM call for decisions that can be fully determined by issue type; Python mirrors this — no quality loss, lower cost |
+
+### Local development setup
+
+```bash
+# Terminal 1 — Next.js
+cp .env.example .env  # set INTERNAL_AGENT_SECRET=dev-secret
+npm run dev
+
+# Terminal 2 — Python LangGraph service
+cd python/agent_graph
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+NEXT_INTERNAL_URL=http://localhost:3000 \
+INTERNAL_AGENT_SECRET=dev-secret \
+python main.py
+```
+
+### Running tests
+
+```bash
+# Unit + parity (mocked — no Python needed)
+npm test
+
+# Live integration (Python service must be running)
+LANGGRAPH_INTEGRATION=true npm test -- langGraphParity
+```
+
+### Environment variables
+
+| Variable | Where | Purpose |
+| -------- | ----- | ------- |
+| `INTERNAL_AGENT_SECRET` | Next.js | Validates `X-Internal-Agent-Secret` header |
+| `NEXT_INTERNAL_URL` | Python | Base URL of Next.js (e.g. `http://localhost:3000`) |
+| `LANGGRAPH_SERVICE_URL` | Next.js | URL of Python service (default `http://localhost:8000`) |
+| `LANGGRAPH_PORT` | Python | Port for uvicorn (default `8000`) |
+
+---
+
+## 16. Why hybrid LangGraph architecture
+
+### Core thesis
+
+The hybrid design **separates two orthogonal concerns** that are consistently conflated in simpler systems:
+
+- **Orchestration** (which step runs next, when to loop, when to escalate, conditional routing) — owned by Python LangGraph
+- **Agent capabilities** (prompts, LLM calls, structured output, external APIs) — owned by TypeScript agents
+
+This separation is not just aesthetic. It reflects a fundamental engineering principle: **control flow and computation should not be coupled** in the same abstraction. LangGraph makes control flow first-class (explicit nodes, typed edges, conditional routing, checkpoints). TypeScript agents make LLM computation first-class (typed prompts, Zod-validated output, provider abstraction, retry).
+
+### Why not keep the TS-only orchestrator?
+
+The existing [`AgentOrchestrator`](../src/orchestrator/agentOrchestrator.ts) is well-implemented, but has structural limitations:
+
+| Limitation | Impact |
+|------------|--------|
+| Control flow is implicit `while`/`if` code | Hard to visualise, test, or extend without reading the full function |
+| No native checkpointing | Cannot pause/resume across process restarts |
+| No step-level observability without adding custom logging at every branch | Observability is bolted-on, not structural |
+| Hard to extend with conditional branching (e.g., add a new agent mid-loop) | Requires modifying a 350-line function |
+
+LangGraph addresses all four with **graphs** (visual, explicit edges), **checkpointers** (optional persistence), **per-node hooks** (structural observability), and **declarative routing** (add nodes without touching existing logic).
+
+### Why not use LangGraph.js (TypeScript)?
+
+At the time of this decision:
+
+| Criterion | LangGraph.js | Python `langgraph` |
+|-----------|-------------|-------------------|
+| Checkpointing/persistence | Beta, limited backends | Mature, PostgreSQL + SQLite |
+| Community examples | Thin | Extensive |
+| Ecosystem (tools, memory) | Early | Production-proven |
+| Debugging tools (LangSmith) | Partial | Full |
+| Stability of API | Frequent minor breaking changes | Stable minor versions |
+
+The JS version was considered seriously and rejected on maturity grounds. The HTTP bridge cost (see below) is a known, bounded tradeoff — not a design mistake.
+
+### Why not a full Python rewrite of agents?
+
+Rewriting five TypeScript agents in Python would:
+
+1. **Duplicate business logic** across two languages — schemas, prompts, Zod validation, model routing all have to be kept in sync
+2. **Double maintenance burden** for every agent change
+3. **Risk prompt drift** — slight rewording across languages can change model behaviour unexpectedly
+4. **Discard existing test coverage** — 50+ Vitest tests covering agent behaviour and orchestrator parity
+
+The HTTP bridge preserves TypeScript as the single source of agent truth. Python is responsible for *when* to call them, not *how*.
+
+### Latency cost of HTTP
+
+Each agent call crosses a network boundary (loopback in the same host/pod, one hop in a compose network). Measured overhead:
+
+| Scenario | Added latency |
+|----------|-------------|
+| Same host (loopback) | ~1–3 ms per call |
+| Same compose network | ~2–5 ms per call |
+| Cross-pod Kubernetes | ~5–15 ms per call |
+
+A pipeline with no repair loop makes **5 agent calls** × ~3 ms ≈ **15 ms total overhead**. With one repair iteration (7–8 calls), the overhead is still under 30 ms — negligible compared to LLM call latency (typically 1,000–8,000 ms per agent).
+
+The `metrics.latencyMs` field in every `/run` response makes this measurable per-run in production.
+
+### Benefits of explicit graph
+
+```
+planner → research → logistics → budget_safety → validate
+                                       ↑                ↓ (repair)
+                                   logistics ←──────────┘
+```
+
+1. **Visual, testable control flow** — the graph definition is 15 lines; the TS orchestrator's equivalent logic is ~80 lines of imperative code
+2. **Conditional edges are contracts** — routing functions are pure functions with a finite set of outputs (`"terminal"`, `"logistics"`, etc.) — trivial to unit-test
+3. **Per-node trace is structural** — `executionTrace` in every response is not added-on logging; it is a natural product of node boundaries
+4. **Extensibility without surgery** — adding a new node (e.g., `recommendation_node` after safety) is one `add_node + add_edge` call, not modifying a monolithic `run()` method
+5. **Human-in-the-loop is a first-class graph outcome** — not a special-cased return value buried in a loop condition
+
+### Observability and evaluation
+
+The v2.0 service returns three observability artifacts on every `/run` call:
+
+| Artifact | Contents | Used for |
+|----------|----------|---------|
+| `executionLog` | Agent-level success/error entries (TS-compatible) | Existing admin replay UI |
+| `executionTrace` | Per-node: `durationMs`, `iteration`, `inputSnap`, `outputSnap`, `skipped` | Performance analysis, bottleneck detection |
+| `metrics` | `latencyMs`, `iterations`, `agentCalls`, `requiresHuman` | A/B evaluation, academic reporting |
+
+With `?debug=true`, the `/run` endpoint additionally returns `debugStates` — a snapshot of intermediate pipeline state at each node boundary. This is invaluable for coursework demos and debugging unexpected repair-loop behaviour without a live debugger.
+
+### Contract drift prevention
+
+The `shared/contracts/OrchestratorResult.schema.json` is the single source of truth for the pipeline result shape. TypeScript derives its Zod schema from `shared/contracts/orchestratorResult.ts`; Python derives its Pydantic model from `python/agent_graph/contracts.py`. Both files reference the JSON Schema in comments. A change to the contract requires updating all three files in the same commit — the compiler and Pydantic validator catch drift at development time, not production runtime.
+
+---
+
 *End of document.*

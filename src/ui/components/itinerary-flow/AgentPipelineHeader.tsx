@@ -86,6 +86,24 @@ function stageIndex(stage: FlowStage): number {
     return STAGES.indexOf(stage as Exclude<FlowStage, "saved">);
 }
 
+/** Staggered list entrance — disabled when reduced motion */
+const pipelineListVariants = {
+    hidden: { opacity: 0 },
+    show: {
+        opacity: 1,
+        transition: { staggerChildren: 0.055, delayChildren: 0.04 },
+    },
+} as const;
+
+const pipelineRowVariants = {
+    hidden: { opacity: 0, x: -10 },
+    show: {
+        opacity: 1,
+        x: 0,
+        transition: { type: "spring", stiffness: 380, damping: 28 },
+    },
+} as const;
+
 export function AgentPipelineHeader({
     currentStage,
     meta,
@@ -113,136 +131,234 @@ export function AgentPipelineHeader({
     if (layout === "vertical") {
         return (
             <div className="px-2 py-2 space-y-1">
-                {/* Section label */}
-                <p className="section-heading px-3 mb-3">Pipeline</p>
+                <motion.p
+                    className="section-heading px-3 mb-3"
+                    initial={prefersReduced ? false : { opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+                >
+                    Pipeline
+                </motion.p>
 
-                {STAGES.map((stage, idx) => {
-                    const agent = AGENT_REGISTRY[stage];
-                    const colors = COLOR_MAP[agent.color];
-                    const Icon = agent.icon;
-                    const isCompleted = idx < currentIdx;
-                    const isActive = idx === currentIdx;
-                    const isPending = !isCompleted && !isActive;
-                    const stageMeta = meta[stage];
+                <motion.div
+                    className="space-y-1"
+                    variants={prefersReduced ? undefined : pipelineListVariants}
+                    initial={prefersReduced ? false : "hidden"}
+                    animate={prefersReduced ? { opacity: 1 } : "show"}
+                >
+                    {STAGES.map((stage, idx) => {
+                        const agent = AGENT_REGISTRY[stage];
+                        const colors = COLOR_MAP[agent.color];
+                        const Icon = agent.icon;
+                        const isCompleted = idx < currentIdx;
+                        const isActive = idx === currentIdx;
+                        const isPending = !isCompleted && !isActive;
+                        const stageMeta = meta[stage];
+                        const showPacketOnConnector = packetSegment === idx && !prefersReduced;
 
-                    return (
-                        <div key={stage} className="relative">
-                            {/* Connector line */}
-                            {idx < STAGES.length - 1 && (
-                                <div className="absolute left-[22px] top-[44px] bottom-[-4px] w-px">
-                                    <div className="w-full h-full bg-white/[0.06]" />
-                                    {isCompleted && (
-                                        <motion.div
-                                            className="absolute inset-0 w-full bg-gradient-to-b from-emerald-400 to-emerald-600 shadow-[0_0_8px_rgba(52,211,153,0.6)]"
-                                            initial={{ height: "0%" }}
-                                            animate={{ height: "100%" }}
-                                            transition={prefersReduced ? { duration: 0 } : { duration: 0.4, ease: "easeOut" }}
-                                        />
-                                    )}
-                                </div>
-                            )}
-
-                            <button
-                                onClick={() => onExplain?.(stage)}
-                                disabled={isPending}
-                                className={`relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-250 group text-left ${
-                                    isActive
-                                        ? "bg-white/[0.06] border border-white/[0.1]"
-                                        : isCompleted
-                                        ? "hover:bg-white/[0.04]"
-                                        : "opacity-40"
-                                }`}
+                        return (
+                            <motion.div
+                                key={stage}
+                                className="relative"
+                                variants={prefersReduced ? undefined : pipelineRowVariants}
                             >
-                                {/* Icon */}
-                                <div className="relative flex-shrink-0">
+                                {/* Connector line */}
+                                {idx < STAGES.length - 1 && (
+                                    <div className="absolute left-[22px] top-[44px] bottom-[-4px] w-px overflow-visible">
+                                        <div className="w-full h-full bg-white/[0.06]" />
+                                        {isCompleted && (
+                                            <motion.div
+                                                className="absolute inset-x-0 top-0 w-full bg-gradient-to-b from-emerald-400 via-emerald-500 to-emerald-600 shadow-[0_0_10px_rgba(52,211,153,0.45)]"
+                                                initial={{ height: "0%" }}
+                                                animate={{ height: "100%" }}
+                                                transition={
+                                                    prefersReduced
+                                                        ? { duration: 0 }
+                                                        : { type: "spring", stiffness: 120, damping: 22, mass: 0.8 }
+                                                }
+                                            />
+                                        )}
+                                        {/* Traveling pulse when advancing to next stage */}
+                                        <AnimatePresence>
+                                            {showPacketOnConnector && (
+                                                <motion.span
+                                                    key="v-packet"
+                                                    className="absolute left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-emerald-300 shadow-[0_0_12px_rgba(110,231,183,0.95)]"
+                                                    initial={{ top: "0%", opacity: 1 }}
+                                                    animate={{ top: "100%", opacity: [1, 1, 0.6] }}
+                                                    exit={{ opacity: 0 }}
+                                                    transition={{ duration: 0.75, ease: [0.22, 0.61, 0.36, 1] }}
+                                                />
+                                            )}
+                                        </AnimatePresence>
+                                    </div>
+                                )}
+
+                                <motion.button
+                                    layout={!prefersReduced}
+                                    onClick={() => onExplain?.(stage)}
+                                    disabled={isPending}
+                                    whileHover={
+                                        prefersReduced || isPending
+                                            ? undefined
+                                            : { backgroundColor: "rgba(255,255,255,0.05)" }
+                                    }
+                                    whileTap={prefersReduced || isPending ? undefined : { scale: 0.985 }}
+                                    transition={{ layout: { type: "spring", stiffness: 400, damping: 34 } }}
+                                    className={`relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left overflow-hidden ${
+                                        isActive
+                                            ? "bg-white/[0.06] border border-white/[0.12]"
+                                            : isCompleted
+                                            ? "hover:bg-white/[0.04] border border-transparent"
+                                            : "opacity-[0.42] border border-transparent"
+                                    }`}
+                                >
+                                    {/* Active: soft shimmer sweep */}
                                     {isActive && !prefersReduced && (
                                         <motion.span
-                                            className="absolute inset-[-3px] rounded-xl pointer-events-none"
-                                            style={{ boxShadow: `0 0 0 1.5px ${colors.ring}` }}
-                                            animate={{ opacity: [0.3, 0.8, 0.3] }}
-                                            transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                                            className="pointer-events-none absolute inset-0 rounded-xl opacity-[0.12]"
+                                            style={{
+                                                background:
+                                                    "linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.35) 50%, transparent 60%)",
+                                                backgroundSize: "200% 100%",
+                                            }}
+                                            animate={{ backgroundPosition: ["200% 0", "-200% 0"] }}
+                                            transition={{ duration: 2.8, repeat: Infinity, ease: "linear", repeatDelay: 0.6 }}
                                         />
                                     )}
-                                    <div
-                                        className="w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 border"
-                                        style={
-                                            isActive
-                                                ? { background: colors.bg, borderColor: colors.ring, boxShadow: colors.glow }
-                                                : isCompleted
-                                                ? { background: "rgba(16,185,129,0.12)", borderColor: "rgba(16,185,129,0.4)" }
-                                                : { background: "rgba(255,255,255,0.03)", borderColor: "rgba(255,255,255,0.06)" }
-                                        }
-                                    >
-                                        <Icon
-                                            className="w-4 h-4 transition-colors duration-300"
-                                            style={{
-                                                color: isActive ? colors.text : isCompleted ? "#34d399" : "rgba(148,163,184,0.35)",
-                                                filter: isActive ? `drop-shadow(0 0 4px ${colors.ring})` : undefined,
-                                            }}
-                                        />
-                                    </div>
 
-                                    {isCompleted && (
-                                        <motion.span
-                                            initial={{ scale: 0 }}
-                                            animate={{ scale: 1 }}
-                                            transition={{ type: "spring", stiffness: 500, damping: 25 }}
-                                            className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-[#0B0F19] flex items-center justify-center"
+                                    {/* Icon */}
+                                    <div className="relative flex-shrink-0 z-[1]">
+                                        {isActive && !prefersReduced && (
+                                            <>
+                                                <motion.span
+                                                    className="absolute inset-[-3px] rounded-xl pointer-events-none"
+                                                    style={{ boxShadow: `0 0 0 1.5px ${colors.ring}` }}
+                                                    animate={{ opacity: [0.35, 0.9, 0.35], scale: [1, 1.02, 1] }}
+                                                    transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+                                                />
+                                                <motion.span
+                                                    className="absolute inset-[-6px] rounded-[14px] pointer-events-none border border-white/[0.08]"
+                                                    animate={{ opacity: [0.15, 0.45, 0.15] }}
+                                                    transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut", delay: 0.2 }}
+                                                />
+                                            </>
+                                        )}
+                                        <motion.div
+                                            className="w-9 h-9 rounded-xl flex items-center justify-center border relative"
+                                            style={
+                                                isActive
+                                                    ? { background: colors.bg, borderColor: colors.ring, boxShadow: colors.glow }
+                                                    : isCompleted
+                                                    ? { background: "rgba(16,185,129,0.12)", borderColor: "rgba(16,185,129,0.4)" }
+                                                    : { background: "rgba(255,255,255,0.03)", borderColor: "rgba(255,255,255,0.06)" }
+                                            }
+                                            animate={
+                                                isActive && !prefersReduced
+                                                    ? { scale: [1, 1.04, 1] }
+                                                    : { scale: 1 }
+                                            }
+                                            transition={
+                                                isActive && !prefersReduced
+                                                    ? { duration: 2.2, repeat: Infinity, ease: "easeInOut" }
+                                                    : { duration: 0.2 }
+                                            }
                                         >
-                                            <Check className="w-2 h-2 text-white" strokeWidth={3} />
-                                        </motion.span>
-                                    )}
-                                </div>
+                                            <Icon
+                                                className="w-4 h-4 transition-colors duration-300"
+                                                style={{
+                                                    color: isActive ? colors.text : isCompleted ? "#34d399" : "rgba(148,163,184,0.35)",
+                                                    filter: isActive ? `drop-shadow(0 0 4px ${colors.ring})` : undefined,
+                                                }}
+                                            />
+                                        </motion.div>
 
-                                {/* Label + description */}
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
-                                        <span
-                                            className="text-[12px] font-bold transition-colors duration-300"
-                                            style={{
-                                                color: isActive ? colors.text : isCompleted ? "#34d399" : "rgba(100,116,139,0.6)",
-                                            }}
-                                        >
-                                            {STAGE_LABELS[stage]}
-                                        </span>
-                                        {stageMeta && (
-                                            <span className="text-[10px] text-slate-600">
-                                                {(stageMeta.durationMs / 1000).toFixed(1)}s
-                                            </span>
+                                        {isCompleted && (
+                                            <motion.span
+                                                initial={{ scale: 0, rotate: -45 }}
+                                                animate={{ scale: 1, rotate: 0 }}
+                                                transition={{ type: "spring", stiffness: 520, damping: 22 }}
+                                                className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-[#0B0F19] flex items-center justify-center shadow-[0_0_8px_rgba(16,185,129,0.55)]"
+                                            >
+                                                <Check className="w-2 h-2 text-white" strokeWidth={3} />
+                                            </motion.span>
                                         )}
                                     </div>
-                                    <p className="text-[10px] text-slate-600 leading-tight mt-0.5 truncate">
-                                        {STAGE_DESCRIPTIONS[stage]}
-                                    </p>
-                                </div>
 
-                                {/* Status indicator */}
-                                <div className="flex-shrink-0">
-                                    {isCompleted && (
-                                        <span className="text-[9px] font-bold text-emerald-500 bg-emerald-500/10 rounded-full px-1.5 py-0.5">Done</span>
-                                    )}
-                                    {isActive && !prefersReduced && (
-                                        <motion.span
-                                            className="w-2 h-2 rounded-full block"
-                                            style={{ backgroundColor: colors.bar }}
-                                            animate={{ opacity: [1, 0.3, 1] }}
-                                            transition={{ duration: 1.5, repeat: Infinity }}
-                                        />
-                                    )}
-                                </div>
-                            </button>
-                        </div>
-                    );
-                })}
+                                    {/* Label + description */}
+                                    <div className="flex-1 min-w-0 z-[1]">
+                                        <div className="flex items-center gap-2">
+                                            <motion.span
+                                                className="text-[12px] font-bold"
+                                                style={{
+                                                    color: isActive ? colors.text : isCompleted ? "#34d399" : "rgba(100,116,139,0.6)",
+                                                }}
+                                                animate={
+                                                    isActive && !prefersReduced
+                                                        ? { opacity: [0.92, 1, 0.92] }
+                                                        : { opacity: 1 }
+                                                }
+                                                transition={{ duration: 2, repeat: isActive && !prefersReduced ? Infinity : 0, ease: "easeInOut" }}
+                                            >
+                                                {STAGE_LABELS[stage]}
+                                            </motion.span>
+                                            {stageMeta && (
+                                                <span className="text-[10px] text-slate-600 tabular-nums">
+                                                    {(stageMeta.durationMs / 1000).toFixed(1)}s
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className="text-[10px] text-slate-600 leading-tight mt-0.5 truncate">
+                                            {STAGE_DESCRIPTIONS[stage]}
+                                        </p>
+                                    </div>
+
+                                    {/* Status indicator */}
+                                    <div className="flex-shrink-0 z-[1]">
+                                        {isCompleted && (
+                                            <motion.span
+                                                initial={{ opacity: 0, scale: 0.85 }}
+                                                animate={{ opacity: 1, scale: 1 }}
+                                                transition={{ type: "spring", stiffness: 400, damping: 24 }}
+                                                className="text-[9px] font-bold text-emerald-500 bg-emerald-500/10 rounded-full px-1.5 py-0.5 inline-block"
+                                            >
+                                                Done
+                                            </motion.span>
+                                        )}
+                                        {isActive && !prefersReduced && (
+                                            <motion.span
+                                                className="w-2 h-2 rounded-full block mx-auto"
+                                                style={{
+                                                    backgroundColor: colors.bar,
+                                                    boxShadow: `0 0 8px ${colors.bar}`,
+                                                }}
+                                                animate={{ scale: [1, 1.35, 1], opacity: [1, 0.45, 1] }}
+                                                transition={{ duration: 1.25, repeat: Infinity, ease: "easeInOut" }}
+                                            />
+                                        )}
+                                    </div>
+                                </motion.button>
+                            </motion.div>
+                        );
+                    })}
+                </motion.div>
 
                 {/* Iteration badge */}
-                {iteration > 1 && (
-                    <div className="px-3 pt-3">
-                        <span className="text-[10px] font-semibold text-slate-400 bg-white/[0.05] border border-white/[0.08] rounded-full px-2.5 py-1">
-                            Run #{iteration}
-                        </span>
-                    </div>
-                )}
+                <AnimatePresence>
+                    {iteration > 1 && (
+                        <motion.div
+                            className="px-3 pt-3"
+                            initial={prefersReduced ? false : { opacity: 0, y: 6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 4 }}
+                            transition={{ type: "spring", stiffness: 320, damping: 28 }}
+                        >
+                            <span className="text-[10px] font-semibold text-slate-400 bg-white/[0.05] border border-white/[0.08] rounded-full px-2.5 py-1">
+                                Run #{iteration}
+                            </span>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </div>
         );
     }

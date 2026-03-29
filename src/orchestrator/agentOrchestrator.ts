@@ -7,7 +7,7 @@ import {
     type OptimizedTripContext,
 } from "@/agents/budget/budgetAgent";
 import { SafetyAgent, type SafeTripContext } from "@/agents/safety/safetyAgent";
-import { logStructured, generateRequestId } from "@/infrastructure/logger";
+import { logStructured, generateRequestId, logError } from "@/infrastructure/logger";
 import { runWithReplayLog } from "@/services/ai/agentReplayLogger";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -345,5 +345,55 @@ export class AgentOrchestrator {
 
         logStructured({ layer: "orchestrator", step: "end", requestId, data: { outcome: "ok", rounds: decisionRound } });
         return { ok: true, requiresHuman: false, context: lastSafe, executionLog: this.executionLog };
+    }
+}
+
+// ─── LangGraph bridge ─────────────────────────────────────────────────────────
+
+const LANGGRAPH_URL = process.env.LANGGRAPH_SERVICE_URL ?? "http://localhost:8000";
+
+/**
+ * Run the pipeline via the Python LangGraph service.
+ * Falls back transparently to the TS AgentOrchestrator if the service
+ * is unreachable or returns a non-OK HTTP status.
+ *
+ * Usage (progressive adoption):
+ *   const result = await runViaLangGraph(input);
+ *
+ * Fallback behaviour:
+ *   If LANGGRAPH_SERVICE_URL is unset (local dev without Python) or the
+ *   service is down, the TS orchestrator runs instead — zero user impact.
+ */
+export async function runViaLangGraph(
+    input: string,
+    deps?: AgentOrchestratorDeps,
+): Promise<OrchestratorResult> {
+    const requestId = generateRequestId();
+    logStructured({ layer: "orchestrator", step: "start", requestId, data: { source: "langgraph-bridge", inputLength: input.length } });
+
+    try {
+        const response = await fetch(`${LANGGRAPH_URL}/run`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ input, request_id: requestId }),
+            signal: AbortSignal.timeout(180_000),
+        });
+
+        if (!response.ok) {
+            const text = await response.text().catch(() => "");
+            throw new Error(`LangGraph service returned HTTP ${response.status}: ${text}`);
+        }
+
+        const data = (await response.json()) as OrchestratorResult;
+        logStructured({ layer: "orchestrator", step: "end", requestId, data: { source: "langgraph-bridge", ok: (data as { ok?: boolean }).ok } });
+        return data;
+    } catch (err) {
+        logError("LangGraph service unreachable — falling back to TS orchestrator", {
+            error: (err as Error).message,
+            requestId,
+        });
+        // Transparent fallback: run the identical TS implementation
+        const orch = new AgentOrchestrator(deps);
+        return orch.run(input);
     }
 }
