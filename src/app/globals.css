@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Class-based dark mode (matches shadcn / hero-1 `dark:` utilities site-wide) */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --color-brand-50: #f4f6f8;
   --color-brand-100: #e5e9f0;
@@ -15,9 +18,31 @@
 
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+  --font-geist: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+
+  /* shadcn-style tokens (Button, hero-1, etc.) */
+  --color-background: #0b0f19;
+  --color-foreground: #f8fafc;
+  --color-primary: #6366f1;
+  --color-primary-foreground: #fafafa;
+  --color-secondary: #1e293b;
+  --color-secondary-foreground: #f8fafc;
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #fafafa;
+  --color-muted: #1e293b;
+  --color-muted-foreground: #94a3b8;
+  --color-accent: #272f3d;
+  --color-accent-foreground: #f8fafc;
+  --color-input: #334155;
+  --color-ring: #818cf8;
 }
 
 @layer base {
+
+  :root {
+    --background: 222 39% 7%;
+    --foreground: 210 40% 98%;
+  }
 
   html,
   body {
@@ -45,6 +70,29 @@
 @keyframes blink {
     0%, 100% { opacity: 1; }
     50%       { opacity: 0; }
+}
+
+/* hero-1 / shadcn-style entrance */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes shimmer {
@@ -79,6 +127,14 @@
 }
 
 @layer utilities {
+  .animate-fade-in {
+    animation: fade-in 0.85s ease-out forwards;
+  }
+
+  .animate-fade-up {
+    animation: fade-up 1s ease-out forwards;
+  }
+
   .mobile-container {
     @apply px-4 md:px-0;
   }

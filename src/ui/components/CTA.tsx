@@ -17,7 +17,10 @@ const MotionH2 = dynamic(
 
 export function CTA() {
     return (
-        <section className="relative py-32 px-6 lg:px-12 bg-[#0A0D12] overflow-hidden">
+        <section
+            id="contact"
+            className="relative scroll-mt-28 py-32 px-6 lg:px-12 bg-[#0A0D12] overflow-hidden"
+        >
             {/* Background Image Setup */}
             <div className="absolute inset-0 z-0">
                 <div className="absolute inset-0 bg-gradient-to-b from-[#0A0D12] via-transparent to-[#05080b] z-10" />

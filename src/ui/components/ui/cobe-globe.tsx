@@ -1,6 +1,7 @@
 "use client";
 
 import createGlobe from "cobe";
+import { useReducedMotion } from "framer-motion";
 import { useCallback, useEffect, useRef, type CSSProperties } from "react";
 
 export interface GlobeMarker {
@@ -63,7 +64,12 @@ export function Globe({
     scale = 1,
     showHint = true,
 }: GlobeProps) {
+    const prefersReducedMotion = useReducedMotion();
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const speedRef = useRef(speed);
+    useEffect(() => {
+        speedRef.current = prefersReducedMotion ? 0 : speed;
+    }, [prefersReducedMotion, speed]);
     const pointerInteracting = useRef<{ x: number; y: number } | null>(null);
     const lastPointer = useRef<{ x: number; y: number; t: number } | null>(null);
     const dragOffset = useRef({ phi: 0, theta: 0 });
@@ -181,7 +187,7 @@ export function Globe({
                 if (cancelled || !globe) return;
 
                 if (!isPausedRef.current) {
-                    phi += speed;
+                    phi += speedRef.current;
                     if (
                         Math.abs(velocity.current.phi) > 0.0001 ||
                         Math.abs(velocity.current.theta) > 0.0001

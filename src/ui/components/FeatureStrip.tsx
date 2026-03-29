@@ -75,7 +75,10 @@ const FEATURES = [
 
 export function FeatureStrip() {
     return (
-        <section className="relative py-20 px-6 lg:px-12 bg-[#0A0D12] overflow-hidden">
+        <section
+            id="how-it-works"
+            className="relative scroll-mt-28 py-20 px-6 lg:px-12 bg-[#0A0D12] overflow-hidden"
+        >
             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent" />
             <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[600px] h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent" />
 

@@ -35,6 +35,12 @@ const RotatingEarth = dynamic(
     { ssr: false }
 );
 
+const EtherealShadow = dynamic(
+    () =>
+        import("@/components/ui/etheral-shadow").then((m) => m.EtherealShadow),
+    { ssr: false }
+);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
@@ -723,20 +729,23 @@ function HeroCard() {
 
 export function Hero() {
     return (
-        <section className="relative min-h-screen pt-24 pb-12 flex flex-col justify-end px-6 lg:px-12 overflow-hidden bg-[#10141a]">
-            {/* Background */}
-            <div className="absolute inset-0 z-0 overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-t from-[#10141a] via-[#10141a]/55 to-transparent z-10" />
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(56,80,104,0.35),_transparent_40%)] z-10" />
-                {/* Premium purple glow — adds depth and brand warmth */}
-                <div className="absolute inset-0 bg-[radial-gradient(ellipse_65%_38%_at_50%_0%,_rgba(124,58,237,0.13),_transparent_70%)] z-10" />
-                <Image
-                    src="https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?auto=format&fit=crop&w=2070&q=80"
-                    alt="Cinematic cliff landscape"
-                    fill
-                    className="object-cover opacity-60 mix-blend-luminosity"
-                    priority
-                />
+        <section className="relative min-h-screen pt-24 pb-12 flex flex-col justify-end px-6 lg:px-12 overflow-hidden bg-[#0a0c14]">
+            {/* Background — ethereal displacement + mesh (no photography) */}
+            <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+                <div className="absolute inset-0 z-0">
+                    <EtherealShadow
+                        className="h-full min-h-full w-full"
+                        color="rgba(36, 32, 58, 0.88)"
+                        animation={{ scale: 34, speed: 52 }}
+                        noise={{ opacity: 0.45, scale: 1 }}
+                        sizing="fill"
+                    />
+                </div>
+                <div className="absolute inset-0 z-[1] bg-gradient-to-b from-[#0a0c14]/20 via-transparent to-[#10141a]" />
+                <div className="absolute inset-0 z-[1] bg-[radial-gradient(ellipse_80%_50%_at_50%_-10%,_rgba(124,58,237,0.22),_transparent_55%)]" />
+                <div className="absolute inset-0 z-[1] bg-[radial-gradient(circle_at_88%_18%,_rgba(99,102,241,0.18),_transparent_38%)]" />
+                <div className="absolute inset-0 z-[1] bg-[radial-gradient(circle_at_12%_40%,_rgba(56,80,104,0.2),_transparent_45%)]" />
+                <div className="absolute inset-0 z-[2] ring-1 ring-inset ring-white/[0.04]" />
             </div>
 
             <div className="relative z-20 mx-auto mt-20 flex h-full w-full max-w-[1400px] flex-col justify-between">
@@ -790,7 +799,7 @@ export function Hero() {
                                 showHint={false}
                                 mapBrightness={8}
                                 diffuse={1.35}
-                                speed={0.0025}
+                                speed={0.0055}
                                 baseColor={[0.92, 0.92, 0.93]}
                                 glowColor={[0.82, 0.78, 0.95]}
                                 markerColor={[0.55, 0.45, 0.98]}
