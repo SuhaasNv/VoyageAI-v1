@@ -322,6 +322,16 @@
   }
 }
 
+/* ── Globe3D / 21st.dev hero — neumorphic primary CTA ───────────────────────── */
+.neumorphic-button::after {
+  content: "";
+  @apply absolute inset-0 rounded-full bg-gradient-to-br from-[#9b87f5]/20 to-transparent opacity-0 transition-opacity duration-300;
+}
+
+.neumorphic-button:hover::after {
+  @apply opacity-100;
+}
+
 /* ── Accessibility: respect reduced-motion OS preference ──────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *,
