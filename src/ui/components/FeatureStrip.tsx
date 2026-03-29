@@ -85,7 +85,7 @@ export function FeatureStrip() {
                         <span className="w-1.5 h-1.5 rounded-full bg-[#f48c06]" />
                         <span className="text-xs font-medium text-slate-300">Everything in one place</span>
                     </div>
-                    <h2 className="text-3xl md:text-4xl font-semibold tracking-tight text-white">
+                    <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-white">
                         More than just an itinerary
                     </h2>
                     <p className="mt-4 text-slate-400 text-sm md:text-base max-w-xl mx-auto leading-relaxed">
@@ -106,7 +106,7 @@ export function FeatureStrip() {
                             >
                                 <Link
                                     href={feature.href}
-                                    className="group flex items-start gap-4 p-5 rounded-2xl border border-white/[0.07] bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/[0.12] transition-all duration-200"
+                                    className="group flex items-start gap-4 p-5 rounded-2xl border border-white/[0.07] bg-white/[0.025] hover:bg-white/[0.055] hover:border-white/[0.14] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_32px_rgba(0,0,0,0.5)]"
                                 >
                                     <div className={`shrink-0 w-10 h-10 rounded-xl flex items-center justify-center border ${feature.bg} ${feature.border}`}>
                                         <Icon className={`w-5 h-5 ${feature.color}`} />

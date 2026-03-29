@@ -63,7 +63,7 @@ export function Testimonials() {
                                 <Image src="https://images.unsplash.com/photo-1501504905252-473c47e087f8?auto=format&fit=crop&w=2000&q=80" alt="Traveler with backpack" fill className="object-cover" />
                             </div>
 
-                            <p className="text-xs text-slate-400 leading-relaxed">
+                            <p className="text-sm text-white/55 leading-relaxed">
                                 &ldquo;Our AI Travel Planner made my honeymoon trip flawless! It even adjusted our schedule when it started raining.&rdquo;
                             </p>
                         </MotionDiv>
@@ -90,12 +90,12 @@ export function Testimonials() {
                                 <Image src="https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?auto=format&fit=crop&w=2000&q=80" alt="Family traveler" fill className="object-cover" />
                             </div>
 
-                            <p className="text-xs text-slate-400 leading-relaxed">
+                            <p className="text-sm text-white/55 leading-relaxed">
                                 &ldquo;Planning a family trip can be stressful, but the AI made it effortless. It created a balanced plan with kid-friendly activities and enough downtime.&rdquo;
                             </p>
 
                             <div className="mt-auto">
-                                <Link href="/travel-stories" className="w-full py-4 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-medium text-white transition-colors flex items-center justify-center gap-2">
+                                <Link href="/travel-stories" className="w-full py-3.5 rounded-full bg-gradient-to-r from-violet-600/70 to-indigo-600/70 hover:from-violet-500/80 hover:to-indigo-500/80 text-xs font-semibold text-white transition-all duration-200 shadow-[0_0_16px_rgba(124,58,237,0.2)] hover:shadow-[0_0_26px_rgba(124,58,237,0.38)] flex items-center justify-center gap-2">
                                     ✦ View All <ArrowUpRight className="w-3 h-3" />
                                 </Link>
                             </div>
@@ -124,7 +124,7 @@ export function Testimonials() {
                                 <div className="relative w-full h-full"><Image src="https://images.unsplash.com/photo-1506012787146-f92b2d7d6d96?auto=format&fit=crop&w=1000&q=80" alt="Backpacker collage" fill className="object-cover rounded-xl" /></div>
                             </div>
 
-                            <p className="text-xs text-slate-400 leading-relaxed">
+                            <p className="text-sm text-white/55 leading-relaxed">
                                 &ldquo;As a solo traveler, I was truly amazed by how the AI uncovered hidden coffee shops, charming local spots, and unique experiences I would have never found on my own.&rdquo;
                             </p>
 

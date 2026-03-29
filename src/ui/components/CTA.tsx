@@ -57,8 +57,8 @@ export function CTA() {
                     viewport={{ once: true }}
                     transition={{ delay: 0.2 }}
                 >
-                    <Link href="/signup" className="flex items-center gap-2 mx-auto group w-fit px-8 py-4 rounded-full bg-white text-[#10141a] font-medium hover:bg-slate-200 transition-colors">
-                        Join The Trip <ArrowUpRight className="w-5 h-5 group-hover:rotate-45 transition-transform" />
+                    <Link href="/signup" className="flex items-center gap-2 mx-auto group w-fit px-8 py-4 rounded-full bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-semibold transition-all duration-200 shadow-[0_0_32px_rgba(124,58,237,0.45)] hover:shadow-[0_0_52px_rgba(124,58,237,0.68)]">
+                        Join The Trip <ArrowUpRight className="w-5 h-5 group-hover:rotate-45 transition-transform duration-200" />
                     </Link>
                 </MotionDiv>
             </div>

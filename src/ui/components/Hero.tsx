@@ -725,8 +725,10 @@ export function Hero() {
         <section className="relative min-h-screen pt-24 pb-12 flex flex-col justify-end px-6 lg:px-12 overflow-hidden bg-[#10141a]">
             {/* Background */}
             <div className="absolute inset-0 z-0 overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-t from-[#10141a] via-[#10141a]/60 to-transparent z-10" />
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(56,80,104,0.4),_transparent_40%)] z-10" />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#10141a] via-[#10141a]/55 to-transparent z-10" />
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(56,80,104,0.35),_transparent_40%)] z-10" />
+                {/* Premium purple glow — adds depth and brand warmth */}
+                <div className="absolute inset-0 bg-[radial-gradient(ellipse_65%_38%_at_50%_0%,_rgba(124,58,237,0.13),_transparent_70%)] z-10" />
                 <Image
                     src="https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?auto=format&fit=crop&w=2070&q=80"
                     alt="Cinematic cliff landscape"
@@ -745,22 +747,30 @@ export function Hero() {
                         transition={{ duration: 0.8, delay: 0.2 }}
                         className="flex flex-col gap-6"
                     >
-                        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 border border-white/20 w-fit backdrop-blur-md">
-                            <span className="w-1.5 h-1.5 rounded-full bg-[#f48c06]" />
-                            <span className="text-xs font-medium text-slate-200">Cutting-edge AI trip designs</span>
+                        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-violet-500/10 border border-violet-500/20 w-fit backdrop-blur-md">
+                            <span className="w-1.5 h-1.5 rounded-full bg-violet-400 shadow-[0_0_6px_rgba(167,139,250,0.7)]" />
+                            <span className="text-xs font-medium text-violet-200">AI-powered travel planning</span>
                         </div>
 
-                        <h1 className="text-5xl md:text-7xl font-semibold tracking-tight leading-[1.1] text-white">
-                            Smart & Simple <br />
-                            Trip Planning
-                        </h1>
+                        <div className="flex flex-col gap-3">
+                            <h1 className="text-5xl md:text-7xl font-bold tracking-tight leading-[1.05] text-white">
+                                Your next adventure,
+                                <br />
+                                <span className="bg-gradient-to-r from-violet-400 via-fuchsia-300 to-indigo-400 bg-clip-text text-transparent">
+                                    planned by AI.
+                                </span>
+                            </h1>
+                            <p className="text-base text-white/45 max-w-xs leading-relaxed">
+                                Day-by-day itineraries, smart budgets, and routes that adapt in real time.
+                            </p>
+                        </div>
 
                         <Link
                             href="/dashboard"
-                            className="flex items-center gap-2 group w-fit mt-4 px-6 py-3 rounded-full border border-white/20 bg-white/5 hover:bg-white/10 transition-all backdrop-blur-md"
+                            className="flex items-center gap-2 group w-fit px-6 py-3.5 rounded-full bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-medium transition-all duration-200 shadow-[0_0_24px_rgba(124,58,237,0.4)] hover:shadow-[0_0_38px_rgba(124,58,237,0.6)]"
                         >
-                            <span className="text-sm font-medium">Plan Your Trip</span>
-                            <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors" />
+                            <span className="text-sm font-medium">Start Planning</span>
+                            <ArrowUpRight className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform duration-200" />
                         </Link>
                     </MotionDiv>
 
