@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { ArrowUpRight } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 
 const MotionDiv = dynamic(
     () => import("framer-motion").then((m) => m.motion.div),
@@ -24,25 +25,25 @@ export function AISimplifies() {
                 <MotionH2
                     className="text-4xl md:text-5xl lg:text-6xl font-semibold tracking-tight leading-[1.1] mb-6 text-white"
                 >
-                    Our AI simplifies every step of<br />travel planning allowing you.
+                    Our AI simplifies every step<br />of your travel planning.
                 </MotionH2>
 
                 <MotionDiv
                     className="text-slate-400 max-w-2xl mx-auto text-sm md:text-base mb-10 leading-relaxed"
                 >
-                    Our AI-driven platform analyzes millions of data points to craft personalized itineraries that
-                    fit your time budget and interests making travel planning effortless and accurate.
+                    Our AI-driven platform analyzes your destination, dates, and preferences to craft personalized
+                    itineraries that fit your time, budget, and interests — making travel planning effortless.
                 </MotionDiv>
 
                 <MotionDiv
                     className="flex items-center justify-center gap-4"
                 >
-                    <button className="flex items-center gap-2 group px-6 py-3 rounded-full bg-white text-[#10141a] font-medium hover:bg-slate-200 transition-colors">
+                    <Link href="/ai-itineraries" className="flex items-center gap-2 group px-6 py-3 rounded-full bg-white text-[#10141a] font-medium hover:bg-slate-200 transition-colors">
                         View All <ArrowUpRight className="w-4 h-4" />
-                    </button>
-                    <button className="flex items-center gap-2 px-6 py-3 rounded-full bg-white/5 border border-white/10 text-white font-medium hover:bg-white/10 transition-colors">
+                    </Link>
+                    <Link href="/about" className="flex items-center gap-2 px-6 py-3 rounded-full bg-white/5 border border-white/10 text-white font-medium hover:bg-white/10 transition-colors">
                         <span className="w-1.5 h-1.5 rounded-full bg-slate-400" /> Learn More
-                    </button>
+                    </Link>
                 </MotionDiv>
 
                 {/* Floating Avatars (absolute positioned around the text) */}

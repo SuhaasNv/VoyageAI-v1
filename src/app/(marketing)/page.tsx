@@ -1,5 +1,6 @@
 import { Hero } from "@/ui/components/Hero";
 import { ProductShowcase } from "@/ui/components/ProductShowcase";
+import { FeatureStrip } from "@/ui/components/FeatureStrip";
 import { AISimplifies } from "@/ui/components/AISimplifies";
 import { Testimonials } from "@/ui/components/Testimonials";
 import { FAQ } from "@/ui/components/FAQ";
@@ -10,6 +11,7 @@ export default function Home() {
         <>
             <Hero />
             <ProductShowcase />
+            <FeatureStrip />
             <AISimplifies />
             <Testimonials />
             <FAQ />

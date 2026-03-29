@@ -2,6 +2,7 @@
 
 import { ContainerScroll } from "@/ui/components/ui/container-scroll-animation";
 import { Clock, MapPin, Utensils, Camera, ShoppingBag, Palmtree } from "lucide-react";
+import Image from "next/image";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Static preview data — no fetching, no state
@@ -151,11 +152,11 @@ function TripDashboardPreview() {
             {/* ── Right: map view ─────────────────────────────────────────── */}
             <div className="flex-1 relative overflow-hidden">
                 {/* Destination photo as map bg */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <Image
                     src="https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=900&q=75"
                     alt="Bali rice terraces"
-                    className="absolute inset-0 w-full h-full object-cover"
+                    fill
+                    className="object-cover"
                     draggable={false}
                 />
                 {/* Dark vignette overlay */}

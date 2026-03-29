@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { ArrowUpRight } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 
 const MotionDiv = dynamic(
     () => import("framer-motion").then((m) => m.motion.div),
@@ -47,7 +48,7 @@ export function Testimonials() {
                                     <Image src="https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=100&q=80" alt="avatar" width={32} height={32} className="w-8 h-8 rounded-full border-2 border-[#10141a] object-cover" />
                                     <Image src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=100&q=80" alt="avatar" width={32} height={32} className="w-8 h-8 rounded-full border-2 border-[#10141a] object-cover" />
                                 </div>
-                                <span className="text-xs font-semibold text-white">12M+ travelers</span>
+                                <span className="text-xs font-semibold text-white">Join early travelers</span>
                             </div>
 
                             <div className="flex items-center gap-3">
@@ -94,9 +95,9 @@ export function Testimonials() {
                             </p>
 
                             <div className="mt-auto">
-                                <button className="w-full py-4 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-medium text-white transition-colors flex items-center justify-center gap-2">
+                                <Link href="/travel-stories" className="w-full py-4 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-medium text-white transition-colors flex items-center justify-center gap-2">
                                     ✦ View All <ArrowUpRight className="w-3 h-3" />
-                                </button>
+                                </Link>
                             </div>
                         </MotionDiv>
                     </div>

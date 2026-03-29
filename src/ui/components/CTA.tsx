@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { ArrowUpRight } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 
 const MotionDiv = dynamic(
     () => import("framer-motion").then((m) => m.motion.div),
@@ -56,9 +57,9 @@ export function CTA() {
                     viewport={{ once: true }}
                     transition={{ delay: 0.2 }}
                 >
-                    <button className="flex items-center gap-2 mx-auto group px-8 py-4 rounded-full bg-white text-[#10141a] font-medium hover:bg-slate-200 transition-colors">
+                    <Link href="/signup" className="flex items-center gap-2 mx-auto group w-fit px-8 py-4 rounded-full bg-white text-[#10141a] font-medium hover:bg-slate-200 transition-colors">
                         Join The Trip <ArrowUpRight className="w-5 h-5 group-hover:rotate-45 transition-transform" />
-                    </button>
+                    </Link>
                 </MotionDiv>
             </div>
         </section>

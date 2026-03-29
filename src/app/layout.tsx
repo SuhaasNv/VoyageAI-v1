@@ -20,9 +20,35 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"
+  ),
   title: "VoyageAI | Smart & Simple Trip Planning",
-  description: "Plan your dream trip with AI in seconds. Get personalized itineraries, smart recommendations, and seamless travel planning powered by AI.",
+  description:
+    "Plan your dream trip with AI in seconds. Get personalized itineraries, smart recommendations, and seamless travel planning powered by AI.",
   manifest: "/manifest.json",
+  openGraph: {
+    type: "website",
+    siteName: "VoyageAI",
+    title: "VoyageAI | Smart & Simple Trip Planning",
+    description:
+      "Plan your dream trip with AI in seconds. Get personalized itineraries, smart recommendations, and seamless travel planning powered by AI.",
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "VoyageAI — AI-powered travel planning",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "VoyageAI | Smart & Simple Trip Planning",
+    description:
+      "Plan your dream trip with AI in seconds. Get personalized itineraries, smart recommendations, and seamless travel planning powered by AI.",
+    images: ["/og-image.png"],
+  },
 };
 
 export default function RootLayout({

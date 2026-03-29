@@ -17,23 +17,23 @@ const AnimatePresence = dynamic(
 const faqs = [
     {
         question: "What is an AI Travel Planner?",
-        answer: "Our AI Travel Planner uses advanced machine learning to analyze your preferences, budget, and travel style to instantly generate comprehensive, personalized itineraries."
+        answer: "VoyageAI uses AI to turn a plain-language prompt — like \"5 days in Kyoto, mid-budget, cultural focus\" — into a detailed day-by-day itinerary with activities, timings, and a live map. You can then chat with the AI, reoptimize, and track your budget, all in one place."
     },
     {
         question: "Can I edit the itinerary after it's created?",
-        answer: "Yes! You can easily adjust destinations, activities, and timings. The AI will automatically reoptimize your trip plan to fit your new preferences."
+        answer: "Yes. You can adjust activities, swap destinations, and reorder days directly in the trip view. Hitting \"Reoptimize\" asks the AI to rework your plan around the changes while keeping the rest of your trip intact."
     },
     {
         question: "How does it work?",
-        answer: "Simply input your destination, travel dates, and interests. Our platform scans millions of data points to curate the perfect daily schedule for you."
+        answer: "Describe your trip in plain language or use the quick-start chips on the home page. VoyageAI's AI pipeline researches activities, groups them by location and time, and builds a structured itinerary. You can also upload a flight PDF ticket and the app will auto-create a trip from your booking details."
     },
     {
-        question: "Does it include hotel or flight bookings?",
-        answer: "Currently, we provide recommendations and direct links to book your flights and accommodations through our trusted partners, ensuring you get the best rates."
+        question: "Can I share my trip with others?",
+        answer: "Yes — every trip has a shareable public link you can send to friends or family. They can view the full itinerary without needing an account. You can revoke the link at any time from the trip settings."
     },
     {
-        question: "Can I use it for group trips?",
-        answer: "Absolutely. You can invite friends or family to collaborate on the itinerary in real-time, vote on activities, and synchronize on logistics."
+        question: "What other features are included?",
+        answer: "Beyond itinerary creation, VoyageAI includes an AI packing list, a trip simulation (preview weather, costs, and alternatives), a side-by-side trip comparison tool, an interactive Mapbox map with route optimization, and a Travel DNA onboarding flow so the AI learns your pace, style, and budget preferences."
     }
 ];
 
