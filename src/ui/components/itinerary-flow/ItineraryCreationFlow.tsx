@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { X, WifiOff } from "lucide-react";
+import { WifiOff } from "lucide-react";
 import confetti from "canvas-confetti";
 
 import { useFlowState } from "./useFlowState";
@@ -20,7 +20,8 @@ import { AgentPipelineHeader } from "./AgentPipelineHeader";
 import { TripDNASummaryStrip } from "./TripDNASummaryStrip";
 import { ExplainabilityPanel } from "./ExplainabilityPanel";
 import { AISuggestionsPanel } from "./AISuggestionsPanel";
-import { AgentTracePanel } from "./AgentTracePanel";
+import { SystemHeader } from "./SystemHeader";
+import { ReasoningPanel } from "./ReasoningPanel";
 import { PlannerStage } from "./stages/PlannerStage";
 import { ResearchStage } from "./stages/ResearchStage";
 import { LogisticsStage } from "./stages/LogisticsStage";
@@ -309,35 +310,27 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
     if (!mounted) return null;
 
     const overlay = (
-        <div className="fixed inset-0 bg-gradient-to-b from-[#0B0F19] to-[#06080D] flex flex-col overflow-hidden" style={{ zIndex: 9999 }}>
-            {/* Noise texture — rendered as a child so it doesn't conflict with position:fixed */}
-            <div className="absolute inset-0 pointer-events-none opacity-[0.03] z-0" style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E\")" }} />
-            {/* ── Top bar ────────────────────────────────────────────────── */}
-            <div className="flex-shrink-0 border-b border-white/[0.06] bg-[#0B0F19]/98 backdrop-blur-2xl relative z-10">
-                <div className="flex items-center justify-between px-5 py-3">
-                    <div className="flex items-center gap-3">
-                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-[0_0_16px_rgba(99,102,241,0.4)]">
-                            <span className="text-[10px] font-black text-white">V</span>
-                        </div>
-                        <div>
-                            <h1 className="text-sm font-bold text-white tracking-tight leading-none">Trip Builder</h1>
-                            <p className="text-[11px] text-slate-500 leading-none mt-0.5">
-                                {flowInput.destination}
-                                {flowInput.startDate && flowInput.endDate && (
-                                    <> &middot; {flowInput.startDate} &ndash; {flowInput.endDate}</>
-                                )}
-                            </p>
-                        </div>
-                    </div>
-                    <button
-                        onClick={onClose}
-                        className="w-8 h-8 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] flex items-center justify-center text-slate-500 hover:text-white transition-all duration-200 hover:scale-105 active:scale-95"
-                        title="Close"
-                    >
-                        <X className="w-3.5 h-3.5" />
-                    </button>
-                </div>
+        <div
+            className="fixed inset-0 flex flex-col overflow-hidden"
+            style={{
+                zIndex: 9999,
+                background:
+                    "radial-gradient(ellipse 80% 55% at 15% 0%, rgba(99,102,241,0.10) 0%, transparent 60%)," +
+                    "radial-gradient(ellipse 60% 45% at 85% 100%, rgba(168,85,247,0.07) 0%, transparent 50%)," +
+                    "linear-gradient(180deg, #090C14 0%, #060810 100%)",
+            }}
+        >
+            {/* Noise texture */}
+            <div
+                className="absolute inset-0 pointer-events-none opacity-[0.03] z-0"
+                style={{
+                    backgroundImage:
+                        "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E\")",
+                }}
+            />
 
+            {/* ── System header (replaces old top bar) ──────────────────── */}
+            <SystemHeader state={state} isLoading={isLoading} onClose={onClose}>
                 {/* Mobile-only pipeline header + DNA strip */}
                 <div className="lg:hidden">
                     <AgentPipelineHeader
@@ -349,7 +342,7 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
                     />
                     <TripDNASummaryStrip state={state} />
                 </div>
-            </div>
+            </SystemHeader>
 
             {/* ── Session resume banner ───────────────────────────────────── */}
             <AnimatePresence>
@@ -510,15 +503,15 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
                     </div>
                 </main>
 
-                {/* ── RIGHT SIDEBAR ── Agent trace + AI suggestions ────────── */}
-                <aside className="hidden lg:flex flex-col border-l border-white/[0.06] bg-[#0B0F19]/40 backdrop-blur-md overflow-hidden relative">
-                    {/* Soft glow behind AI panel */}
-                    <div className="absolute top-1/4 right-0 w-[300px] h-[400px] bg-indigo-500/10 rounded-full blur-[80px] pointer-events-none" />
-                    {/* Agent trace panel — "Watch the AI Think" */}
-                    <div className="flex-shrink-0 border-b border-white/[0.06] overflow-y-auto max-h-[260px] relative z-10">
-                        <AgentTracePanel state={state} isLoading={isLoading} />
+                {/* ── RIGHT SIDEBAR ── Reasoning logs + AI suggestions ─────── */}
+                <aside className="hidden lg:flex flex-col border-l border-white/[0.06] bg-[#080B13]/50 backdrop-blur-md overflow-hidden relative">
+                    {/* Subtle purple glow behind reasoning panel */}
+                    <div className="absolute top-1/4 right-0 w-[260px] h-[360px] bg-purple-500/[0.07] rounded-full blur-[70px] pointer-events-none" />
+                    {/* Reasoning panel — cinematic agent log */}
+                    <div className="flex-shrink-0 border-b border-white/[0.06] overflow-y-auto max-h-[310px] relative z-10">
+                        <ReasoningPanel state={state} isLoading={isLoading} />
                     </div>
-                    {/* AI suggestions panel below the trace */}
+                    {/* AI suggestions panel below reasoning */}
                     <div className="flex-1 overflow-hidden relative z-10">
                         <AISuggestionsPanel state={state} isLoading={isLoading} />
                     </div>

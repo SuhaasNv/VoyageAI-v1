@@ -41,8 +41,8 @@ export const TraceEntrySchema = z.object({
     node:       z.string(),
     durationMs: z.number(),
     iteration:  z.number(),
-    inputSnap:  z.record(z.unknown()).optional(),
-    outputSnap: z.record(z.unknown()).optional(),
+    inputSnap:  z.record(z.string(), z.unknown()).optional(),
+    outputSnap: z.record(z.string(), z.unknown()).optional(),
     skipped:    z.boolean().optional(),
 });
 
@@ -77,8 +77,8 @@ export const OrchestratorResultSchema = z.object({
     requiresHuman:  z.boolean().nullable().optional(),
     stage:          PipelineStageSchema.nullable().optional(),
     message:        z.string().nullable().optional(),
-    context:        z.record(z.unknown()).nullable().optional(),
-    executionLog:   z.array(z.record(z.unknown())).default([]),
+    context:        z.record(z.string(), z.unknown()).nullable().optional(),
+    executionLog:   z.array(z.record(z.string(), z.unknown())).default([]),
     error:          z.string().nullable().optional(),
     // LangGraph-only additions — absent from TS orchestrator results
     executionTrace: z.array(TraceEntrySchema).optional(),
