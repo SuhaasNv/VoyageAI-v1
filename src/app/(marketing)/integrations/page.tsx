@@ -53,7 +53,7 @@ export default function IntegrationsPage() {
                 </div>
                 <p className="mt-10 text-slate-500 text-sm">
                     More integrations are coming soon. Have a suggestion?{" "}
-                    <a href="/contact" className="text-indigo-400 hover:text-indigo-300 transition-colors">
+                    <a href="/#contact" className="text-indigo-400 hover:text-indigo-300 transition-colors">
                         Get in touch
                     </a>
                     .

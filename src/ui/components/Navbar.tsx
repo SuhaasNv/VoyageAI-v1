@@ -1,34 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { MoveRight, Home, Info, Zap, Globe, Mail } from "lucide-react";
+import { MoveRight } from "lucide-react";
 import { Logo } from "@/ui/components/Logo";
-import { TubelightNavBar } from "@/ui/components/ui/tubelight-navbar";
-
-const NAV_ITEMS = [
-    { name: "Home",         url: "/",             icon: Home  },
-    { name: "About Us",     url: "/about",         icon: Info  },
-    { name: "How it Works", url: "/ai-itineraries", icon: Zap   },
-    { name: "Destinations", url: "/destinations",  icon: Globe },
-    { name: "Contact",      url: "/contact",       icon: Mail  },
-];
 
 export function Navbar() {
     return (
         <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-3 lg:px-10 animate-in fade-in slide-in-from-top-4 duration-500 bg-[#0A0D12]/70 backdrop-blur-xl border-b border-white/[0.06]">
-
-            {/* Logo */}
             <Link href="/" className="flex items-center gap-2 hover:opacity-90 transition-opacity shrink-0">
                 <Logo size="md" />
                 <span className="text-lg font-semibold tracking-tight text-white">VoyageAI</span>
             </Link>
 
-            {/* Tubelight pill — centered nav links */}
-            <div className="absolute left-1/2 -translate-x-1/2">
-                <TubelightNavBar items={NAV_ITEMS} />
-            </div>
-
-            {/* Auth buttons */}
             <div className="flex items-center gap-3 shrink-0">
                 <Link
                     href="/login"

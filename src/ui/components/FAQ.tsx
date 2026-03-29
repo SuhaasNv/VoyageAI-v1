@@ -41,7 +41,7 @@ export function FAQ() {
     const [openIndex, setOpenIndex] = useState<number>(1); // Open the second one by default as in the design
 
     return (
-        <section className="py-24 px-6 lg:px-12 bg-[#0A0D12]">
+        <section id="faq" className="scroll-mt-28 py-24 px-6 lg:px-12 bg-[#0A0D12]">
             <div className="max-w-3xl mx-auto">
                 <div className="text-center mb-16">
                     <h2 className="text-3xl md:text-5xl font-semibold tracking-tight text-white mb-6">

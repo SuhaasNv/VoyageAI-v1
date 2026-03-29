@@ -25,7 +25,7 @@ export default function BlogPage() {
                     </p>
                     <p className="text-sm text-slate-500">
                         We&apos;re working on our first posts. In the meantime, follow us on social or{" "}
-                        <a href="/contact" className="text-indigo-400 hover:text-indigo-300 transition-colors">
+                        <a href="/#contact" className="text-indigo-400 hover:text-indigo-300 transition-colors">
                             get in touch
                         </a>
                         {" "}to suggest topics.

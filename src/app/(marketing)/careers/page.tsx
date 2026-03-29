@@ -54,7 +54,7 @@ export default function CareersPage() {
                         Don&apos;t see a role that fits? We&apos;re always interested in meeting talented people.
                     </p>
                     <Link
-                        href="/contact"
+                        href="/#contact"
                         className="inline-flex items-center gap-2 px-6 py-2 rounded-full border border-white/20 text-white font-medium hover:bg-white/5 transition-colors text-sm"
                     >
                         Get in touch

@@ -24,7 +24,7 @@ export default function TravelStoriesPage() {
                     </p>
                     <p className="text-sm text-slate-500">
                         Planned a great trip with VoyageAI?{" "}
-                        <Link href="/contact" className="text-indigo-400 hover:text-indigo-300 transition-colors">
+                        <Link href="/#contact" className="text-indigo-400 hover:text-indigo-300 transition-colors">
                             Share your story
                         </Link>
                         .
