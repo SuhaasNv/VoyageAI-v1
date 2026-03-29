@@ -155,6 +155,13 @@ export function AgentPipelineHeader({
                         const isPending = !isCompleted && !isActive;
                         const stageMeta = meta[stage];
                         const showPacketOnConnector = packetSegment === idx && !prefersReduced;
+                        // Connector gradient: current agent color → next agent color
+                        // Icon center x = px-3 (12px) + w-9/2 (18px) = 30px from wrapper left.
+                        // Connector left-[29px] + w-[2px] → center at 30px. ✓
+                        const connectorFrom = colors.bar;
+                        const connectorTo = idx < STAGES.length - 1
+                            ? COLOR_MAP[AGENT_REGISTRY[STAGES[idx + 1]].color].bar
+                            : colors.bar;
 
                         return (
                             <motion.div
@@ -162,13 +169,19 @@ export function AgentPipelineHeader({
                                 className="relative"
                                 variants={prefersReduced ? undefined : pipelineRowVariants}
                             >
-                                {/* Connector line */}
+                                {/* Connector spine — centered on icon (30px), w-[2px] → left-[29px] */}
                                 {idx < STAGES.length - 1 && (
-                                    <div className="absolute left-[22px] top-[44px] bottom-[-4px] w-px overflow-visible">
-                                        <div className="w-full h-full bg-white/[0.06]" />
+                                    <div className="absolute left-[29px] top-[44px] bottom-[-4px] w-[2px] overflow-visible">
+                                        {/* Base line (unfilled) */}
+                                        <div className="w-full h-full bg-white/[0.09] rounded-full" />
+                                        {/* Progress fill: gradient from current → next agent color */}
                                         {isCompleted && (
                                             <motion.div
-                                                className="absolute inset-x-0 top-0 w-full bg-gradient-to-b from-emerald-400 via-emerald-500 to-emerald-600 shadow-[0_0_10px_rgba(52,211,153,0.45)]"
+                                                className="absolute inset-x-0 top-0 w-full rounded-full"
+                                                style={{
+                                                    background: `linear-gradient(to bottom, ${connectorFrom}, ${connectorTo})`,
+                                                    boxShadow: `0 0 8px ${connectorTo}99`,
+                                                }}
                                                 initial={{ height: "0%" }}
                                                 animate={{ height: "100%" }}
                                                 transition={
@@ -178,12 +191,16 @@ export function AgentPipelineHeader({
                                                 }
                                             />
                                         )}
-                                        {/* Traveling pulse when advancing to next stage */}
+                                        {/* Traveling pulse — matches connector gradient endpoint */}
                                         <AnimatePresence>
                                             {showPacketOnConnector && (
                                                 <motion.span
                                                     key="v-packet"
-                                                    className="absolute left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-emerald-300 shadow-[0_0_12px_rgba(110,231,183,0.95)]"
+                                                    className="absolute left-1/2 -translate-x-1/2 w-2 h-2 rounded-full"
+                                                    style={{
+                                                        backgroundColor: connectorTo,
+                                                        boxShadow: `0 0 12px ${connectorTo}f0`,
+                                                    }}
                                                     initial={{ top: "0%", opacity: 1 }}
                                                     animate={{ top: "100%", opacity: [1, 1, 0.6] }}
                                                     exit={{ opacity: 0 }}
@@ -376,6 +393,10 @@ export function AgentPipelineHeader({
                     const isActive = idx === currentIdx;
                     const isPending = !isCompleted && !isActive;
                     const stageMeta = meta[stage];
+                    const hConnectorFrom = colors.bar;
+                    const hConnectorTo = idx < STAGES.length - 1
+                        ? COLOR_MAP[AGENT_REGISTRY[STAGES[idx + 1]].color].bar
+                        : colors.bar;
 
                     return (
                         <div key={stage} className="flex items-center flex-1 last:flex-none min-w-0">
@@ -450,11 +471,14 @@ export function AgentPipelineHeader({
                             </button>
 
                             {idx < STAGES.length - 1 && (
-                                <div className="flex-1 mx-3 h-px relative overflow-visible" style={{ minWidth: 16 }}>
-                                    <div className="absolute inset-0 bg-white/[0.06] rounded-full" />
+                                <div className="flex-1 mx-3 h-[2px] relative overflow-visible" style={{ minWidth: 16 }}>
+                                    <div className="absolute inset-0 bg-white/[0.09] rounded-full" />
                                     <motion.div
                                         className="absolute inset-y-0 left-0 rounded-full"
-                                        style={{ background: "rgba(16,185,129,0.55)" }}
+                                        style={{
+                                            background: `linear-gradient(to right, ${hConnectorFrom}, ${hConnectorTo})`,
+                                            boxShadow: `0 0 6px ${hConnectorTo}88`,
+                                        }}
                                         initial={{ width: "0%" }}
                                         animate={{ width: idx < currentIdx ? "100%" : "0%" }}
                                         transition={prefersReduced ? { duration: 0 } : { duration: 0.5, ease: "easeOut", delay: 0.1 }}
@@ -463,7 +487,11 @@ export function AgentPipelineHeader({
                                         {packetSegment === idx && (
                                             <motion.span
                                                 key="pkt"
-                                                className="absolute top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"
+                                                className="absolute top-1/2 -translate-y-1/2 w-2 h-2 rounded-full"
+                                                style={{
+                                                    backgroundColor: hConnectorTo,
+                                                    boxShadow: `0 0 8px ${hConnectorTo}cc`,
+                                                }}
                                                 initial={{ left: "0%" }}
                                                 animate={{ left: "100%" }}
                                                 exit={{ opacity: 0 }}
