@@ -23,6 +23,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/stores/authStore";
 import Link from "next/link";
 import { getCsrfToken } from "@/lib/api";
+import { HERO_GLOBE_ARCS, HERO_GLOBE_MARKERS } from "@/ui/components/hero-globe-routes";
 
 const MotionDiv = dynamic(
     () => import("framer-motion").then((m) => m.motion.div),
@@ -30,7 +31,7 @@ const MotionDiv = dynamic(
 );
 
 const RotatingEarth = dynamic(
-    () => import("@/ui/components/ui/wireframe-dotted-globe"),
+    () => import("@/ui/components/ui/cobe-globe"),
     { ssr: false }
 );
 
@@ -738,14 +739,14 @@ export function Hero() {
                 />
             </div>
 
-            <div className="relative z-20 w-full h-full flex flex-col justify-between mt-20 max-w-[1400px] mx-auto">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center h-full">
+            <div className="relative z-20 mx-auto mt-20 flex h-full w-full max-w-[1400px] flex-col justify-between">
+                <div className="flex h-full flex-col items-stretch gap-12 lg:flex-row lg:items-center lg:justify-between lg:gap-10">
                     {/* Left text */}
                     <MotionDiv
                         initial={{ opacity: 0, y: 30 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.8, delay: 0.2 }}
-                        className="flex flex-col gap-6"
+                        className="flex min-w-0 max-w-xl flex-col gap-6 lg:max-w-[min(36rem,48%)]"
                     >
                         <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-violet-500/10 border border-violet-500/20 w-fit backdrop-blur-md">
                             <span className="w-1.5 h-1.5 rounded-full bg-violet-400 shadow-[0_0_6px_rgba(167,139,250,0.7)]" />
@@ -774,18 +775,32 @@ export function Hero() {
                         </Link>
                     </MotionDiv>
 
-                    {/* Right globe */}
+                    {/* Globe — sized up; inset from viewport + slight shift toward headline */}
                     <MotionDiv
                         initial={{ opacity: 0, scale: 0.85 }}
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ duration: 1, delay: 0.5 }}
-                        className="relative h-full hidden lg:flex items-center justify-end"
+                        className="relative hidden w-full shrink-0 justify-end pl-4 sm:pl-8 lg:flex lg:w-auto lg:min-w-0 lg:pl-8 xl:pl-12 lg:mr-6 xl:mr-10 2xl:mr-14"
                     >
-                        <RotatingEarth
-                            width={560}
-                            height={500}
-                            className="opacity-90"
-                        />
+                        <div className="mx-auto w-full max-w-[min(600px,94vw)] sm:max-w-[min(640px,80vw)] lg:mx-0 lg:max-w-[min(640px,68vw)] lg:-translate-x-2 xl:max-w-[min(720px,64vw)] xl:-translate-x-4 2xl:max-w-[min(780px,60vw)] 2xl:-translate-x-5">
+                            <RotatingEarth
+                                className="w-full opacity-90"
+                                markers={HERO_GLOBE_MARKERS}
+                                arcs={HERO_GLOBE_ARCS}
+                                showHint={false}
+                                mapBrightness={8}
+                                diffuse={1.35}
+                                speed={0.0025}
+                                baseColor={[0.92, 0.92, 0.93]}
+                                glowColor={[0.82, 0.78, 0.95]}
+                                markerColor={[0.55, 0.45, 0.98]}
+                                arcColor={[0.5, 0.4, 0.95]}
+                                markerSize={0.034}
+                                markerElevation={0.012}
+                                arcWidth={0.55}
+                                arcHeight={0.32}
+                            />
+                        </div>
                     </MotionDiv>
                 </div>
 

@@ -269,23 +269,13 @@ export default function RotatingEarth({ width = 800, height = 600, className = "
             document.addEventListener("mouseup", handleMouseUp)
         }
 
-        const handleWheel = (event: WheelEvent) => {
-            event.preventDefault()
-            const scaleFactor = event.deltaY > 0 ? 0.9 : 1.1
-            const newRadius = Math.max(radius * 0.5, Math.min(radius * 3, projection.scale() * scaleFactor))
-            projection.scale(newRadius)
-            render()
-        }
-
         canvas.addEventListener("mousedown", handleMouseDown)
-        canvas.addEventListener("wheel", handleWheel)
 
         loadWorldData()
 
         return () => {
             rotationTimer.stop()
             canvas.removeEventListener("mousedown", handleMouseDown)
-            canvas.removeEventListener("wheel", handleWheel)
         }
     }, [width, height])
 
@@ -327,7 +317,7 @@ export default function RotatingEarth({ width = 800, height = 600, className = "
             {/* Hint label */}
             {!isLoading && !error && (
                 <div className="absolute bottom-4 left-4 text-xs text-slate-500 px-2 py-1 rounded-md bg-black/40 backdrop-blur-sm">
-                    Drag to rotate • Scroll to zoom
+                    Drag to rotate
                 </div>
             )}
         </div>
