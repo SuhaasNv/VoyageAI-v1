@@ -94,7 +94,10 @@ export interface CreateTripInput {
 }
 
 export async function getUpcomingTrips(): Promise<Trip[]> {
-  const res = await fetch("/api/trips", readFetchOptions());
+  const res = await fetch("/api/trips", {
+    ...readFetchOptions(),
+    cache: "no-store",
+  });
   return unwrap<Trip[]>(res);
 }
 

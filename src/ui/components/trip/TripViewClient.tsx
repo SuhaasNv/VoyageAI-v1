@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { TripTopBar } from "@/ui/components/trip/TripTopBar";
 import { TimelineItinerary } from "@/ui/components/trip/TimelineItinerary";
 import { TripMap } from "@/ui/maps/TripMap";
@@ -19,11 +19,12 @@ import {
 import { calculateTravelScore, type TravelScoreResult } from "@/lib/analysis/travelScore";
 import { generateTripExplanation } from "@/lib/analysis/explainTrip";
 
-import { Map as MapIcon, X, Sparkles, Loader2, CheckCircle2, Navigation2, Check, TriangleAlert, ChevronDown, WifiOff } from "lucide-react";
+import { Map as MapIcon, X, Sparkles, Loader2, CheckCircle2, TriangleAlert, ChevronDown, WifiOff } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { createPortal } from "react-dom";
-import { ScenarioSimulator } from "@/ui/components/trip/ScenarioSimulator";
 import { ExportDrawer } from "@/ui/components/trip/ExportDrawer";
+import { ItineraryCreationFlow } from "@/ui/components/itinerary-flow/ItineraryCreationFlow";
+import type { FlowInput } from "@/ui/components/itinerary-flow/types";
 
 interface TripViewClientProps {
     trip: TripDTO;
@@ -47,16 +48,6 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
     const [refineError, setRefineError] = useState<string | null>(null);
     const [summaryOfChanges, setSummaryOfChanges] = useState<string | null>(null);
 
-    // ── Route optimization state ───────────────────────────────────────────────
-    const [isOptimizing, setIsOptimizing] = useState(false);
-    const [optimizeError, setOptimizeError] = useState<string | null>(null);
-    /** Non-null while the user is previewing the optimized route (before confirming). */
-    const [optimizedPreview, setOptimizedPreview] = useState<Itinerary | null>(null);
-    const [distanceSavedKm, setDistanceSavedKm] = useState<number | null>(null);
-    /** Snapshot of the itinerary before optimization — used for Undo. */
-    const [preOptimizeSnapshot, setPreOptimizeSnapshot] = useState<Itinerary | null>(null);
-    const [isSavingOptimized, setIsSavingOptimized] = useState(false);
-
     // ── Risk analysis state ────────────────────────────────────────────────────
     const [riskAnalysis, setRiskAnalysis] = useState<RiskAnalysisResult | null>(null);
     const [riskDismissed, setRiskDismissed] = useState(false);
@@ -75,9 +66,32 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
     // ── Export drawer state ────────────────────────────────────────────────────
     const [showExportDrawer, setShowExportDrawer] = useState(false);
 
+    // ── Landing-flow auto-launch ───────────────────────────────────────────────
+    // When the user arrives from the hero "Create trip" → login flow, rawItinerary
+    // is null (trip record exists, agents haven't run). We detect ?fromLanding=1
+    // in the URL client-side (no Suspense needed — dynamic route, runs post-mount).
+    const [showFlow, setShowFlow] = useState(false);
+    const hasLaunchedFlowRef = useRef(false);
+    // Style preference forwarded from the landing extraction — stored in a ref so
+    // it's available synchronously when the overlay first renders.
+    const flowStyleRef = useRef<string | undefined>(undefined);
+
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setMounted(true);
+    }, []);
+
+    // Open the agent pipeline automatically when landing-flow context is present
+    // and no itinerary has been generated yet. Fires exactly once per mount.
+    useEffect(() => {
+        if (initialRaw || hasLaunchedFlowRef.current) return;
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("fromLanding") !== "1") return;
+        flowStyleRef.current = params.get("style") ?? undefined;
+        hasLaunchedFlowRef.current = true;
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setShowFlow(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Detect online/offline status and seed localStorage cache with initial data.
@@ -206,88 +220,6 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
         [refineInput, rawItinerary, isRefining, initialTrip.id, selectedDay, trip.budget.total, handleItineraryRefresh]
     );
 
-    // ── Route optimization handlers ────────────────────────────────────────────
-    const handleOptimizeRoute = useCallback(async () => {
-        if (!rawItinerary || isOptimizing) return;
-
-        setIsOptimizing(true);
-        setOptimizeError(null);
-
-        try {
-            const csrf = await getCsrfToken();
-            const res = await fetch("/api/itinerary/optimize", {
-                method: "POST",
-                credentials: "include",
-                headers: {
-                    "Content-Type": "application/json",
-                    ...(csrf ? { "x-csrf-token": csrf } : {}),
-                },
-                body: JSON.stringify({ itinerary: rawItinerary }),
-            });
-
-            const json = await res.json();
-            if (!json.success) {
-                throw new Error(json.error?.message ?? "Optimization failed.");
-            }
-
-            const { optimizedItinerary, totalDistanceSavedKm } = json.data as {
-                optimizedItinerary: Itinerary;
-                totalDistanceSavedKm: number;
-            };
-
-            setPreOptimizeSnapshot(rawItinerary);
-            setOptimizedPreview(optimizedItinerary);
-            setDistanceSavedKm(totalDistanceSavedKm);
-            // Show the optimized route on the map immediately.
-            setRawItinerary(optimizedItinerary);
-        } catch (err) {
-            setOptimizeError(err instanceof Error ? err.message : "Something went wrong");
-        } finally {
-            setIsOptimizing(false);
-        }
-    }, [rawItinerary, isOptimizing]);
-
-    const handleApplyOptimization = useCallback(async () => {
-        if (!optimizedPreview || isSavingOptimized) return;
-
-        setIsSavingOptimized(true);
-        setOptimizeError(null);
-
-        try {
-            const csrf = await getCsrfToken();
-            const res = await fetch(`/api/trips/${initialTrip.id}/itinerary`, {
-                method: "POST",
-                credentials: "include",
-                headers: {
-                    "Content-Type": "application/json",
-                    ...(csrf ? { "x-csrf-token": csrf } : {}),
-                },
-                body: JSON.stringify(optimizedPreview),
-            });
-
-            const json = await res.json();
-            if (!json.success) throw new Error(json.error?.message ?? "Save failed.");
-
-            // Sync from DB so TripTopBar budget etc. reflect any updates.
-            await handleItineraryRefresh();
-            setOptimizedPreview(null);
-            setPreOptimizeSnapshot(null);
-            setDistanceSavedKm(null);
-        } catch (err) {
-            setOptimizeError(err instanceof Error ? err.message : "Failed to save.");
-        } finally {
-            setIsSavingOptimized(false);
-        }
-    }, [optimizedPreview, isSavingOptimized, initialTrip.id, handleItineraryRefresh]);
-
-    const handleUndoOptimization = useCallback(() => {
-        if (preOptimizeSnapshot) setRawItinerary(preOptimizeSnapshot);
-        setOptimizedPreview(null);
-        setPreOptimizeSnapshot(null);
-        setDistanceSavedKm(null);
-        setOptimizeError(null);
-    }, [preOptimizeSnapshot]);
-
     // ── Explain toggle — regenerates on every open (cheap, deterministic) ──────
     const handleToggleExplain = useCallback(() => {
         if (!explainOpen && rawItinerary) {
@@ -366,9 +298,6 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
                             {refineError && (
                                 <p className="text-xs text-rose-400/90 px-1">{refineError}</p>
                             )}
-                            {optimizeError && (
-                                <p className="text-xs text-rose-400/90 px-1">{optimizeError}</p>
-                            )}
 
                             {/* Refine success summary */}
                             {summaryOfChanges && !isRefining && (
@@ -431,47 +360,6 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
                                     </div>
                                 );
                             })()}
-
-                            {/* Optimize Route Order */}
-                            {optimizedPreview ? (
-                                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-sky-500/8 border border-sky-500/20">
-                                    <Navigation2 className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                                    <span className="flex-1 text-xs text-sky-400/80 truncate">
-                                        Route optimized
-                                        {distanceSavedKm !== null && distanceSavedKm > 0.1
-                                            ? ` · ${distanceSavedKm.toFixed(1)} km saved`
-                                            : " · already optimal"}
-                                    </span>
-                                    <button
-                                        onClick={handleApplyOptimization}
-                                        disabled={isSavingOptimized}
-                                        className="shrink-0 px-2.5 py-1 rounded-lg bg-sky-500/20 border border-sky-500/30 text-sky-400 text-xs font-medium hover:bg-sky-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1"
-                                    >
-                                        {isSavingOptimized
-                                            ? <Loader2 className="w-3 h-3 animate-spin" />
-                                            : <Check className="w-3 h-3" />}
-                                        {isSavingOptimized ? "Saving…" : "Apply"}
-                                    </button>
-                                    <button
-                                        onClick={handleUndoOptimization}
-                                        disabled={isSavingOptimized}
-                                        className="shrink-0 px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.08] text-white/50 text-xs font-medium hover:bg-white/[0.07] hover:text-white/70 disabled:opacity-40 transition-all"
-                                    >
-                                        Undo
-                                    </button>
-                                </div>
-                            ) : (
-                                <button
-                                    onClick={handleOptimizeRoute}
-                                    disabled={!rawItinerary || isOptimizing || isOffline}
-                                    className="w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded-xl bg-white/[0.03] border border-white/[0.07] text-white/40 text-xs font-medium hover:bg-sky-500/10 hover:border-sky-500/20 hover:text-sky-400/80 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                                >
-                                    {isOptimizing
-                                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                        : <Navigation2 className="w-3.5 h-3.5" />}
-                                    {isOptimizing ? "Calculating optimal route…" : "Optimize Route Order"}
-                                </button>
-                            )}
 
                             {/* ── Risk Analysis Banner ──────────────────────── */}
                             {riskAnalysis && !riskDismissed && (() => {
@@ -548,16 +436,6 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
                                     </div>
                                 );
                             })()}
-
-                            {/* ── Scenario Simulator ───────────────────────────── */}
-                            {rawItinerary && (
-                                <ScenarioSimulator
-                                    rawItinerary={rawItinerary}
-                                    tripBudget={trip.budget.total}
-                                    currency={trip.budget.currency}
-                                    onSuggestRefine={(text) => setRefineInput(text)}
-                                />
-                            )}
 
                             {/* ── Why this itinerary? ──────────────────────────── */}
                             {rawItinerary && (
@@ -653,6 +531,33 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
                     />
                 )}
             </AnimatePresence>
+
+            {/* Agent pipeline overlay — auto-launched for trips arriving from the landing page */}
+            {showFlow && (() => {
+                const flowInput: FlowInput = {
+                    tripId: initialTrip.id,
+                    destination: initialTrip.destination,
+                    startDate: initialTrip.startDate,
+                    imageUrl: initialTrip.imageUrl,
+                    endDate: initialTrip.endDate,
+                    ...(flowStyleRef.current ? { style: flowStyleRef.current } : {}),
+                };
+                return (
+                    <ItineraryCreationFlow
+                        tripId={initialTrip.id}
+                        input={flowInput}
+                        onComplete={(_tripId: string) => {
+                            setShowFlow(false);
+                            window.history.replaceState({}, "", `/dashboard/trip/${initialTrip.id}`);
+                            void handleItineraryRefresh();
+                        }}
+                        onClose={() => {
+                            setShowFlow(false);
+                            window.history.replaceState({}, "", `/dashboard/trip/${initialTrip.id}`);
+                        }}
+                    />
+                );
+            })()}
         </div>
     );
 }

@@ -88,6 +88,8 @@ export async function POST(req: NextRequest) {
 
 // ─── GET /api/trips ───────────────────────────────────────────────────────────
 
+export const dynamic = "force-dynamic";
+
 export async function GET(req: NextRequest) {
     return runWithRequestContext(req, async () => {
         const auth = getAuthContext(req);
@@ -162,6 +164,7 @@ export async function GET(req: NextRequest) {
 
             return successResponse<TripDTO[]>(dtos, 200, {
                 "Server-Timing": serverTiming,
+                "Cache-Control": "private, no-store, max-age=0, must-revalidate",
             });
         } catch (err) {
             logError("[GET /api/trips] DB error", err);

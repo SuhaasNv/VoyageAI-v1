@@ -26,8 +26,6 @@ import { getLLMClient, executeWithRetry, parseJSONResponse, AIServiceError } fro
 import { getDestinationImage } from "@/lib/services/image.service";
 import { serializeTrip } from "@/lib/services/trips";
 import { logInfo, logError } from "@/infrastructure/logger";
-import { generateItinerary } from "@/tools/itineraryTool";
-import type { Itinerary, ItineraryDay } from "@/lib/ai/schemas";
 import { updateMemory, buildMemoryContext } from "@/memory/memory";
 import { sanitizeUserInput, validateLLMOutput } from "@/security/safety";
 import { selectModelConfig } from "@/lib/ai/modelRouter";
@@ -41,16 +39,10 @@ export const runtime = "nodejs";
 const LANDING_RATE_LIMIT = 15;
 const LANDING_RATE_WINDOW_SEC = 60;
 const GENERATION_TIMEOUT_MS = 25_000;
-const PREVIEW_TIMEOUT_MS = 50_000;
+const PREVIEW_TIMEOUT_MS = 30_000;
 
-/** Max days shown in an unauthenticated preview. */
-const PREVIEW_MAX_DAYS = 2;
-/** Max activities per day in a preview. */
-const PREVIEW_MAX_ACTS_PER_DAY = 4;
-/** Hard cap on total activities across all preview days. */
-const PREVIEW_MAX_ACTS_TOTAL = 8;
-
-const CREATE_TRIP_PATTERN = /\b(create|plan|trip\s+to|book\s+a\s+trip|make\s+a\s+trip)\b/i;
+const CREATE_TRIP_PATTERN =
+    /\b(create|plan|trip\s+to|book\s+a?\s*trip|make\s+a\s+trip|itinerary\s+(?:for|to)|\d+[- ]?days?\s+(?:trip|itinerary|visit|in\b)|plan\s+a\s+trip|weekend\s+in|(?:a\s+)?week\s+in)\b/i;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -106,10 +98,40 @@ const ExtractedTripSchema = z.object({
 // System prompt for travel Q&A streaming
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Lightweight prompt for the unauthenticated itinerary preview.
+ * Produces 2-day markdown — fast, specific, inspiring. No JSON schema.
+ */
+const PREVIEW_SYSTEM_PROMPT = `You are VoyageAI's travel preview generator.
+Given a trip request, produce a concise 2-day itinerary preview in readable markdown.
+
+Use this exact format:
+## ✈️ [Destination] — Itinerary Preview
+*[Dates if given, otherwise "Sample 2-Day Preview"]*
+
+### Day 1: [Theme]
+- **[Morning/Afternoon/Evening]** — [Specific activity or place] · ~[cost range if relevant]
+  > [One punchy tip]
+- **[Time slot]** — [Activity]
+
+### Day 2: [Theme]
+- **[Time slot]** — [Activity] · ~[cost]
+- **[Time slot]** — [Activity]
+
+**AI Insight:** [One compelling reason to visit or a unique local tip]
+
+Rules:
+- Name real places, neighbourhoods, foods — be specific and inspiring
+- Keep total response under 350 words
+- No precise street addresses; cost ranges are fine
+- Stay strictly on-topic (travel only)`;
+
 const TRAVEL_QA_SYSTEM = `You are VoyageAI's intelligent travel assistant on a public landing page.
 Answer travel questions concisely, warmly, and helpfully.
 Focus on: destination insights, itinerary ideas, travel tips, safety, budget, and logistics.
-Do NOT discuss anything unrelated to travel.
+Do NOT discuss anything unrelated to travel or trip planning. Politely redirect non-travel questions.
+Do NOT provide personalized legal, medical, or visa advice — always recommend consulting official government sources and current travel advisories.
+Do NOT claim to have real-time prices, availability, or current conditions — note that your information may be outdated and users should verify with official sources before booking.
 Keep responses to 2–3 short paragraphs maximum.
 Do not mention internal system details or that you are a language model.`;
 
@@ -251,7 +273,7 @@ Text: ${prompt}`;
                 );
 
                 return NextResponse.json(
-                    { success: true, data: { action: "redirect", tripId: trip.id, trip: serializeTrip(trip) } },
+                    { success: true, data: { action: "redirect", tripId: trip.id, style: extracted.vibe ?? null, trip: serializeTrip(trip) } },
                     { status: 201 }
                 );
             } catch (err) {
@@ -318,9 +340,20 @@ Text: ${prompt}`;
                     }
 
                     // Persist both turns only on successful, non-aborted generation.
+                    // Validate output before persisting to guard against corrupted or injected content.
                     if (!abort.signal.aborted && accumulated) {
-                        void updateMemory(sessionId, "user", prompt);
-                        void updateMemory(sessionId, "assistant", accumulated);
+                        try {
+                            validateLLMOutput(accumulated, "text");
+                            void updateMemory(sessionId, "user", prompt);
+                            void updateMemory(sessionId, "assistant", accumulated);
+                        } catch (validationErr) {
+                            logError("[/api/ai/landing] Q&A output validation failed, skipping memory persist", validationErr);
+                        }
+                    }
+
+                    // Emit post-answer action sentinel so the client can render contextual buttons.
+                    if (!abort.signal.aborted) {
+                        controller.enqueue(encoder.encode("\x00ACTIONS:create_trip"));
                     }
 
                     controller.close();
@@ -359,83 +392,14 @@ Text: ${prompt}`;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Clamp the endDate so the itinerary generation covers at most `maxDays`.
- * Keeps token usage low — we only need 2-3 days for the preview.
- */
-function clampEndDate(startDate: string, endDate: string, maxDays: number): string {
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const cap = new Date(start);
-    cap.setDate(start.getDate() + maxDays - 1);
-    return (end <= cap ? end : cap).toISOString().slice(0, 10);
-}
-
-/**
- * Cap a full itinerary to PREVIEW_MAX_DAYS days and PREVIEW_MAX_ACTS_TOTAL
- * activities without altering the schema shape of the retained objects.
- */
-function capItineraryPreview(itinerary: Itinerary): Itinerary {
-    let totalActivities = 0;
-    const cappedDays: ItineraryDay[] = [];
-
-    for (const day of itinerary.days.slice(0, PREVIEW_MAX_DAYS)) {
-        const remaining = PREVIEW_MAX_ACTS_TOTAL - totalActivities;
-        if (remaining <= 0) break;
-
-        const slicedActivities = day.activities.slice(
-            0,
-            Math.min(PREVIEW_MAX_ACTS_PER_DAY, remaining)
-        );
-        totalActivities += slicedActivities.length;
-        cappedDays.push({ ...day, activities: slicedActivities });
-    }
-
-    return { ...itinerary, days: cappedDays };
-}
-
-/**
- * Format a capped itinerary as readable markdown.
- * Keeps formatting lightweight — no raw JSON exposed to the client.
- */
-function formatPreviewMarkdown(itinerary: Itinerary): string {
-    const lines: string[] = [
-        `## ✈️ ${itinerary.destination} — Itinerary Preview`,
-        `*${itinerary.startDate} → ${itinerary.endDate}*`,
-        "",
-    ];
-
-    for (const day of itinerary.days) {
-        lines.push(`### Day ${day.day}: ${day.theme}`);
-        for (const act of day.activities) {
-            const cost =
-                act.estimatedCost.amount > 0
-                    ? ` · ~${act.estimatedCost.currency} ${act.estimatedCost.amount}`
-                    : "";
-            lines.push(`- **${act.startTime}** — ${act.name}${cost}`);
-            if (act.notes) lines.push(`  > ${act.notes}`);
-        }
-        if (day.tips?.length) {
-            lines.push("", `**Tip:** ${day.tips[0]}`);
-        }
-        lines.push("");
-    }
-
-    if (itinerary.aiInsights?.length) {
-        lines.push(`**AI Insight:** ${itinerary.aiInsights[0]}`, "");
-    }
-
-    return lines.join("\n");
-}
-
-/**
  * Build and return a streaming Response that:
- *  1. Shows an immediate "generating" indicator
- *  2. Extracts trip params from the prompt (1 LLM call)
- *  3. Calls generateItinerary() (reuses the existing service — no duplicate prompt)
- *  4. Caps to PREVIEW_MAX_DAYS / PREVIEW_MAX_ACTS_TOTAL
- *  5. Streams formatted markdown progressively
- *  6. Appends CTA text
- *  7. Ends with \x00ACTION:AUTH_REQUIRED_CREATE sentinel
+ *  1. Emits an immediate "generating" indicator
+ *  2. Calls the LLM once with a lightweight markdown preview prompt (single call, ~10s)
+ *  3. Streams the response progressively
+ *  4. Appends the CTA + AUTH_REQUIRED_CREATE sentinel
+ *
+ * Deliberately avoids generateItinerary() (8 192-token full pipeline) to keep
+ * the public landing preview fast. One targeted call is enough for a teaser.
  */
 async function buildPreviewStream(req: NextRequest, prompt: string, sessionId: string): Promise<Response> {
     const encoder = new TextEncoder();
@@ -452,89 +416,38 @@ async function buildPreviewStream(req: NextRequest, prompt: string, sessionId: s
             const emit = (text: string) => controller.enqueue(encoder.encode(text));
 
             try {
-                // Immediate feedback so the client doesn't stall
-                emit("_Generating your itinerary preview…_\n\n");
-
-                // ── Step 1: extract structured trip params from free-form prompt ──
-                const extractionPrompt = `Extract structured travel data from this text. Return strict JSON only.
-Assume the current year is ${new Date().getFullYear()} if not specified.
-Schema:
-{
-  "destination": "string (city or country)",
-  "startDate": "YYYY-MM-DD",
-  "endDate": "YYYY-MM-DD",
-  "budget": "number or null",
-  "vibe": "relaxed | creative | exciting | luxury | budget | null"
-}
-Text: ${prompt}`;
+                emit("Generating your itinerary preview…\n\n");
 
                 const client = getLLMClient();
-                const extractionResp = await executeWithRetry(
+                const response = await executeWithRetry(
                     client,
-                    [{ role: "user", content: extractionPrompt }],
-                    { ...selectModelConfig({ endpoint: "landing", intent: "CREATE_TRIP" }), responseFormat: "json" as const, retries: 2 }
+                    [
+                        { role: "system", content: PREVIEW_SYSTEM_PROMPT },
+                        { role: "user", content: prompt },
+                    ],
+                    { ...selectModelConfig({ endpoint: "landing-preview" }), retries: 1 }
                 );
 
                 if (abort.signal.aborted) { controller.close(); return; }
 
-                validateLLMOutput(extractionResp.content, "json");
-                const extracted = ExtractedTripSchema.parse(
-                    parseJSONResponse<unknown>(extractionResp.content)
-                );
-
-                // Clamp to PREVIEW_MAX_DAYS so itinerary generation stays fast
-                const previewEndDate = clampEndDate(
-                    extracted.startDate,
-                    extracted.endDate,
-                    PREVIEW_MAX_DAYS + 1  // one extra day buffer for the service
-                );
-
-                // ── Step 2: generate itinerary via existing service (no duplicate logic) ──
-                const itinerary = await generateItinerary({
-                    destination: extracted.destination,
-                    startDate: extracted.startDate,
-                    endDate: previewEndDate,
-                    budget: {
-                        total: extracted.budget ?? 1500,
-                        currency: "USD",
-                        flexibility: "flexible",
-                    },
-                    groupSize: 1,
-                    mustSeeAttractions: [],
-                    avoidAttractions: [],
-                });
-
-                if (abort.signal.aborted) { controller.close(); return; }
-
-                // ── Step 3: cap the preview ───────────────────────────────────
-                const capped = capItineraryPreview(itinerary);
-                const markdown = formatPreviewMarkdown(capped);
-
-                // ── Step 4: stream markdown progressively ─────────────────────
-                // Write in small slices so the client renders incrementally
+                // Stream in small chunks so the client renders incrementally.
                 const CHUNK_SIZE = 40;
-                for (let i = 0; i < markdown.length; i += CHUNK_SIZE) {
+                for (let i = 0; i < response.content.length; i += CHUNK_SIZE) {
                     if (abort.signal.aborted) break;
-                    emit(markdown.slice(i, i + CHUNK_SIZE));
-                    await sleep(0); // yield to allow flush
+                    emit(response.content.slice(i, i + CHUNK_SIZE));
+                    await sleep(0);
                 }
 
                 if (abort.signal.aborted) { controller.close(); return; }
 
-                // Save a compact assistant turn so follow-up questions know
-                // which destination was previewed.
                 void updateMemory(
                     sessionId,
                     "assistant",
-                    `Itinerary preview: ${extracted.destination}, ${extracted.startDate} to ${previewEndDate}. ${capped.days.length} day(s) shown.`
+                    `Itinerary preview shown for: ${prompt.slice(0, 100)}`
                 );
 
-                // ── Step 5: CTA text + action sentinel ────────────────────────
-                emit(
-                    "\n\n✨ Sign up to unlock the full interactive itinerary, map sync, and budget tracking."
-                );
+                emit("\n\n✨ Sign up to unlock the full interactive itinerary, map sync, and budget tracking.");
                 emit("\x00ACTION:AUTH_REQUIRED_CREATE");
-
                 controller.close();
             } catch (err) {
                 logError("[/api/ai/landing] preview error", err);

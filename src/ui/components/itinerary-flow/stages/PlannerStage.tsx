@@ -62,6 +62,16 @@ function getThemeEmoji(theme: string): string {
     return "🗺️";
 }
 
+/**
+ * Maps any LLM-returned theme string to the closest canonical DAY_THEMES label.
+ * Prevents emoji/label mismatches between the dropdown and the background icon.
+ */
+function normalizeTheme(theme: string): string {
+    if (DAY_THEMES.some((t) => t.label === theme)) return theme;
+    const emoji = getThemeEmoji(theme);
+    return DAY_THEMES.find((t) => t.emoji === emoji)?.label ?? DAY_THEMES[0].label;
+}
+
 
 // ─── Dropdown ─────────────────────────────────────────────────────────────────
 
@@ -219,7 +229,12 @@ export function PlannerStage({
     if (result !== prevPlannerResultRef.current) {
         prevPlannerResultRef.current = result;
         if (result) {
-            setLocalResult(result);
+            // Normalize all day themes to canonical DAY_THEMES labels so that the
+            // dropdown emoji and the background icon emoji always match.
+            setLocalResult({
+                ...result,
+                days: result.days.map((d) => ({ ...d, theme: normalizeTheme(d.theme) })),
+            });
 
             // Resolve style index — fall back to "balanced" (1) for any unrecognised value
             // so orig and current are always in sync after a fresh result arrives.
@@ -241,6 +256,9 @@ export function PlannerStage({
         }
     }
 
+    // Day themes in localResult are always normalized; compare against normalized
+    // originals so LLM wording ("culture & landmarks" vs canonical label) does not
+    // count as a user edit.
     const hasChanges =
         styleIdx !== origStyleIdx ||
         paceIdx !== origPaceIdx ||
@@ -248,7 +266,7 @@ export function PlannerStage({
         departureMorning !== DEPARTURE_MORNING[0].label ||
         (localResult?.days ?? []).some((d) => {
             const orig = result?.days.find((od) => od.day === d.day);
-            return orig && orig.theme !== d.theme;
+            return orig != null && normalizeTheme(orig.theme) !== d.theme;
         });
 
     function buildFeedbackString(): string {
@@ -266,7 +284,10 @@ export function PlannerStage({
 
         if (localResult) {
             const themeChanges = localResult.days
-                .filter((d) => result?.days.find((od) => od.day === d.day)?.theme !== d.theme)
+                .filter((d) => {
+                    const orig = result?.days.find((od) => od.day === d.day);
+                    return orig != null && normalizeTheme(orig.theme) !== d.theme;
+                })
                 .map((d) => `Day ${d.day}: ${d.theme}`);
             if (themeChanges.length) parts.push(themeChanges.join(", "));
         }
@@ -302,7 +323,8 @@ export function PlannerStage({
 
     if (!localResult) return null;
 
-    const heroUrl   = `https://source.unsplash.com/1600x900/?${encodeURIComponent(localResult.destination + ',landmark,city,travel')}`;
+    // Use the Pexels image fetched at trip creation; fall back to gradient if null or load fails.
+    const heroUrl   = input.imageUrl ?? null;
     const totalDays = localResult.days.length;
     const arrivalOptions    = ARRIVAL_ACTIVITIES;
     const departureOptions  = DEPARTURE_MORNING;
@@ -316,7 +338,7 @@ export function PlannerStage({
         >
             {/* ── Hero banner ───────────────────────────────────────────── */}
             <div className="relative rounded-2xl overflow-hidden h-56 md:h-64 gradient-border">
-                {!heroError ? (
+                {!heroError && heroUrl ? (
                     <img
                         src={heroUrl}
                         alt={localResult.destination}

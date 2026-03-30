@@ -61,6 +61,41 @@ const SUGGESTION_CHIPS = [
 ] as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Minimal markdown renderer — covers only the patterns the AI emits.
+// No external dependency; handles: ## h2, ### h3, **bold**, *italic*/_italic_,
+// - bullets, > blockquotes, blank lines, and plain paragraphs.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function splitInline(text: string): React.ReactNode {
+    const parts = text.split(/(\*\*[^*\n]+?\*\*|\*[^*\n]+?\*|_[^_\n]+?_)/);
+    return (
+        <>
+            {parts.map((part, i) => {
+                if (/^\*\*[^*]+\*\*$/.test(part))
+                    return <strong key={i} className="font-semibold text-white">{part.slice(2, -2)}</strong>;
+                if (/^(\*[^*]+\*|_[^_]+_)$/.test(part))
+                    return <span key={i} className="italic text-slate-300">{part.slice(1, -1)}</span>;
+                return <span key={i}>{part}</span>;
+            })}
+        </>
+    );
+}
+
+function renderMdLine(line: string, key: number): React.ReactNode {
+    if (line.startsWith("## "))
+        return <p key={key} className="text-sm font-bold text-white mt-3 mb-0.5 first:mt-0">{splitInline(line.slice(3))}</p>;
+    if (line.startsWith("### "))
+        return <p key={key} className="text-xs font-semibold text-slate-300 mt-2 mb-0.5 uppercase tracking-wide">{splitInline(line.slice(4))}</p>;
+    if (/^\s*>\s/.test(line))
+        return <p key={key} className="text-[11px] text-slate-400 pl-2 border-l-2 border-white/20 italic my-0.5">{splitInline(line.replace(/^\s*>\s*/, ""))}</p>;
+    if (line.startsWith("- ") || /^\* /.test(line))
+        return <p key={key} className="text-xs text-slate-200 leading-relaxed pl-1">· {splitInline(line.slice(2))}</p>;
+    if (line.trim() === "")
+        return <div key={key} className="h-1.5" />;
+    return <p key={key} className="text-xs text-slate-200 leading-relaxed">{splitInline(line)}</p>;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Stream phase state machine
 //   idle → loading (shimmer) → typing (typewriter) → done
 // ─────────────────────────────────────────────────────────────────────────────
@@ -82,6 +117,8 @@ function AILandingPrompt() {
     const [displayedText, setDisplayedText] = useState("");
     const [error, setError] = useState<string | null>(null);
     const [showAuthCTA, setShowAuthCTA] = useState(false);
+    const [retryAfter, setRetryAfter] = useState<number | null>(null);
+    const [postAnswerActions, setPostAnswerActions] = useState<string | null>(null);
 
     // ── Request lifecycle refs ─────────────────────────────────────────────
     const abortRef = useRef<AbortController | null>(null);
@@ -111,6 +148,8 @@ function AILandingPrompt() {
     const displayedLenRef = useRef(0);
     const streamEndedRef = useRef(false);
     const rafRef = useRef<number | null>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
+    const pendingActionRef = useRef<string | null>(null);
 
     // ── Hydration guard + mic support detection ────────────────────────────
     useEffect(() => {
@@ -129,6 +168,14 @@ function AILandingPrompt() {
             recognitionRef.current?.abort();
         };
     }, []);
+
+    // ── Rate-limit countdown — tick every second until retryAfter reaches 0 ──
+    useEffect(() => {
+        if (!retryAfter) return;
+        if (retryAfter <= 0) { setRetryAfter(null); return; }
+        const t = setTimeout(() => setRetryAfter((s) => (s !== null ? s - 1 : null)), 1000);
+        return () => clearTimeout(t);
+    }, [retryAfter]);
 
     // ── Typewriter: RAF loop that drains incomingRef → displayedText ───────
     //
@@ -203,8 +250,10 @@ function AILandingPrompt() {
         displayedLenRef.current = 0;
         streamEndedRef.current = false;
         submittingRef.current = false;
+        pendingActionRef.current = null;
         setPhase("idle");
         setDisplayedText("");
+        setPostAnswerActions(null);
     }, [stopTypewriter]);
 
     // ── Core submit ────────────────────────────────────────────────────────
@@ -223,6 +272,8 @@ function AILandingPrompt() {
             setError(null);
             setDisplayedText("");
             setShowAuthCTA(false);
+            setPostAnswerActions(null);
+            pendingActionRef.current = null;
             setPhase("loading"); // → show shimmer immediately
 
             // Ensure CSRF token (landing endpoint is CSRF-exempt but fetch it
@@ -254,6 +305,17 @@ function AILandingPrompt() {
                     }),
                 });
 
+                if (res.status === 429) {
+                    const retryHeader = res.headers.get("Retry-After");
+                    const parsed = retryHeader ? parseInt(retryHeader, 10) : 60;
+                    const wait = Number.isFinite(parsed) && parsed > 0 ? parsed : 60;
+                    setRetryAfter(wait);
+                    let errMsg = "Too many requests. Please wait before trying again.";
+                    try { errMsg = (await res.json())?.error?.message ?? errMsg; } catch { /* ignore */ }
+                    setError(errMsg);
+                    setPhase("idle");
+                    return;
+                }
                 if (!res.ok && res.status !== 200) {
                     let errMsg = `Request failed (${res.status})`;
                     try { errMsg = (await res.json())?.error?.message ?? errMsg; } catch { /* ignore */ }
@@ -300,8 +362,15 @@ function AILandingPrompt() {
                                 break;
                             }
 
-                            // Feed the typewriter — never set React state directly here
-                            incomingRef.current += chunk;
+                            // Parse ACTIONS sentinel or feed typewriter normally
+                            if (chunk.includes("\x00ACTIONS:")) {
+                                const [textPart, actionPart] = chunk.split("\x00ACTIONS:");
+                                if (textPart) incomingRef.current += textPart;
+                                pendingActionRef.current = (actionPart ?? "").trim();
+                            } else {
+                                // Feed the typewriter — never set React state directly here
+                                incomingRef.current += chunk;
+                            }
                         }
                     } catch (readErr) {
                         if ((readErr as Error).name !== "AbortError") {
@@ -313,6 +382,10 @@ function AILandingPrompt() {
                         // Tell the typewriter the server is done; it will drain
                         // any remaining chars and then call setPhase("done")
                         streamEndedRef.current = true;
+                        if (pendingActionRef.current) {
+                            setPostAnswerActions(pendingActionRef.current);
+                            pendingActionRef.current = null;
+                        }
                         reader.cancel().catch(() => { });
                     }
                 } else {
@@ -336,9 +409,12 @@ function AILandingPrompt() {
                         return;
                     }
 
-                    const data = (json as { success: true; data: { action: string; tripId?: string } }).data;
+                    const data = (json as { success: true; data: { action: string; tripId?: string; style?: string | null } }).data;
                     if (data?.action === "redirect" && data?.tripId) {
-                        router.push(`/dashboard/trip/${data.tripId}`);
+                        const styleParam = typeof data.style === "string" && data.style
+                            ? `&style=${encodeURIComponent(data.style)}`
+                            : "";
+                        router.push(`/dashboard/trip/${data.tripId}?fromLanding=1${styleParam}`);
                     }
                     setPhase("idle");
                 }
@@ -463,6 +539,46 @@ function AILandingPrompt() {
         [executeSubmit]
     );
 
+    const handleReset = useCallback(() => {
+        abortRef.current?.abort();
+        stopTypewriter();
+        incomingRef.current = "";
+        displayedLenRef.current = 0;
+        streamEndedRef.current = false;
+        submittingRef.current = false;
+        pendingActionRef.current = null;
+        sessionIdRef.current = crypto.randomUUID();
+        setPhase("idle");
+        setDisplayedText("");
+        setPrompt("");
+        setError(null);
+        setShowAuthCTA(false);
+        setPostAnswerActions(null);
+    }, [stopTypewriter]);
+
+    const handleCopy = useCallback(() => {
+        if (!displayedText) return;
+        navigator.clipboard.writeText(displayedText).catch(() => { });
+    }, [displayedText]);
+
+    const handleFollowUp = useCallback(() => {
+        setPhase("idle");
+        setDisplayedText("");
+        setPostAnswerActions(null);
+        setPrompt("");
+        incomingRef.current = "";
+        displayedLenRef.current = 0;
+        streamEndedRef.current = false;
+        inputRef.current?.focus();
+    }, []);
+
+    const handlePlanTrip = useCallback(() => {
+        const createPrompt = `Plan a trip: ${prompt.slice(0, 200)}`;
+        setPostAnswerActions(null);
+        setPrompt(createPrompt);
+        executeSubmit(createPrompt);
+    }, [executeSubmit, prompt]);
+
     const isBusy = phase === "loading" || phase === "typing";
     const showCard = phase !== "idle";
 
@@ -473,14 +589,24 @@ function AILandingPrompt() {
                 onSubmit={handleSubmit}
                 className="flex items-center rounded-full border border-white/10 bg-black/35 px-4 py-3 relative z-10 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
             >
-                <span className="text-slate-300 mr-2 text-xl leading-none">+</span>
+                <button
+                    type="button"
+                    onClick={handleReset}
+                    title="New conversation"
+                    aria-label="Start new conversation"
+                    className="text-slate-300 mr-2 text-xl leading-none hover:text-white transition-colors cursor-pointer"
+                >
+                    +
+                </button>
                 <input
+                    ref={inputRef}
                     type="text"
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
                     maxLength={500}
                     disabled={isBusy}
                     placeholder={isListening ? "" : "Ask Anything..."}
+                    aria-label="Ask a travel question"
                     className="bg-transparent border-none outline-none flex-1 text-sm text-slate-50 placeholder:text-slate-400 disabled:opacity-50"
                 />
                 {isListening && (
@@ -524,7 +650,7 @@ function AILandingPrompt() {
                     ) : (
                         <button
                             type="submit"
-                            disabled={!prompt.trim()}
+                            disabled={!prompt.trim() || !!retryAfter}
                             className="p-2 rounded-full bg-white text-[#10141a] hover:bg-slate-200 transition-colors disabled:opacity-50 disabled:bg-white/50"
                             aria-label="Submit"
                         >
@@ -538,13 +664,19 @@ function AILandingPrompt() {
             {error && phase === "idle" && (
                 <div className="mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-2 text-sm text-red-400">
                     <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                    <p>{error}</p>
+                    <p>{error}{retryAfter ? ` Retry in ${retryAfter}s.` : ""}</p>
                 </div>
             )}
 
             {/* ── Response card ─────────────────────────────────────────── */}
             {showCard && (
-                <div className="mt-4 p-4 bg-white/5 border border-white/10 rounded-2xl flex flex-col gap-3">
+                <div
+                    className="mt-4 p-4 bg-white/5 border border-white/10 rounded-2xl flex flex-col gap-3"
+                    role="region"
+                    aria-label="AI response"
+                    aria-live="polite"
+                    aria-atomic="false"
+                >
 
                     {/* Shimmer skeleton — shown while waiting for first token */}
                     {phase === "loading" && (
@@ -568,12 +700,42 @@ function AILandingPrompt() {
                             <div className="w-6 h-6 rounded-full bg-brand-500/20 flex items-center justify-center shrink-0 mt-0.5">
                                 <Sparkles className="w-3.5 h-3.5 text-brand-400" />
                             </div>
-                            <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">
-                                {displayedText}
+                            <div className="leading-relaxed space-y-0.5">
+                                {displayedText.split("\n").map((line, i) => renderMdLine(line, i))}
                                 {phase === "typing" && (
                                     <span className="inline-block w-[2px] h-[1.1em] bg-white/80 ml-px align-middle [animation:blink_1s_step-end_infinite]" />
                                 )}
-                            </p>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Post-answer actions — shown after Q&A completes (not after itinerary preview) */}
+                    {phase === "done" && !showAuthCTA && (
+                        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-white/[0.08]">
+                            <button
+                                type="button"
+                                onClick={handleCopy}
+                                className="text-[10px] px-2.5 py-1 rounded-full border border-white/12 bg-black/30 hover:bg-black/50 text-slate-400 hover:text-slate-200 transition-colors"
+                            >
+                                Copy
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleFollowUp}
+                                className="text-[10px] px-2.5 py-1 rounded-full border border-white/12 bg-black/30 hover:bg-black/50 text-slate-400 hover:text-slate-200 transition-colors"
+                            >
+                                Ask a follow-up
+                            </button>
+                            {postAnswerActions === "create_trip" && (
+                                <button
+                                    type="button"
+                                    onClick={handlePlanTrip}
+                                    className="text-[10px] px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/25 hover:bg-amber-500/25 text-amber-300 transition-colors flex items-center gap-1"
+                                >
+                                    <Sparkles className="w-3 h-3" />
+                                    Plan this trip
+                                </button>
+                            )}
                         </div>
                     )}
 
@@ -595,8 +757,13 @@ function AILandingPrompt() {
                 </div>
             )}
 
+            {/* Trust disclaimer */}
+            <p className="text-[10px] text-center text-slate-500/70 mt-1 px-2">
+                AI-generated · may be inaccurate · not legal, visa, or medical advice
+            </p>
+
             {/* Suggestion chips */}
-            <div className="flex flex-wrap items-center justify-center gap-2 mt-3 p-1">
+            <div className="flex flex-wrap items-center justify-center gap-2 mt-2 p-1">
                 {SUGGESTION_CHIPS.map((chip) => (
                     <button
                         key={chip}
@@ -797,7 +964,7 @@ function HeroBackdrop() {
 
 export function Hero() {
     return (
-        <section className="relative min-h-screen pt-24 pb-12 flex flex-col justify-end px-6 lg:px-12 overflow-hidden bg-[#0a0c14]">
+        <section className="relative min-h-screen pt-24 pb-28 flex flex-col justify-end px-6 lg:px-12 overflow-hidden bg-[#0a0c14]">
             <HeroBackdrop />
 
             <div className="relative z-20 mx-auto mt-20 flex h-full w-full max-w-[1400px] flex-col justify-between">
