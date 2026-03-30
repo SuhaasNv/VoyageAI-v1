@@ -318,9 +318,10 @@ export function Globe({
                             left: "anchor(center)",
                             translate: "-50% 0",
                             marginBottom: 8,
-                            padding: "2px 6px",
-                            background: "#1a1a2e",
-                            color: "#fff",
+                            padding: "2px 7px",
+                            background: "rgba(12, 12, 22, 0.92)",
+                            color: "#f4f4f8",
+                            boxShadow: "0 2px 10px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.08)",
                             fontFamily: "ui-monospace, monospace",
                             fontSize: "0.6rem",
                             letterSpacing: "0.08em",
@@ -339,7 +340,7 @@ export function Globe({
                             left: "50%",
                             transform: "translate3d(-50%, -1px, 0)",
                             border: "5px solid transparent",
-                            borderTopColor: "#1a1a2e",
+                            borderTopColor: "rgba(12, 12, 22, 0.92)",
                         }}
                     />
                 </div>
@@ -358,13 +359,13 @@ export function Globe({
                                 left: "anchor(center)",
                                 translate: "-50% 0",
                                 marginBottom: 8,
-                                padding: "2px 6px",
-                                background: "#fff",
-                                color: "#1a1a2e",
+                                padding: "2px 7px",
+                                background: "rgba(12, 12, 22, 0.92)",
+                                color: "#f4f4f8",
                                 fontFamily: "ui-monospace, monospace",
                                 fontSize: "0.6rem",
                                 letterSpacing: "0.08em",
-                                boxShadow: "0 1px 4px rgba(0,0,0,0.1)",
+                                boxShadow: "0 2px 10px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.08)",
                                 opacity: `var(--cobe-visible-arc-${a.id}, 0)`,
                                 filter: `blur(calc((1 - var(--cobe-visible-arc-${a.id}, 0)) * 6px))`,
                                 transition: "opacity 0.35s ease-out, filter 0.35s ease-out",
@@ -380,7 +381,7 @@ export function Globe({
                                 left: "50%",
                                 transform: "translate3d(-50%, -1px, 0)",
                                 border: "5px solid transparent",
-                                borderTopColor: "#fff",
+                                borderTopColor: "rgba(12, 12, 22, 0.92)",
                             }}
                         />
                     </div>
