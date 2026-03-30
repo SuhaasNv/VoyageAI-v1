@@ -41,6 +41,20 @@ const EtherealShadow = dynamic(
     { ssr: false }
 );
 
+const MultilingualGreetingTypewriter = dynamic(
+    () =>
+        import("@/components/ui/text-three").then((m) => m.MultilingualGreetingTypewriter),
+    {
+        ssr: false,
+        loading: () => (
+            <div
+                className="h-9 w-full max-w-md rounded-lg bg-white/[0.06]"
+                aria-hidden
+            />
+        ),
+    }
+);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
@@ -974,7 +988,7 @@ export function Hero() {
                         initial={{ opacity: 0, y: 30 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.8, delay: 0.2 }}
-                        className="flex min-w-0 max-w-xl flex-col gap-6 lg:max-w-[min(36rem,48%)]"
+                        className="flex min-w-0 max-w-xl flex-col gap-5 lg:max-w-[min(36rem,48%)]"
                     >
                         <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full w-fit border border-white/15 bg-black/45 backdrop-blur-md shadow-[0_2px_20px_rgba(0,0,0,0.5)]">
                             <span className="w-1.5 h-1.5 rounded-full bg-violet-400 shadow-[0_0_8px_rgba(167,139,250,0.9)]" />
@@ -983,19 +997,27 @@ export function Hero() {
                             </span>
                         </div>
 
-                        <div className="flex flex-col gap-3">
-                            <h1 className="text-5xl md:text-7xl font-bold tracking-tight leading-[1.05] text-white">
-                                Your next adventure,
-                                <br />
-                                <span className="inline-block drop-shadow-[0_2px_24px_rgba(251,146,60,0.45)]">
-                                    <span className="bg-gradient-to-r from-amber-200 via-orange-300 to-amber-400 bg-clip-text text-transparent">
-                                        planned by AI.
+                        {/* One visual block: global hello → title — tight vertical rhythm */}
+                        <div className="flex flex-col gap-2 sm:gap-2.5">
+                            <MultilingualGreetingTypewriter size="lg" />
+                            <div
+                                className="h-px w-11 max-w-[28%] shrink-0 bg-gradient-to-r from-violet-400/35 via-fuchsia-400/15 to-transparent"
+                                aria-hidden
+                            />
+                            <div className="flex flex-col gap-3 -mt-0.5">
+                                <h1 className="text-5xl md:text-7xl font-bold tracking-tight leading-[1.05] text-white">
+                                    Your next adventure,
+                                    <br />
+                                    <span className="inline-block drop-shadow-[0_2px_24px_rgba(251,146,60,0.45)]">
+                                        <span className="bg-gradient-to-r from-amber-200 via-orange-300 to-amber-400 bg-clip-text text-transparent">
+                                            planned by AI.
+                                        </span>
                                     </span>
-                                </span>
-                            </h1>
-                            <p className="text-base text-slate-100/95 max-w-sm leading-relaxed">
-                                Day-by-day itineraries, smart budgets, and routes that adapt in real time.
-                            </p>
+                                </h1>
+                                <p className="text-base text-slate-100/95 max-w-sm leading-relaxed">
+                                    Day-by-day itineraries, smart budgets, and routes that adapt in real time.
+                                </p>
+                            </div>
                         </div>
 
                         <Link
