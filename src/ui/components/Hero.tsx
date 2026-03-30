@@ -48,6 +48,12 @@ const EtherealShadow = dynamic(
 const PENDING_PROMPT_KEY = "voyageai_pending_prompt";
 const DEBOUNCE_MS = 300;
 
+/** Fullscreen hero loop. Default: `/header-video.mp4` in `public/`. Set env to another URL, or `NEXT_PUBLIC_HERO_BG_VIDEO_URL=` (empty) for mesh-only. */
+const HERO_BG_VIDEO_RAW = process.env.NEXT_PUBLIC_HERO_BG_VIDEO_URL;
+const HERO_BG_VIDEO_URL =
+    HERO_BG_VIDEO_RAW !== undefined ? HERO_BG_VIDEO_RAW.trim() : "/header-video.mp4";
+const HERO_BG_VIDEO_POSTER = (process.env.NEXT_PUBLIC_HERO_BG_VIDEO_POSTER ?? "").trim() || undefined;
+
 const SUGGESTION_CHIPS = [
     "Inspire me where to go",
     "Create a 5-day trip to Bali",
@@ -461,10 +467,13 @@ function AILandingPrompt() {
     const showCard = phase !== "idle";
 
     return (
-        <div className="col-span-1 lg:col-span-1 glass rounded-[2rem] p-2 max-w-xl mx-auto w-full relative">
+        <div className="col-span-1 lg:col-span-1 rounded-[2rem] p-2 max-w-xl mx-auto w-full relative border border-white/12 bg-black/45 backdrop-blur-xl shadow-[0_8px_40px_rgba(0,0,0,0.5)]">
             {/* Input bar */}
-            <form onSubmit={handleSubmit} className="flex items-center bg-white/5 rounded-full px-4 py-3 relative z-10">
-                <span className="text-slate-400 mr-2 text-xl leading-none">+</span>
+            <form
+                onSubmit={handleSubmit}
+                className="flex items-center rounded-full border border-white/10 bg-black/35 px-4 py-3 relative z-10 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+            >
+                <span className="text-slate-300 mr-2 text-xl leading-none">+</span>
                 <input
                     type="text"
                     value={prompt}
@@ -472,7 +481,7 @@ function AILandingPrompt() {
                     maxLength={500}
                     disabled={isBusy}
                     placeholder={isListening ? "" : "Ask Anything..."}
-                    className="bg-transparent border-none outline-none flex-1 text-sm text-white placeholder:text-slate-500 disabled:opacity-50"
+                    className="bg-transparent border-none outline-none flex-1 text-sm text-slate-50 placeholder:text-slate-400 disabled:opacity-50"
                 />
                 {isListening && (
                     <span className="text-xs text-red-400/80 whitespace-nowrap animate-pulse mr-1">
@@ -489,7 +498,7 @@ function AILandingPrompt() {
                         aria-label={isListening ? "Stop listening" : "Voice input"}
                         className={`p-2 rounded-full transition-all duration-200 ${isListening
                             ? "bg-red-500/20 text-red-400 shadow-[0_0_12px_rgba(239,68,68,0.4)]"
-                            : "hover:bg-white/10 text-slate-400 disabled:opacity-30"
+                            : "hover:bg-white/12 text-slate-200 disabled:opacity-30"
                             }`}
                     >
                         {isListening
@@ -594,9 +603,9 @@ function AILandingPrompt() {
                         type="button"
                         onClick={() => handleChipClick(chip)}
                         disabled={isBusy}
-                        className="text-[10px] px-3 py-1.5 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 text-slate-300 transition-colors flex items-center gap-1.5 whitespace-nowrap disabled:opacity-50"
+                        className="text-[10px] px-3 py-1.5 rounded-full border border-white/14 bg-black/40 hover:bg-black/55 text-slate-100 transition-colors flex items-center gap-1.5 whitespace-nowrap disabled:opacity-50 shadow-[0_2px_12px_rgba(0,0,0,0.35)]"
                     >
-                        <span className="text-[#f48c06]">✦</span> {chip}
+                        <span className="text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.45)]">✦</span> {chip}
                     </button>
                 ))}
             </div>
@@ -724,14 +733,38 @@ function HeroCard() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Hero
+// Hero backdrop — optional video + scrim, or generative mesh
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function Hero() {
+function HeroBackdrop() {
+    const [reduceMotion, setReduceMotion] = useState(false);
+
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+        const sync = () => setReduceMotion(mq.matches);
+        sync();
+        mq.addEventListener("change", sync);
+        return () => mq.removeEventListener("change", sync);
+    }, []);
+
+    const useVideo = Boolean(HERO_BG_VIDEO_URL) && !reduceMotion;
+
     return (
-        <section className="relative min-h-screen pt-24 pb-12 flex flex-col justify-end px-6 lg:px-12 overflow-hidden bg-[#0a0c14]">
-            {/* Background — ethereal displacement + mesh (no photography) */}
-            <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+        <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden" aria-hidden>
+            {useVideo ? (
+                <video
+                    className="absolute inset-0 z-0 h-full w-full object-cover will-change-transform [transform:translateZ(0)]"
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    preload="metadata"
+                    poster={HERO_BG_VIDEO_POSTER}
+                >
+                    <source src={HERO_BG_VIDEO_URL} type="video/mp4" />
+                </video>
+            ) : (
                 <div className="absolute inset-0 z-0">
                     <EtherealShadow
                         className="h-full min-h-full w-full"
@@ -741,12 +774,31 @@ export function Hero() {
                         sizing="fill"
                     />
                 </div>
+            )}
+            {useVideo ? (
+                <div className="absolute inset-0 z-[1] bg-gradient-to-b from-[#0a0c14]/72 via-[#0a0c14]/38 to-[#10141a]/95" />
+            ) : (
                 <div className="absolute inset-0 z-[1] bg-gradient-to-b from-[#0a0c14]/20 via-transparent to-[#10141a]" />
-                <div className="absolute inset-0 z-[1] bg-[radial-gradient(ellipse_80%_50%_at_50%_-10%,_rgba(124,58,237,0.22),_transparent_55%)]" />
-                <div className="absolute inset-0 z-[1] bg-[radial-gradient(circle_at_88%_18%,_rgba(99,102,241,0.18),_transparent_38%)]" />
-                <div className="absolute inset-0 z-[1] bg-[radial-gradient(circle_at_12%_40%,_rgba(56,80,104,0.2),_transparent_45%)]" />
-                <div className="absolute inset-0 z-[2] ring-1 ring-inset ring-white/[0.04]" />
-            </div>
+            )}
+            {useVideo ? (
+                <div className="absolute inset-0 z-[1] bg-[radial-gradient(ellipse_85%_75%_at_16%_38%,rgba(6,8,14,0.82),transparent_55%)]" />
+            ) : null}
+            <div className="absolute inset-0 z-[1] bg-[radial-gradient(ellipse_80%_50%_at_50%_-10%,_rgba(124,58,237,0.22),_transparent_55%)]" />
+            <div className="absolute inset-0 z-[1] bg-[radial-gradient(circle_at_88%_18%,_rgba(99,102,241,0.18),_transparent_38%)]" />
+            <div className="absolute inset-0 z-[1] bg-[radial-gradient(circle_at_12%_40%,_rgba(56,80,104,0.2),_transparent_45%)]" />
+            <div className="absolute inset-0 z-[2] ring-1 ring-inset ring-white/[0.04]" />
+        </div>
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hero
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function Hero() {
+    return (
+        <section className="relative min-h-screen pt-24 pb-12 flex flex-col justify-end px-6 lg:px-12 overflow-hidden bg-[#0a0c14]">
+            <HeroBackdrop />
 
             <div className="relative z-20 mx-auto mt-20 flex h-full w-full max-w-[1400px] flex-col justify-between">
                 <div className="flex h-full flex-col items-stretch gap-12 lg:flex-row lg:items-center lg:justify-between lg:gap-10">
@@ -757,41 +809,45 @@ export function Hero() {
                         transition={{ duration: 0.8, delay: 0.2 }}
                         className="flex min-w-0 max-w-xl flex-col gap-6 lg:max-w-[min(36rem,48%)]"
                     >
-                        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-violet-500/10 border border-violet-500/20 w-fit backdrop-blur-md">
-                            <span className="w-1.5 h-1.5 rounded-full bg-violet-400 shadow-[0_0_6px_rgba(167,139,250,0.7)]" />
-                            <span className="text-xs font-medium text-violet-200">AI-powered travel planning</span>
+                        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full w-fit border border-white/15 bg-black/45 backdrop-blur-md shadow-[0_2px_20px_rgba(0,0,0,0.5)]">
+                            <span className="w-1.5 h-1.5 rounded-full bg-violet-400 shadow-[0_0_8px_rgba(167,139,250,0.9)]" />
+                            <span className="text-xs font-medium text-violet-50">
+                                AI-powered travel planning
+                            </span>
                         </div>
 
                         <div className="flex flex-col gap-3">
                             <h1 className="text-5xl md:text-7xl font-bold tracking-tight leading-[1.05] text-white">
                                 Your next adventure,
                                 <br />
-                                <span className="bg-gradient-to-r from-violet-400 via-fuchsia-300 to-indigo-400 bg-clip-text text-transparent">
-                                    planned by AI.
+                                <span className="inline-block drop-shadow-[0_2px_24px_rgba(251,146,60,0.45)]">
+                                    <span className="bg-gradient-to-r from-amber-200 via-orange-300 to-amber-400 bg-clip-text text-transparent">
+                                        planned by AI.
+                                    </span>
                                 </span>
                             </h1>
-                            <p className="text-base text-white/45 max-w-xs leading-relaxed">
+                            <p className="text-base text-slate-100/95 max-w-sm leading-relaxed">
                                 Day-by-day itineraries, smart budgets, and routes that adapt in real time.
                             </p>
                         </div>
 
                         <Link
                             href="/dashboard"
-                            className="flex items-center gap-2 group w-fit px-6 py-3.5 rounded-full bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-medium transition-all duration-200 shadow-[0_0_24px_rgba(124,58,237,0.4)] hover:shadow-[0_0_38px_rgba(124,58,237,0.6)]"
+                            className="flex items-center gap-2 group w-fit px-6 py-3.5 rounded-full bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white font-medium transition-all duration-200 shadow-[0_0_28px_rgba(124,58,237,0.5)] hover:shadow-[0_0_40px_rgba(124,58,237,0.6)]"
                         >
                             <span className="text-sm font-medium">Start Planning</span>
                             <ArrowUpRight className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform duration-200" />
                         </Link>
                     </MotionDiv>
 
-                    {/* Globe — sized up; inset from viewport + slight shift toward headline */}
+                    {/* Globe — compact square, nudged toward the right edge */}
                     <MotionDiv
                         initial={{ opacity: 0, scale: 0.85 }}
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ duration: 1, delay: 0.5 }}
-                        className="relative hidden w-full shrink-0 justify-end pl-4 sm:pl-8 lg:flex lg:w-auto lg:min-w-0 lg:pl-8 xl:pl-12 lg:mr-6 xl:mr-10 2xl:mr-14"
+                        className="relative hidden w-full shrink-0 justify-end pl-4 sm:pl-8 lg:flex lg:w-auto lg:min-w-0 lg:pl-6 xl:pl-8 lg:mr-2 xl:mr-3 2xl:mr-5"
                     >
-                        <div className="mx-auto w-full max-w-[min(600px,94vw)] sm:max-w-[min(640px,80vw)] lg:mx-0 lg:max-w-[min(640px,68vw)] lg:-translate-x-2 xl:max-w-[min(720px,64vw)] xl:-translate-x-4 2xl:max-w-[min(780px,60vw)] 2xl:-translate-x-5">
+                        <div className="mx-auto w-full max-w-[min(420px,88vw)] sm:max-w-[min(460px,78vw)] lg:mx-0 lg:max-w-[min(460px,42vw)] lg:translate-x-3 xl:max-w-[min(500px,38vw)] xl:translate-x-5 2xl:max-w-[min(540px,36vw)] 2xl:translate-x-6">
                             <RotatingEarth
                                 className="w-full opacity-90"
                                 markers={HERO_GLOBE_MARKERS}
@@ -804,10 +860,10 @@ export function Hero() {
                                 glowColor={[0.82, 0.78, 0.95]}
                                 markerColor={[0.55, 0.45, 0.98]}
                                 arcColor={[0.5, 0.4, 0.95]}
-                                markerSize={0.034}
-                                markerElevation={0.012}
-                                arcWidth={0.55}
-                                arcHeight={0.32}
+                                markerSize={0.028}
+                                markerElevation={0.01}
+                                arcWidth={0.48}
+                                arcHeight={0.27}
                             />
                         </div>
                     </MotionDiv>
@@ -852,7 +908,7 @@ export function Hero() {
                                 +
                             </div>
                         </div>
-                        <p className="text-[11px] text-slate-400 max-w-[200px] leading-relaxed">
+                        <p className="text-[11px] text-slate-100/90 max-w-[220px] leading-relaxed">
                             With Worldwide Access, We Bring Our Top-Rated Travel Planning Solutions to Explorers Across
                             the Globe.
                         </p>
