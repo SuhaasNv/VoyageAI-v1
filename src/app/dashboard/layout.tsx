@@ -4,6 +4,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { AuthHydrator } from "@/ui/dashboard/AuthHydrator";
 import { DashboardTripsProvider } from "@/ui/dashboard/DashboardTripsProvider";
+import { DashboardTripsRefreshOnVisit } from "@/ui/dashboard/DashboardTripsRefreshOnVisit";
 import { DashboardUserProvider } from "@/ui/dashboard/DashboardUserProvider";
 import { DashboardSidebar } from "@/ui/dashboard/DashboardSidebar";
 import { LogoutOverlay } from "@/ui/dashboard/LogoutOverlay";
@@ -65,6 +66,7 @@ export default async function DashboardLayout({
             <LogoutOverlay />
             <DashboardUserProvider user={user} />
             <DashboardTripsProvider initialTrips={initialTrips}>
+                <DashboardTripsRefreshOnVisit />
                 <AuthHydrator />
                 <OnboardingGuard>
                     {/* Mobile header */}

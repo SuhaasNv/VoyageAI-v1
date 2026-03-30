@@ -56,6 +56,12 @@ const CONFIGS: Record<string, (intent?: string) => ProviderMatrix> = {
         };
     },
 
+    // ── Landing preview — lightweight single-call markdown (replaces full pipeline for teaser) ──
+    "landing-preview": () => ({
+        openai: { model: "gpt-4.1-mini", temperature: 0.7, maxTokens: 1200, timeoutMs: 20_000 },
+        gemini: { model: GEMINI_FLASH, temperature: 0.7, maxTokens: 1200, timeoutMs: 20_000 },
+    }),
+
     // ── Full itinerary generation ──────────────────────────────────────────────
     itinerary: () => ({
         openai: { model: "gpt-4.1-mini", temperature: 0.7, maxTokens: 8192, timeoutMs: 60_000 },

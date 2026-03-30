@@ -4,7 +4,7 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import type mapboxgl from "mapbox-gl";
 import type { Itinerary } from "@/lib/ai/schemas";
 import type { ItineraryEvent } from "@/lib/services/trips";
-import { Map as MapIcon, RefreshCw } from "lucide-react";
+import { Map as MapIcon, RefreshCw, Loader2 } from "lucide-react";
 
 // ─── Geocoding cache (module-level — persists across renders) ──────────────────
 
@@ -218,6 +218,9 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
     const [loadError, setLoadError] = useState<string | null>(null);
     const [retryCount, setRetryCount] = useState(0);
     const [hasGeocodedPoints, setHasGeocodedPoints] = useState(false);
+    /** Bumps when the Mapbox style finishes loading so geocode/redraw can run (was skipped if data arrived first). */
+    const [mapStyleReady, setMapStyleReady] = useState(false);
+    const [geocodeInFlight, setGeocodeInFlight] = useState(false);
 
     eventOrderRef.current = eventOrder;
 
@@ -434,6 +437,7 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
                 map.on("load", () => {
                     if (cancelled) { map.remove(); return; }
                     mapRef.current = map;
+                    setMapStyleReady(true);
 
                     const isMobile = window.innerWidth < 768;
                     const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -537,6 +541,7 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
 
         return () => {
             cancelled = true;
+            setMapStyleReady(false);
             if (animRef.current) cancelAnimationFrame(animRef.current);
             if (cameraTimeoutRef.current) clearTimeout(cameraTimeoutRef.current);
             if (idleAnimRef.current) cancelAnimationFrame(idleAnimRef.current);
@@ -592,7 +597,7 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
             clearTimeout(navTimer);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [focusedActivity]);
+    }, [focusedActivity, hasGeocodedPoints, rawItinerary, selectedDay]);
 
     // ─── Redraw when data / day / order changes (debounced 150 ms) ───────────
     useEffect(() => {
@@ -614,7 +619,9 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
                 ? rawItinerary.days.filter((d) => d.day === selectedDay)
                 : rawItinerary.days;
 
-            const missing: Array<{ query: string; idx: number }> = [];
+            const dest = rawItinerary.destination?.trim() || "";
+
+            const missing: Array<{ query: string; label: string; idx: number }> = [];
             let globalIdx = 0;
             for (const day of days) {
                 for (const act of day.activities) {
@@ -624,8 +631,13 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
                         typeof lat === "number" && isFinite(lat) && lat !== 0 &&
                         typeof lng === "number" && isFinite(lng) && lng !== 0;
                     if (!valid) {
-                        const query = act.location?.address || act.location?.name;
-                        if (query) missing.push({ query, idx: globalIdx });
+                        const label = act.name;
+                        const addr = act.location?.address?.trim();
+                        const locName = act.location?.name?.trim();
+                        const query = addr
+                            ? (dest ? `${addr}, ${dest}` : addr)
+                            : (dest && label ? `${label}, ${dest}` : label || locName || "");
+                        if (query) missing.push({ query, label, idx: globalIdx });
                     }
                     globalIdx++;
                 }
@@ -633,17 +645,22 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
 
             if (missing.length === 0) return;
 
+            setGeocodeInFlight(true);
             (async () => {
                 const geocoded: MapPoint[] = [];
-                for (const { query, idx } of missing) {
-                    if (cancelledGeocode) return;
-                    const coords = await geocodeLocation(query, token);
-                    if (coords) geocoded.push({ ...coords, label: query, index: idx });
-                }
-                if (!cancelledGeocode && geocoded.length > 0 && mapRef.current && mboxRef.current) {
-                    setHasGeocodedPoints(true);
-                    const enriched = [...points, ...geocoded].sort((a, b) => a.index - b.index);
-                    draw(mapRef.current, mboxRef.current, enriched);
+                try {
+                    for (const { query, label, idx } of missing) {
+                        if (cancelledGeocode) return;
+                        const coords = await geocodeLocation(query, token);
+                        if (coords) geocoded.push({ ...coords, label, index: idx });
+                    }
+                    if (!cancelledGeocode && geocoded.length > 0 && mapRef.current && mboxRef.current) {
+                        setHasGeocodedPoints(true);
+                        const enriched = [...points, ...geocoded].sort((a, b) => a.index - b.index);
+                        draw(mapRef.current, mboxRef.current, enriched);
+                    }
+                } finally {
+                    setGeocodeInFlight(false);
                 }
             })();
         }, 150);
@@ -652,7 +669,7 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
             if (redrawDebounceRef.current) clearTimeout(redrawDebounceRef.current);
             cancelledGeocode = true;
         };
-    }, [rawItinerary, selectedDay, eventOrder, draw, token]);
+    }, [rawItinerary, selectedDay, eventOrder, draw, token, mapStyleReady]);
 
     // ─── Handle Resize when visibility changes ────────────────────────────────
     useEffect(() => {
@@ -715,7 +732,19 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
                 </div>
             )}
 
-            {rawItinerary && !hasCoords && !hasGeocodedPoints && !loadError && (
+            {rawItinerary && !hasCoords && !hasGeocodedPoints && geocodeInFlight && !loadError && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                    <div className="bg-black/60 backdrop-blur-xl border border-white/10 rounded-2xl px-6 py-5 flex flex-col items-center gap-2 text-center max-w-xs shadow-2xl">
+                        <Loader2 className="w-6 h-6 text-emerald-400/80 animate-spin" />
+                        <p className="text-sm font-semibold text-white">Locating places on the map…</p>
+                        <p className="text-xs text-zinc-400 leading-relaxed">
+                            Resolving addresses for your itinerary stops.
+                        </p>
+                    </div>
+                </div>
+            )}
+
+            {rawItinerary && !hasCoords && !hasGeocodedPoints && !geocodeInFlight && !loadError && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
                     <div className="bg-black/60 backdrop-blur-xl border border-white/10 rounded-2xl px-6 py-5 flex flex-col items-center gap-2 text-center max-w-xs shadow-2xl">
                         <MapIcon className="w-6 h-6 text-zinc-400" />

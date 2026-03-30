@@ -24,6 +24,7 @@ export interface FlowInput {
     startDate: string;
     endDate: string;
     style?: string;
+    imageUrl?: string | null;
 }
 
 // ─── Per-stage metadata (drives explainability) ───────────────────────────────

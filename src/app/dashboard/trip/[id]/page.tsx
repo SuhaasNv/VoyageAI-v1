@@ -13,6 +13,7 @@ import { ItinerarySchema, type Itinerary } from "@/lib/ai/schemas";
 import type { ChatMessageDTO } from "@/app/api/trips/[id]/chat/route";
 import { logError, logInfo } from "@/infrastructure/logger";
 import { TripViewClient } from "@/ui/components/trip/TripViewClient";
+import { getDestinationImage } from "@/lib/services/image.service";
 
 export default async function TripViewPage({ params }: { params: Promise<{ id: string }> }) {
     const cookieStore = await cookies();
@@ -44,8 +45,24 @@ export default async function TripViewPage({ params }: { params: Promise<{ id: s
 
     if (!dbTrip || dbTrip.userId !== userId) notFound();
 
+    // If the trip has no destination image (Pexels fetch failed at creation or
+    // pre-dates the feature), fetch it now and persist so subsequent loads are instant.
+    let resolvedTrip = dbTrip;
+    if (!resolvedTrip.imageUrl) {
+        try {
+            const fetched = await getDestinationImage(resolvedTrip.destination);
+            if (fetched) {
+                await prisma.trip.update({ where: { id }, data: { imageUrl: fetched } });
+                resolvedTrip = { ...resolvedTrip, imageUrl: fetched };
+                logInfo("[trip] Backfilled imageUrl", { tripId: id });
+            }
+        } catch {
+            // Non-fatal — trip page still renders with gradient placeholder.
+        }
+    }
+
     const itinerary = itineraryRow ? parseStoredItinerary(itineraryRow) : [];
-    const trip = serializeTrip(dbTrip, itinerary);
+    const trip = serializeTrip(resolvedTrip, itinerary);
 
     const initialMessages: ChatMessageDTO[] = dbMessages.map((m) => ({
         id: m.id,
