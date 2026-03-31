@@ -31,6 +31,7 @@
     "cobe": "^2.0.1",
     "cookie": "^1.1.1",
     "d3": "^7.9.0",
+    "dotted-map": "^3.1.0",
     "framer-motion": "^12.34.3",
     "jsonwebtoken": "^9.0.3",
     "lucide-react": "^0.575.0",
