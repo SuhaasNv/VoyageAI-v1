@@ -52,6 +52,7 @@ export function CreateTripModal({ isOpen, onClose, onFlowStart }: CreateTripModa
                     startDate,
                     endDate,
                     style,
+                    imageUrl: trip.imageUrl,
                 });
                 onClose();
             } else {

@@ -7,16 +7,21 @@ import { AgentThinkingCard } from "../AgentThinkingCard";
 import type { StageProps, BudgetedTripContext } from "../types";
 
 const CURRENCIES = [
-    { code: "USD", symbol: "$", flag: "\u{1F1FA}\u{1F1F8}" },
-    { code: "EUR", symbol: "\u20AC", flag: "\u{1F1EA}\u{1F1FA}" },
-    { code: "GBP", symbol: "\u00A3", flag: "\u{1F1EC}\u{1F1E7}" },
-    { code: "JPY", symbol: "\u00A5", flag: "\u{1F1EF}\u{1F1F5}" },
-    { code: "INR", symbol: "\u20B9", flag: "\u{1F1EE}\u{1F1F3}" },
-    { code: "AUD", symbol: "A$", flag: "\u{1F1E6}\u{1F1FA}" },
+    { code: "USD", symbol: "$", flag: "🇺🇸", rate: 1 },
+    { code: "EUR", symbol: "€", flag: "🇪🇺", rate: 0.92 },
+    { code: "GBP", symbol: "£", flag: "🇬🇧", rate: 0.79 },
+    { code: "JPY", symbol: "¥", flag: "🇯🇵", rate: 150 },
+    { code: "INR", symbol: "₹", flag: "🇮🇳", rate: 83 },
+    { code: "AUD", symbol: "A$", flag: "🇦🇺", rate: 1.53 },
 ];
 
 const DONUT_COLORS = ["#6366f1", "#14b8a6", "#f59e0b", "#10b981"];
-const DONUT_LABELS = ["Hotels", "Activities", "Transport", "Food"];
+const DONUT_LABELS = [
+    { name: "Hotels", desc: "Base rate & taxes" },
+    { name: "Activities", desc: "Tours & experiences" },
+    { name: "Transport", desc: "Flights or rentals" },
+    { name: "Food", desc: "Dining & snacks allowance" },
+];
 
 function AnimatedNumber({ to, symbol }: { to: number; symbol: string }) {
     const motionValue = useMotionValue(0);
@@ -112,7 +117,7 @@ function BudgetLoadingCard() {
     );
 }
 
-function DonutChart({ values, colors, labels }: { values: number[]; colors: string[]; labels: string[] }) {
+function DonutChart({ values, colors, labels, currency }: { values: number[]; colors: string[]; labels: { name: string, desc: string }[]; currency: typeof CURRENCIES[0] }) {
     const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
     const prefersReduced = useReducedMotion();
     const total = values.reduce((a, b) => a + b, 0);
@@ -162,12 +167,12 @@ function DonutChart({ values, colors, labels }: { values: number[]; colors: stri
                     ))}
                     <text x={cx} y={cy - 4} textAnchor="middle" fontSize="11" fill="#94a3b8" fontWeight="500">Total</text>
                     <text x={cx} y={cy + 12} textAnchor="middle" fontSize="13" fill="white" fontWeight="bold">
-                        ${Math.round(total).toLocaleString()}
+                        {currency.symbol}{Math.round(total).toLocaleString()}
                     </text>
                 </svg>
                 {hoveredIdx !== null && (
-                    <div className="absolute top-1 right-1 bg-[#0B0F19] border border-white/[0.08] rounded-xl px-2 py-1 text-xs text-white pointer-events-none shadow-lg">
-                        {labels[hoveredIdx]}: ${Math.round(values[hoveredIdx]).toLocaleString()}
+                    <div className="absolute top-1 right-1 bg-[#0B0F19] border border-white/[0.08] rounded-xl px-2 py-1 text-xs text-white pointer-events-none shadow-lg z-10">
+                        {labels[hoveredIdx].name}: {currency.symbol}{Math.round(values[hoveredIdx]).toLocaleString()}
                         <br />
                         <span className="text-slate-400">{Math.round(slices[hoveredIdx].pct * 100)}%</span>
                     </div>
@@ -177,8 +182,11 @@ function DonutChart({ values, colors, labels }: { values: number[]; colors: stri
                 {labels.map((label, i) => (
                     <div key={i} className="flex items-center gap-2 text-xs">
                         <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: colors[i] }} />
-                        <span className="text-slate-400 flex-1">{label}</span>
-                        <span className="text-slate-300 font-medium">${Math.round(values[i]).toLocaleString()}</span>
+                        <div className="flex-1 flex flex-col">
+                            <span className="text-slate-200">{label.name}</span>
+                            <span className="text-slate-500 text-[10px]">{label.desc}</span>
+                        </div>
+                        <span className="text-slate-300 font-medium">{currency.symbol}{Math.round(values[i]).toLocaleString()}</span>
                     </div>
                 ))}
             </div>
@@ -206,9 +214,11 @@ export function BudgetStage({
     if (!result) return null;
 
     const { budget } = result;
-    const total = budget.totalEstimatedCost;
-    const userBudget = result.preferences?.budget;
+    const cxRate = currency.rate;
+    const total = budget.totalEstimatedCost * cxRate;
+    const userBudget = result.preferences?.budget ? result.preferences.budget * cxRate : undefined;
     const isOver = budget.isOverBudget;
+    const budgetGap = budget.budgetGap ? budget.budgetGap * cxRate : 0;
 
     const totalColor = isOver
         ? "text-rose-400"
@@ -217,9 +227,9 @@ export function BudgetStage({
         : "text-emerald-400";
 
     const hotelNights = result.durationDays;
-    const hotelCostPerNight = result.selectedHotel?.priceRange === "$$$$" ? 400
+    const hotelCostPerNight = (result.selectedHotel?.priceRange === "$$$$" ? 400
         : result.selectedHotel?.priceRange === "$$$" ? 200
-        : result.selectedHotel?.priceRange === "$$" ? 100 : 50;
+        : result.selectedHotel?.priceRange === "$$" ? 100 : 50) * cxRate;
     const hotelTotal = hotelCostPerNight * hotelNights;
     const activitiesTotal = Math.round(total * 0.45);
     const transportTotal = Math.round(total * 0.1);
@@ -274,9 +284,9 @@ export function BudgetStage({
                 </p>
                 {userBudget && (
                     <p className="text-sm text-slate-500 mt-2">
-                        vs. your budget: {currency.symbol}{userBudget.toLocaleString()}
-                        {isOver && budget.budgetGap && (
-                            <span className="text-rose-400"> · {currency.symbol}{Math.round(budget.budgetGap).toLocaleString()} over</span>
+                        vs. your budget: {currency.symbol}{Math.round(userBudget).toLocaleString()}
+                        {isOver && budgetGap > 0 && (
+                            <span className="text-rose-400"> · {currency.symbol}{Math.round(budgetGap).toLocaleString()} over</span>
                         )}
                     </p>
                 )}
@@ -285,14 +295,15 @@ export function BudgetStage({
             {/* Donut chart */}
             <div className="card-premium p-5">
                 <p className="section-heading mb-4">Cost Breakdown</p>
-                <DonutChart values={donutValues} colors={DONUT_COLORS} labels={DONUT_LABELS} />
+                <DonutChart values={donutValues} colors={DONUT_COLORS} labels={DONUT_LABELS} currency={currency} />
             </div>
 
             {/* Per-day accordion */}
             <div className="space-y-2">
                 <p className="section-heading">Per-Day Costs</p>
                 {result.days.map((day, idx) => {
-                    const dayCost = budget.costPerDay?.[idx] ?? Math.round(total / result.durationDays);
+                    const rawDayCost = budget.costPerDay?.[idx] ?? (budget.totalEstimatedCost / result.durationDays);
+                    const dayCost = rawDayCost * cxRate;
                     const isExp = expandedDays.has(day.day);
                     return (
                         <div key={day.day} className="bg-white/[0.04] border border-white/[0.08] rounded-xl transition-all duration-200 hover:bg-white/[0.06] hover:border-white/[0.12]">
@@ -317,12 +328,12 @@ export function BudgetStage({
                                     {day.activities.map((act, i) => (
                                         <div key={i} className="flex items-center justify-between text-xs text-slate-400 py-0.5">
                                             <span>{act.name}</span>
-                                            <span className="text-slate-500">{currency.symbol}{act.estimatedCost ?? 20}</span>
+                                            <span className="text-slate-500">{currency.symbol}{Math.round((act.estimatedCost ?? 20) * cxRate)}</span>
                                         </div>
                                     ))}
                                     <div className="flex items-center justify-between text-xs text-slate-400 pt-1 border-t border-white/[0.04]">
                                         <span>Hotel (1 night)</span>
-                                        <span className="text-slate-500">{currency.symbol}{hotelCostPerNight}</span>
+                                        <span className="text-slate-500">{currency.symbol}{Math.round(hotelCostPerNight)}</span>
                                     </div>
                                 </div>
                             )}

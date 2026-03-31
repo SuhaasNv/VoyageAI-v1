@@ -415,20 +415,20 @@ def terminal_node(state: PipelineState) -> PipelineState:
 # ─── Routing functions ────────────────────────────────────────────────────────
 
 def route_after_planner(state: PipelineState) -> str:
-    return "terminal" if state.get("terminal") else "research"
+    return "terminal_output" if state.get("terminal") else "research"
 
 
 def route_after_research(state: PipelineState) -> str:
-    return "terminal" if state.get("terminal") else "logistics"
+    return "terminal_output" if state.get("terminal") else "logistics"
 
 
 def route_after_logistics(state: PipelineState) -> str:
-    return "terminal" if state.get("terminal") else "budget_safety"
+    return "terminal_output" if state.get("terminal") else "budget_safety"
 
 
 def route_after_validate(state: PipelineState) -> str:
     if state.get("terminal"):
-        return "terminal"
+        return "terminal_output"
     return "logistics"
 
 
@@ -442,16 +442,16 @@ def build_graph() -> StateGraph:
     graph.add_node("logistics",     logistics_node)
     graph.add_node("budget_safety", budget_safety_node)
     graph.add_node("validate",      validate_node)
-    graph.add_node("terminal",      terminal_node)
+    graph.add_node("terminal_output", terminal_node)
 
     graph.set_entry_point("planner")
 
-    graph.add_conditional_edges("planner",       route_after_planner,   {"research": "research",    "terminal": "terminal"})
-    graph.add_conditional_edges("research",      route_after_research,  {"logistics": "logistics",  "terminal": "terminal"})
-    graph.add_conditional_edges("logistics",     route_after_logistics, {"budget_safety": "budget_safety", "terminal": "terminal"})
+    graph.add_conditional_edges("planner",       route_after_planner,   {"research": "research",    "terminal_output": "terminal_output"})
+    graph.add_conditional_edges("research",      route_after_research,  {"logistics": "logistics",  "terminal_output": "terminal_output"})
+    graph.add_conditional_edges("logistics",     route_after_logistics, {"budget_safety": "budget_safety", "terminal_output": "terminal_output"})
     graph.add_edge("budget_safety", "validate")
-    graph.add_conditional_edges("validate",      route_after_validate,  {"logistics": "logistics",  "terminal": "terminal"})
-    graph.add_edge("terminal", END)
+    graph.add_conditional_edges("validate",      route_after_validate,  {"logistics": "logistics",  "terminal_output": "terminal_output"})
+    graph.add_edge("terminal_output", END)
 
     return graph.compile()
 

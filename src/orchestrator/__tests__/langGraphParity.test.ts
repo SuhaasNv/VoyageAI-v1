@@ -62,6 +62,10 @@ function makeEnrichedContext(): EnrichedTripContext {
 function makeOptimized(): OptimizedTripContext {
     return {
         ...makeEnrichedContext(),
+        days: [
+            { day: 1, theme: "Arrival", activities: [] },
+            { day: 2, theme: "Culture", activities: [] },
+        ],
         selectedHotel: { name: "Hotel A", priceRange: "$$", area: "Shinjuku", tags: [] },
     };
 }

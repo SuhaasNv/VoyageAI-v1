@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { Sparkles, MapPin } from "lucide-react";
 
 interface DestinationSuggestion {
@@ -68,8 +69,9 @@ export function AISuggestionsCard() {
                     </p>
                 ) : (
                     destinations.map((s) => (
-                        <div
+                        <Link
                             key={`${s.city}-${s.country}`}
+                            href={`/dashboard/destination/${encodeURIComponent(`${s.city}, ${s.country}`)}`}
                             className="group flex items-center gap-4 cursor-pointer"
                         >
                             <div className="relative w-20 h-16 rounded-xl overflow-hidden shrink-0">
@@ -97,7 +99,7 @@ export function AISuggestionsCard() {
                                     <span className="text-[10px] text-zinc-400 font-semibold">• Explore</span>
                                 </div>
                             </div>
-                        </div>
+                        </Link>
                     ))
                 )}
             </div>

@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(for f:*)",
+      "Bash(do echo:*)",
+      "Read(//Users/suhaasnv/Documents/Desktop ALT/portfolioprojects/voyageai_1/src/app/api/ai/itinerary-flow/$f/**)",
+      "Bash(done)"
     ]
   }
 }

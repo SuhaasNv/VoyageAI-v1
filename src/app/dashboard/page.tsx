@@ -158,7 +158,10 @@ export default function DashboardPage() {
             />
 
             {/* ── Floating AI command button ─────────────────────────────── */}
-            <AICommandPalette onTripCreated={handleTripCreated} />
+            <AICommandPalette 
+                onTripCreated={handleTripCreated}
+                onFlowStart={(tripId, input) => setFlowSession({ tripId, input })} 
+            />
 
             {/* ── Itinerary Creation Flow (full-screen pipeline overlay) ───── */}
             {flowSession && (
