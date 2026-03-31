@@ -339,6 +339,8 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
                         iteration={state.iteration}
                         onExplain={openExplain}
                         layout="horizontal"
+                        imageUrl={state.input.imageUrl}
+                        destination={state.input.destination}
                     />
                     <TripDNASummaryStrip state={state} />
                 </div>
@@ -361,6 +363,8 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
                             iteration={state.iteration}
                             onExplain={openExplain}
                             layout="vertical"
+                            imageUrl={state.input.imageUrl}
+                            destination={state.input.destination}
                         />
                     </div>
                 </aside>
@@ -475,7 +479,7 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
                     <div className="absolute top-1/4 right-0 w-[260px] h-[360px] bg-purple-500/[0.07] rounded-full blur-[70px] pointer-events-none" />
                     {/* Reasoning panel — cinematic agent log */}
                     <div className="flex-shrink-0 border-b border-white/[0.06] overflow-y-auto max-h-[310px] relative z-10">
-                        <ReasoningPanel state={state} isLoading={isLoading} />
+                        <ReasoningPanel state={state} isLoading={isLoading} imageUrl={state.input.imageUrl} destination={state.input.destination} />
                     </div>
                     {/* AI suggestions panel below reasoning */}
                     <div className="flex-1 overflow-hidden relative z-10">

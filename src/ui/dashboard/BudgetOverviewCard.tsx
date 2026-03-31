@@ -1,5 +1,8 @@
 import { PieChart, TrendingUp, DollarSign } from "lucide-react";
 
+import { CurrencyService, type CurrencyCode } from "@/lib/services/currency.service";
+import { Info } from "lucide-react";
+
 interface BudgetOverviewCardProps {
     totalBudget: number;
     totalSpent?: number;
@@ -7,9 +10,12 @@ interface BudgetOverviewCardProps {
 }
 
 export function BudgetOverviewCard({ totalBudget, totalSpent = 0, currency = "USD" }: BudgetOverviewCardProps) {
-    const symbol = currency === "USD" ? "$" : currency + " ";
+    const code = currency as CurrencyCode;
+    const formattedTotal = CurrencyService.format(totalBudget, code);
+    const formattedSpent = CurrencyService.format(totalSpent, code);
     const percentage = totalBudget > 0 ? Math.round((totalSpent / totalBudget) * 100) : 0;
     const remaining = totalBudget - totalSpent;
+    const formattedRemaining = CurrencyService.format(remaining, code);
 
     return (
         <div className="min-h-[280px] bg-white/[0.02] backdrop-blur-xl border border-white/5 rounded-[2rem] p-6 relative overflow-hidden flex flex-col justify-between shadow-2xl transition-all hover:border-white/10">
@@ -30,10 +36,15 @@ export function BudgetOverviewCard({ totalBudget, totalSpent = 0, currency = "US
                 <div>
                     <div className="flex items-end gap-2 mb-1">
                         <span className="text-4xl font-black tracking-tighter text-white">
-                            {totalBudget > 0 ? `${symbol}${totalBudget.toLocaleString()}` : "—"}
+                            {totalBudget > 0 ? formattedTotal : "—"}
                         </span>
                         {totalBudget > 0 && (
-                            <span className="text-sm text-zinc-500 font-medium mb-1">planned</span>
+                            <div className="flex flex-col gap-0 mb-1">
+                                <span className="text-[10px] text-[#10B981] font-bold uppercase tracking-tighter flex items-center gap-1">
+                                    <Info className="w-2.5 h-2.5" /> Direct Conversion
+                                </span>
+                                <span className="text-sm text-zinc-500 font-medium leading-none">planned</span>
+                            </div>
                         )}
                     </div>
                     <p className="text-xs text-zinc-500 font-medium">Total estimated across all trips</p>
@@ -45,7 +56,7 @@ export function BudgetOverviewCard({ totalBudget, totalSpent = 0, currency = "US
                             {totalBudget > 0 ? `${percentage}% spent` : "No itinerary yet"}
                         </span>
                         <span className="text-zinc-500 font-medium">
-                            {totalBudget > 0 ? `${symbol}${remaining.toLocaleString()} remaining` : ""}
+                            {totalBudget > 0 ? `${formattedRemaining} remaining` : ""}
                         </span>
                     </div>
                     <div className="h-2.5 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
@@ -64,7 +75,7 @@ export function BudgetOverviewCard({ totalBudget, totalSpent = 0, currency = "US
                         <div>
                             <div className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Planned</div>
                             <div className="text-sm font-bold text-white">
-                                {totalBudget > 0 ? `${symbol}${totalBudget.toLocaleString()}` : "—"}
+                                {totalBudget > 0 ? formattedTotal : "—"}
                             </div>
                         </div>
                     </div>
@@ -74,7 +85,7 @@ export function BudgetOverviewCard({ totalBudget, totalSpent = 0, currency = "US
                         </div>
                         <div>
                             <div className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Spent</div>
-                            <div className="text-sm font-bold text-white">{symbol}{totalSpent.toLocaleString()}</div>
+                            <div className="text-sm font-bold text-white">{formattedSpent}</div>
                         </div>
                     </div>
                 </div>

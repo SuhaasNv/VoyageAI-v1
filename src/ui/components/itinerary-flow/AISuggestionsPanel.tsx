@@ -10,7 +10,7 @@ import type { FlowStage, FlowState } from "./types";
 
 interface AIMessage {
     id: string;
-    type: "insight" | "observation" | "suggestion" | "thinking" | "celebration";
+    type: "insight" | "observation" | "suggestion" | "thinking" | "celebration" | "fact";
     text: string;
     icon?: React.ReactNode;
     accent?: string;
@@ -31,6 +31,17 @@ function generateInsights(state: FlowState): AIMessage[] {
         icon: <Sparkles className="w-3.5 h-3.5" />,
         accent: "from-indigo-500 to-purple-500",
     });
+    
+    // Random fact to "make it work" as requested by user
+    if (input.destination) {
+        msgs.push({
+            id: "destination-fact",
+            type: "fact",
+            text: `Did you know? ${input.destination} is known for its unique blend of traditional culture and modern efficiency. I'll make sure your itinerary reflects the best of both.`,
+            icon: <Lightbulb className="w-3.5 h-3.5" />,
+            accent: "from-cyan-500 to-blue-500",
+        });
+    }
 
     // ── Planner insights ────────────────────────────────────────────────────
     if (plannerResult) {
@@ -281,6 +292,7 @@ export function AISuggestionsPanel({ state, isLoading }: AISuggestionsPanelProps
     const agent = state.stage !== "saved" ? AGENT_REGISTRY[state.stage] : AGENT_REGISTRY.safety;
 
     const insights = useMemo(() => generateInsights(state), [state]);
+    const { imageUrl, destination } = state.input;
 
     // Track which messages have been "revealed" for stagger effect
     const [revealedCount, setRevealedCount] = useState(0);
@@ -315,25 +327,46 @@ export function AISuggestionsPanel({ state, isLoading }: AISuggestionsPanelProps
 
     return (
         <div className="h-full flex flex-col">
-            {/* Panel header */}
-            <div className="px-4 pt-4 pb-3 border-b border-white/[0.06] flex-shrink-0">
-                <div className="flex items-center gap-2.5 mb-2">
-                    <div className="relative">
-                        <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-                            <Sparkles className="w-3 h-3 text-white" />
-                        </div>
-                        <motion.div
-                            className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[#0B0F19]"
-                            style={{ backgroundColor: isLoading ? "#818cf8" : "#34d399" }}
-                            animate={isLoading ? { scale: [1, 1.3, 1] } : {}}
-                            transition={{ duration: 1.2, repeat: Infinity }}
+            {/* Panel header with Destination Context */}
+            <div className="relative flex-shrink-0 group">
+                {imageUrl && (
+                    <div className="absolute inset-0 h-32 overflow-hidden">
+                        <img 
+                            src={imageUrl} 
+                            alt={destination} 
+                            className="w-full h-full object-cover opacity-30 grayscale-[0.3] group-hover:opacity-40 transition-opacity duration-700"
                         />
+                        <div className="absolute inset-0 bg-gradient-to-b from-[#080B13]/20 via-[#080B13]/60 to-[#080B13]" />
                     </div>
-                    <div>
-                        <h2 className="text-[13px] font-bold text-white leading-none">VoyageAI</h2>
-                        <p className="text-[10px] text-slate-500 leading-none mt-0.5">
-                            {isLoading ? `${agent.name} is working...` : "Watching your trip"}
-                        </p>
+                )}
+                
+                <div className="px-4 pt-6 pb-4 relative z-10">
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2.5">
+                            <div className="relative">
+                                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                                    <Sparkles className="w-4 h-4 text-white" />
+                                </div>
+                                <motion.div
+                                    className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#0B0F19]"
+                                    style={{ backgroundColor: isLoading ? "#818cf8" : "#34d399" }}
+                                    animate={isLoading ? { scale: [1, 1.2, 1], opacity: [1, 0.8, 1] } : {}}
+                                    transition={{ duration: 1.2, repeat: Infinity }}
+                                />
+                            </div>
+                            <div>
+                                <h2 className="text-sm font-black text-white tracking-tight uppercase italic flex items-center gap-1.5">
+                                    VoyageAI
+                                    <span className="text-[10px] not-italic font-bold text-zinc-500 tracking-normal px-1.5 py-0.5 bg-white/5 rounded border border-white/5">v1.2</span>
+                                </h2>
+                                <p className="text-[10px] text-zinc-400 font-medium">Intelligence Stream</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/5 backdrop-blur-md">
+                        <MapPin className="w-3.5 h-3.5 text-[#10B981]" />
+                        <span className="text-[11px] font-bold text-zinc-200 truncate">{destination}</span>
                     </div>
                 </div>
             </div>
@@ -366,6 +399,8 @@ export function AISuggestionsPanel({ state, isLoading }: AISuggestionsPanelProps
                                         ? "bg-amber-500/[0.05] border border-amber-500/15"
                                         : msg.type === "celebration"
                                         ? "bg-indigo-500/[0.05] border border-indigo-500/15"
+                                        : msg.type === "fact"
+                                        ? "bg-[#10B981]/[0.05] border border-[#10B981]/15"
                                         : "bg-white/[0.03] border border-white/[0.08]"
                                 }`}>
                                     <p className="text-[12px] leading-[1.6] text-slate-300">

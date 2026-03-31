@@ -130,13 +130,15 @@ interface ReasoningPanelProps {
     state: FlowState;
     isLoading: boolean;
     className?: string;
+    imageUrl?: string | null;
+    destination?: string;
 }
 
 const AGENT_STAGES: Exclude<FlowStage, "saved">[] = [
     "planner", "research", "logistics", "budget", "safety",
 ];
 
-export function ReasoningPanel({ state, isLoading, className = "" }: ReasoningPanelProps) {
+export function ReasoningPanel({ state, isLoading, className = "", imageUrl, destination }: ReasoningPanelProps) {
     const entries = buildTraceEntries({ ...state, isLoading });
     const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -156,7 +158,14 @@ export function ReasoningPanel({ state, isLoading, className = "" }: ReasoningPa
     const hasActivity = entries.some((e) => e.status !== "pending");
 
     return (
-        <div className={`flex flex-col h-full ${className}`}>
+        <div className={`flex flex-col h-full relative overflow-hidden ${className}`}>
+            {/* Destination Backdrop for Reasoning */}
+            <div className="absolute inset-0 pointer-events-none opacity-[0.03]">
+                {imageUrl && (
+                    <img src={imageUrl} alt="" className="w-full h-full object-cover blur-xl scale-150" />
+                )}
+            </div>
+
             {/* ── Header ──────────────────────────────────────────────────── */}
             <div className="flex items-center justify-between px-4 pt-4 pb-3 flex-shrink-0 border-b border-white/[0.04]">
                 <div className="flex items-center gap-2">

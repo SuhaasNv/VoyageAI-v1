@@ -79,6 +79,8 @@ interface AgentPipelineHeaderProps {
     iteration: number;
     onExplain?: (stage: Exclude<FlowStage, "saved">) => void;
     layout?: "horizontal" | "vertical";
+    imageUrl?: string | null;
+    destination?: string;
 }
 
 function stageIndex(stage: FlowStage): number {
@@ -110,6 +112,8 @@ export function AgentPipelineHeader({
     iteration,
     onExplain,
     layout = "horizontal",
+    imageUrl,
+    destination
 }: AgentPipelineHeaderProps) {
     const prefersReduced = useReducedMotion();
     const currentIdx = stageIndex(currentStage);
@@ -131,14 +135,27 @@ export function AgentPipelineHeader({
     if (layout === "vertical") {
         return (
             <div className="px-2 py-2 space-y-1">
-                <motion.p
-                    className="section-heading px-3 mb-3"
+                <div className="absolute inset-x-0 top-0 h-48 overflow-hidden pointer-events-none opacity-20">
+                    {imageUrl ? (
+                        <img src={imageUrl} alt={destination ?? ""} className="w-full h-full object-cover blur-2xl scale-110" />
+                    ) : (
+                        <div className="w-full h-full bg-gradient-to-b from-indigo-500/20 to-transparent" />
+                    )}
+                    <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[#0B0F19]" />
+                </div>
+
+                <motion.div
+                    className="flex items-center justify-between px-3 mb-3 relative z-10"
                     initial={prefersReduced ? false : { opacity: 0, y: -4 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
                 >
-                    Pipeline
-                </motion.p>
+                    <p className="section-heading">Pipeline</p>
+                    <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/5 border border-white/10">
+                        <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse shadow-[0_0_8px_rgba(129,140,248,0.8)]" />
+                        <span className="text-[9px] font-bold text-zinc-500 tracking-wider uppercase">Live</span>
+                    </div>
+                </motion.div>
 
                 <motion.div
                     className="space-y-1"

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Brain, Lightbulb, CalendarDays, Wallet, PlusCircle, Dna } from "lucide-react";
 import type { Trip } from "@/lib/api";
 
@@ -165,22 +165,52 @@ export function TripIntelligencePanel({ trips, isLoading = false }: TripIntellig
             .finally(() => setDnaLoaded(true));
     }, []);
 
+    const [aiInsight, setAiInsight] = useState<string | null>(null);
+    const [isAiLoading, setIsAiLoading] = useState(false);
+
     // Next upcoming or active trip
-    const nextTrip = [...trips]
-        .filter(t => t.status !== "past")
-        .sort((a, b) => a.startDate.localeCompare(b.startDate))[0] ?? null;
+    const nextTrip = useMemo(() => {
+        return [...trips]
+            .filter(t => t.status !== "past")
+            .sort((a, b) => a.startDate.localeCompare(b.startDate))[0] ?? null;
+    }, [trips]);
+
+    useEffect(() => {
+        if (!nextTrip || !dnaLoaded) return;
+
+        const fetchAiInsight = async () => {
+            setIsAiLoading(true);
+            try {
+                const res = await fetch("/api/ai/trip-intelligence", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ nextTrip, dna })
+                });
+                const data = await res.json();
+                if (data.success && data.data?.insight) {
+                    setAiInsight(data.data.insight);
+                }
+            } catch (err) {
+                console.error("AI Insight failed:", err);
+            } finally {
+                setIsAiLoading(false);
+            }
+        };
+
+        fetchAiInsight();
+    }, [nextTrip?.id, dnaLoaded, dna]);
 
     const hasTrips = !!nextTrip;
 
-    // Derived values (safe to compute even before dnaLoaded)
+    // Derived values
     const daysUntil   = nextTrip ? getDaysUntil(nextTrip.startDate) : 0;
     const duration    = nextTrip ? getTripDuration(nextTrip.startDate, nextTrip.endDate) : 0;
     const budgetUtil  = nextTrip && nextTrip.budget.total > 0
         ? (nextTrip.budget.spent / nextTrip.budget.total) * 100
         : 0;
-    const recommendation = nextTrip && dnaLoaded
-        ? computeRecommendation(nextTrip, dna)
-        : null;
+    
+    // Fallback to deterministic if AI fails or is loading
+    const recommendation = aiInsight || (nextTrip ? computeRecommendation(nextTrip, dna) : null);
 
     return (
         <div className="w-full bg-white/[0.02] backdrop-blur-xl border border-white/5 rounded-[2rem] p-6 shadow-2xl transition-all hover:border-white/10 relative overflow-hidden">

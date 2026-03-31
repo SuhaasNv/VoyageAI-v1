@@ -30,6 +30,7 @@ export interface DestinationSuggestion {
     tag: string;
     tagline: string;
     score: number;
+    reason: string;
     imageUrl: string | null;
 }
 
@@ -143,18 +144,20 @@ export function scoreCandidate(
     dnaData: Record<string, unknown> | null,
     visitedCountries: Set<string>,
     preferredRegions: string[]
-): number {
+): { score: number; reason: string } {
     // Already visited: strong negative
-    if (visitedCountries.has(candidate.country)) return -10;
+    if (visitedCountries.has(candidate.country)) return { score: -10, reason: "Already visited" };
 
     let score = 0;
+    let reason = "Curated for you";
 
     // ── Region preference match (+4) ─────────────────────────────────────────
     if (preferredRegions.some(r => candidate.region.toLowerCase() === r.toLowerCase())) {
         score += 4;
+        reason = `Matches your preference for ${candidate.region}`;
     }
 
-    if (!dnaData) return score;
+    if (!dnaData) return { score, reason };
 
     const style     = String(dnaData.style    ?? "").toLowerCase();
     const budget    = String(dnaData.budget   ?? "").toLowerCase();
@@ -163,24 +166,35 @@ export function scoreCandidate(
         : [];
 
     // ── Style match (+3) ─────────────────────────────────────────────────────
-    const styleMatched = Object.entries(STYLE_MATCH).some(
+    const matchingStyle = Object.entries(STYLE_MATCH).find(
         ([key, tokens]) => style.includes(key) && tokens.some(t => candidate.styles.includes(t))
     );
-    if (styleMatched) score += 3;
+    if (matchingStyle) {
+        score += 3;
+        reason = `Suits your ${matchingStyle[0].charAt(0).toUpperCase() + matchingStyle[0].slice(1)} style`;
+    }
 
     // ── Interest overlap (+2 each, cap +4) ───────────────────────────────────
     let interestBonus = 0;
+    let topInterestMatch = "";
     for (const interest of interests) {
         const matchTags = INTEREST_MATCH[interest] ?? [interest];
         if (matchTags.some(t => candidate.tags.includes(t))) {
             interestBonus = Math.min(interestBonus + 2, 4);
+            topInterestMatch = interest;
         }
     }
-    score += interestBonus;
+    if (interestBonus > 0 && topInterestMatch) {
+        score += interestBonus;
+        reason = `Perfect for your interest in ${topInterestMatch.charAt(0).toUpperCase() + topInterestMatch.slice(1)}`;
+    }
 
     // ── Budget compatibility (+2 / -3) ───────────────────────────────────────
     if (budget.includes("budget") || budget.includes("$)")) {
-        if (candidate.budgetTier === "budget")     score += 2;
+        if (candidate.budgetTier === "budget") {
+            score += 2;
+            if (score > 5) reason = "Budget-friendly & personalized";
+        }
         if (candidate.budgetTier === "luxury")     score -= 3;
     } else if (budget.includes("moderate") || budget.includes("$$")) {
         if (candidate.budgetTier === "mid-range")  score += 2;
@@ -190,7 +204,7 @@ export function scoreCandidate(
         if (candidate.budgetTier === "budget")     score -= 1;
     }
 
-    return score;
+    return { score, reason };
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -206,16 +220,19 @@ export async function generateSuggestions(
         ? (dnaData!.regions as string[])
         : [];
 
-    const ranked = POOL
-        .map(c => ({ c, score: scoreCandidate(c, dnaData, visitedCountries, preferredRegions) }))
-        .filter(({ score }) => score > -5)
-        .sort((a, b) => b.score - a.score)
+    const filtered = POOL
+        .map(c => ({ c, ...scoreCandidate(c, dnaData, visitedCountries, preferredRegions) }))
+        .filter(({ score }) => score > -5);
+
+    // Shuffle and sort to keep it fresh
+    const ranked = filtered
+        .sort((a, b) => b.score - a.score + (Math.random() * 0.5 - 0.25))
         .slice(0, limit);
 
     const imageCache: RequestImageCache = new Map();
 
     const results = await Promise.all(
-        ranked.map(async ({ c, score }) => {
+        ranked.map(async ({ c, score, reason }) => {
             const imageUrl = await getDestinationImage(`${c.city} ${c.country}`, imageCache);
             return {
                 city: c.city,
@@ -224,6 +241,7 @@ export async function generateSuggestions(
                 tag: c.tags[0].charAt(0).toUpperCase() + c.tags[0].slice(1),
                 tagline: c.tagline,
                 score,
+                reason,
                 imageUrl,
             } satisfies DestinationSuggestion;
         })

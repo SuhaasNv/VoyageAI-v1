@@ -15,6 +15,7 @@ import { FlightTicketWizard } from "@/ui/dashboard/FlightTicketWizard";
 import { ItineraryCreationFlow } from "@/ui/components/itinerary-flow/ItineraryCreationFlow";
 import { DashboardResumeBanner } from "@/ui/dashboard/DashboardResumeBanner";
 import { useTrips } from "@/hooks/useTrips";
+import { CurrencyService, type CurrencyCode } from "@/lib/services/currency.service";
 import type { Trip } from "@/lib/api";
 import type { FlowInput } from "@/ui/components/itinerary-flow/types";
 
@@ -56,9 +57,23 @@ export default function DashboardPage() {
             .catch(console.error);
     }, []);
 
-    const totalBudget = trips.reduce((s, t) => s + (t.budget?.total ?? 0), 0);
-    const totalSpent = trips.reduce((s, t) => s + (t.budget?.spent ?? 0), 0);
-    const budgetCurrency = trips[0]?.budget?.currency ?? "USD";
+    const { totalBudget, totalSpent, budgetCurrency } = useMemo(() => {
+        const baseCurrency: CurrencyCode = "USD";
+        let totalB = 0;
+        let totalS = 0;
+        
+        trips.forEach(t => {
+            const tripCurrency = (t.budget?.currency || "USD") as CurrencyCode;
+            totalB += CurrencyService.convert(t.budget?.total || 0, tripCurrency, baseCurrency);
+            totalS += CurrencyService.convert(t.budget?.spent || 0, tripCurrency, baseCurrency);
+        });
+
+        return {
+            totalBudget: totalB,
+            totalSpent: totalS,
+            budgetCurrency: baseCurrency as string
+        };
+    }, [trips]);
 
     const handleTripCreated = (newTrip: Trip) =>
         setTrips(prev =>
