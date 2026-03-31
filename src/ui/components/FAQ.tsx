@@ -60,14 +60,29 @@ export function FAQ() {
                         return (
                             <div
                                 key={index}
-                                className={`rounded-2xl border transition-colors duration-300 ${isOpen ? "bg-[#1A202A] border-white/10" : "bg-transparent border-white/5 hover:border-white/10"
+                                className={`relative rounded-2xl border transition-colors duration-300 overflow-hidden ${isOpen ? "bg-[#1A202A] border-white/10" : "bg-transparent border-white/5 hover:border-white/10"
                                     }`}
                             >
+                                {/* Animated amber left-border when open */}
+                                <AnimatePresence>
+                                    {isOpen && (
+                                        <MotionDiv
+                                            initial={{ scaleY: 0, opacity: 0 }}
+                                            animate={{ scaleY: 1, opacity: 1 }}
+                                            exit={{ scaleY: 0, opacity: 0 }}
+                                            transition={{ duration: 0.25, ease: "easeInOut" }}
+                                            className="absolute left-0 top-0 bottom-0 w-[3px] bg-gradient-to-b from-amber-400 to-amber-600 rounded-l-2xl"
+                                            style={{ transformOrigin: 'top' }}
+                                        />
+                                    )}
+                                </AnimatePresence>
+
                                 <button
                                     onClick={() => setOpenIndex(isOpen ? -1 : index)}
                                     className="w-full flex items-center justify-between p-6 text-left"
                                 >
                                     <span className={`font-medium ${isOpen ? "text-white" : "text-slate-300"}`}>
+                                        <span className="font-mono text-amber-400/60 mr-2.5 text-sm tabular-nums">{String(index + 1).padStart(2, "0")}.</span>
                                         {faq.question}
                                     </span>
                                     <span className="text-slate-400 ml-4 flex-shrink-0">

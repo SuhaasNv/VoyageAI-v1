@@ -25,6 +25,7 @@ const FEATURES = [
         color: "text-emerald-400",
         bg: "bg-emerald-500/10",
         border: "border-emerald-500/20",
+        glow: "rgba(52,211,153,0.22)",
     },
     {
         icon: MessageSquare,
@@ -34,6 +35,7 @@ const FEATURES = [
         color: "text-sky-400",
         bg: "bg-sky-500/10",
         border: "border-sky-500/20",
+        glow: "rgba(56,189,248,0.22)",
     },
     {
         icon: Luggage,
@@ -43,6 +45,7 @@ const FEATURES = [
         color: "text-amber-400",
         bg: "bg-amber-500/10",
         border: "border-amber-500/20",
+        glow: "rgba(251,191,36,0.22)",
     },
     {
         icon: FileText,
@@ -52,6 +55,7 @@ const FEATURES = [
         color: "text-violet-400",
         bg: "bg-violet-500/10",
         border: "border-violet-500/20",
+        glow: "rgba(167,139,250,0.22)",
     },
     {
         icon: GitCompare,
@@ -61,6 +65,7 @@ const FEATURES = [
         color: "text-rose-400",
         bg: "bg-rose-500/10",
         border: "border-rose-500/20",
+        glow: "rgba(251,113,133,0.22)",
     },
     {
         icon: Dna,
@@ -70,6 +75,7 @@ const FEATURES = [
         color: "text-teal-400",
         bg: "bg-teal-500/10",
         border: "border-teal-500/20",
+        glow: "rgba(45,212,191,0.22)",
     },
 ] as const;
 
@@ -106,12 +112,17 @@ export function FeatureStrip() {
                                 whileInView={{ opacity: 1, y: 0 }}
                                 viewport={{ once: true }}
                                 transition={{ delay: i * 0.06 }}
+                                whileHover={{
+                                    boxShadow: `0 0 28px ${feature.glow}, 0 0 56px ${feature.glow.replace('0.22', '0.10')}`,
+                                    transition: { duration: 0.2 },
+                                }}
+                                style={{ borderRadius: '1rem' }}
                             >
                                 <Link
                                     href={feature.href}
                                     className="group flex items-start gap-4 p-5 rounded-2xl border border-white/[0.07] bg-white/[0.025] hover:bg-white/[0.055] hover:border-white/[0.14] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_32px_rgba(0,0,0,0.5)]"
                                 >
-                                    <div className={`shrink-0 w-10 h-10 rounded-xl flex items-center justify-center border ${feature.bg} ${feature.border}`}>
+                                    <div className={`shrink-0 w-10 h-10 rounded-xl flex items-center justify-center border transition-transform duration-200 group-hover:scale-[1.15] ${feature.bg} ${feature.border}`}>
                                         <Icon className={`w-5 h-5 ${feature.color}`} />
                                     </div>
                                     <div>

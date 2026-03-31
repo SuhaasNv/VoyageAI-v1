@@ -3,11 +3,56 @@
 import dynamic from "next/dynamic";
 import { Globe } from "lucide-react";
 import { WorldMap } from "@/ui/components/ui/map";
+import { useState, useEffect, useRef } from "react";
 
 const MotionDiv = dynamic(
   () => import("framer-motion").then((m) => m.motion.div),
   { ssr: false }
 );
+
+// Counts from 0 to target over duration seconds with cubic ease-out, starts when active.
+function useCountUp(target: number, duration: number, active: boolean): number {
+    const [count, setCount] = useState(0);
+    useEffect(() => {
+        if (!active) return;
+        const startTime = Date.now();
+        const timer = setInterval(() => {
+            const progress = Math.min((Date.now() - startTime) / (duration * 1000), 1);
+            const eased = 1 - Math.pow(1 - progress, 3);
+            const next = Math.floor(eased * target);
+            setCount(next);
+            if (progress >= 1) {
+                setCount(target);
+                clearInterval(timer);
+            }
+        }, 16);
+        return () => clearInterval(timer);
+    }, [active, target, duration]);
+    return count;
+}
+
+interface StatCounterProps {
+    numericEnd: number;
+    suffix: string;
+    label: string;
+    active: boolean;
+}
+
+function StatCounter({ numericEnd, suffix, label, active }: StatCounterProps) {
+    const count = useCountUp(numericEnd, 1.5, active);
+    return (
+        <div className="flex flex-col gap-1">
+            <span className="text-2xl font-bold text-white tabular-nums">{count}{suffix}</span>
+            <span className="text-xs text-slate-500">{label}</span>
+        </div>
+    );
+}
+
+const STATS = [
+    { numericEnd: 195, suffix: "+",  label: "Countries"      },
+    { numericEnd: 10,  suffix: "k+", label: "Trips planned"  },
+    { numericEnd: 6,   suffix: "",   label: "Continents"     },
+] as const;
 
 const TRAVEL_ROUTES = [
   {
@@ -45,6 +90,25 @@ const TRAVEL_ROUTES = [
 ] as const;
 
 export function WorldMapSection() {
+  const statsRef = useRef<HTMLDivElement>(null);
+  const [statsActive, setStatsActive] = useState(false);
+
+  useEffect(() => {
+    const el = statsRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setStatsActive(true);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.5 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <section className="relative py-20 px-6 lg:px-12 bg-[#0A0D12] overflow-hidden">
       {/* Top separator */}
@@ -102,24 +166,25 @@ export function WorldMapSection() {
         </MotionDiv>
 
         {/* Stats row */}
-        <MotionDiv
-          initial={{ opacity: 0, y: 16 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.65, delay: 0.3, ease: [0.22, 1, 0.36, 1] }}
-          className="mt-10 grid grid-cols-3 gap-4 max-w-lg mx-auto text-center"
-        >
-          {[
-            { value: "195+", label: "Countries" },
-            { value: "10k+", label: "Trips planned" },
-            { value: "6", label: "Continents" },
-          ].map((stat) => (
-            <div key={stat.label} className="flex flex-col gap-1">
-              <span className="text-2xl font-bold text-white">{stat.value}</span>
-              <span className="text-xs text-slate-500">{stat.label}</span>
-            </div>
-          ))}
-        </MotionDiv>
+        <div ref={statsRef}>
+          <MotionDiv
+            initial={{ opacity: 0, y: 16 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.65, delay: 0.3, ease: [0.22, 1, 0.36, 1] }}
+            className="mt-10 grid grid-cols-3 gap-4 max-w-lg mx-auto text-center"
+          >
+            {STATS.map((stat) => (
+              <StatCounter
+                key={stat.label}
+                numericEnd={stat.numericEnd}
+                suffix={stat.suffix}
+                label={stat.label}
+                active={statsActive}
+              />
+            ))}
+          </MotionDiv>
+        </div>
       </div>
     </section>
   );

@@ -2,7 +2,6 @@
 
 import dynamic from "next/dynamic";
 import { ArrowUpRight } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 
 const MotionDiv = dynamic(
@@ -15,23 +14,67 @@ const MotionH2 = dynamic(
     { ssr: false }
 );
 
+interface StarParticle {
+    top: string;
+    left: string;
+    delay: string;
+    duration: string;
+    size: string;
+}
+
+const STAR_PARTICLES: StarParticle[] = [
+    { top: "8%",  left: "12%", delay: "0s",    duration: "3.2s", size: "2px"   },
+    { top: "22%", left: "78%", delay: "0.8s",  duration: "2.8s", size: "1.5px" },
+    { top: "45%", left: "5%",  delay: "1.5s",  duration: "4s",   size: "2px"   },
+    { top: "65%", left: "88%", delay: "0.3s",  duration: "3.5s", size: "1.5px" },
+    { top: "78%", left: "35%", delay: "2s",    duration: "2.5s", size: "2px"   },
+    { top: "15%", left: "55%", delay: "1.2s",  duration: "3.8s", size: "1.5px" },
+    { top: "55%", left: "65%", delay: "0.6s",  duration: "4.2s", size: "2px"   },
+    { top: "35%", left: "25%", delay: "1.8s",  duration: "3s",   size: "1.5px" },
+    { top: "90%", left: "55%", delay: "0.4s",  duration: "3.6s", size: "2px"   },
+    { top: "5%",  left: "92%", delay: "2.2s",  duration: "2.6s", size: "1.5px" },
+];
+
 export function CTA() {
     return (
         <section
             id="contact"
             className="relative scroll-mt-28 py-32 px-6 lg:px-12 bg-[#0A0D12] overflow-hidden"
         >
-            {/* Background Image Setup */}
+            {/* Aurora animated background */}
             <div className="absolute inset-0 z-0">
-                <div className="absolute inset-0 bg-gradient-to-b from-[#0A0D12] via-transparent to-[#05080b] z-10" />
-                <Image
-                    src="https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&w=2070&q=80"
-                    alt="Dark minimalist map graphic"
-                    fill
-                    className="object-cover opacity-60 mix-blend-luminosity"
+                <div
+                    className="absolute w-[700px] h-[450px] rounded-full blur-[130px] bg-gradient-to-br from-violet-700 via-indigo-600 to-transparent"
+                    style={{ top: '5%', left: '10%', animationName: 'aurora', animationDuration: '14s', animationTimingFunction: 'ease-in-out', animationIterationCount: 'infinite', animationFillMode: 'both', opacity: 0.55 }}
                 />
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_transparent_0%,_#0A0D12_80%)] z-10" />
+                <div
+                    className="absolute w-[550px] h-[380px] rounded-full blur-[110px] bg-gradient-to-br from-fuchsia-700 via-violet-600 to-transparent"
+                    style={{ bottom: '5%', right: '8%', animationName: 'aurora', animationDuration: '18s', animationTimingFunction: 'ease-in-out', animationIterationCount: 'infinite', animationDirection: 'reverse', animationFillMode: 'both', opacity: 0.45 }}
+                />
+                <div className="absolute inset-0 bg-gradient-to-b from-[#0A0D12] via-transparent to-[#05080b]" />
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_transparent_0%,_#0A0D12_78%)]" />
             </div>
+
+            {/* Star particles */}
+            {STAR_PARTICLES.map((star, i) => (
+                <span
+                    key={i}
+                    aria-hidden
+                    className="absolute rounded-full bg-white pointer-events-none z-[1]"
+                    style={{
+                        top: star.top,
+                        left: star.left,
+                        width: star.size,
+                        height: star.size,
+                        animationName: 'star-twinkle',
+                        animationDuration: star.duration,
+                        animationTimingFunction: 'ease-in-out',
+                        animationIterationCount: 'infinite',
+                        animationDelay: star.delay,
+                        animationFillMode: 'both',
+                    }}
+                />
+            ))}
 
             <div className="relative z-20 max-w-2xl mx-auto text-center">
                 <MotionH2

@@ -24,6 +24,7 @@ import { useAuthStore } from "@/stores/authStore";
 import Link from "next/link";
 import { getCsrfToken } from "@/lib/api";
 import { HERO_GLOBE_ARCS, HERO_GLOBE_MARKERS } from "@/ui/components/hero-globe-routes";
+import { useMotionValue, useSpring, useTransform, useReducedMotion } from "framer-motion";
 
 const MotionDiv = dynamic(
     () => import("framer-motion").then((m) => m.motion.div),
@@ -806,6 +807,26 @@ function HeroCard() {
     const [favorited, setFavorited] = useState(false);
     const favoriteInFlightRef = useRef(false);
 
+    // 3-D mouse-parallax tilt
+    const reduceMotion = useReducedMotion();
+    const cardRef = useRef<HTMLDivElement>(null);
+    const rawMouseX = useMotionValue(0);
+    const rawMouseY = useMotionValue(0);
+    const rotateX = useSpring(useTransform(rawMouseY, [-1, 1], [8, -8]), { stiffness: 400, damping: 28 });
+    const rotateY = useSpring(useTransform(rawMouseX, [-1, 1], [-8, 8]), { stiffness: 400, damping: 28 });
+
+    const handleTiltMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+        if (reduceMotion || !cardRef.current) return;
+        const rect = cardRef.current.getBoundingClientRect();
+        rawMouseX.set((e.clientX - rect.left) / rect.width * 2 - 1);
+        rawMouseY.set((e.clientY - rect.top) / rect.height * 2 - 1);
+    }, [reduceMotion, rawMouseX, rawMouseY]);
+
+    const handleTiltLeave = useCallback(() => {
+        rawMouseX.set(0);
+        rawMouseY.set(0);
+    }, [rawMouseX, rawMouseY]);
+
     useEffect(() => {
         setIsClient(true);
     }, []);
@@ -858,11 +879,18 @@ function HeroCard() {
     }, [isClient, user, favorited, accessToken, router]);
 
     return (
+        <div
+            ref={cardRef}
+            onMouseMove={handleTiltMove}
+            onMouseLeave={handleTiltLeave}
+            style={{ perspective: '800px' }}
+        >
         <MotionDiv
-            initial={{ opacity: 0, scale: 0.9, x: 50 }}
-            animate={{ opacity: 1, scale: 1, x: 0 }}
+            initial={{ opacity: 0, scale: 0.9, x: 50, rotate: 2 }}
+            animate={{ opacity: 1, scale: 1, x: 0, rotate: 2 }}
             transition={{ duration: 0.8, delay: 0.4 }}
-            className="glass-card p-4 w-72 rounded-[2rem] overflow-hidden rotate-2 hover:rotate-0 transition-transform duration-500"
+            style={{ rotateX, rotateY }}
+            className="glass-card p-4 w-72 rounded-[2rem] overflow-hidden"
         >
             <div className="relative h-48 rounded-2xl overflow-hidden mb-4">
                 <Image
@@ -910,6 +938,7 @@ function HeroCard() {
                 </button>
             </div>
         </MotionDiv>
+        </div>
     );
 }
 
