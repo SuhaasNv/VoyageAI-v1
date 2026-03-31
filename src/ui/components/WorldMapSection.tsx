@@ -11,15 +11,23 @@ const MotionDiv = dynamic(
 
 const TRAVEL_ROUTES = [
   {
+    start: { lat: 49.2827, lng: -123.1207, label: "Vancouver" },
+    end: { lat: 40.7128, lng: -74.006, label: "New York" },
+  },
+  {
     start: { lat: 40.7128, lng: -74.006, label: "New York" },
     end: { lat: 51.5074, lng: -0.1278, label: "London" },
   },
   {
     start: { lat: 51.5074, lng: -0.1278, label: "London" },
-    end: { lat: 25.2048, lng: 55.2708, label: "Dubai" },
+    end: { lat: 30.0444, lng: 31.2357, label: "Cairo" },
   },
   {
-    start: { lat: 25.2048, lng: 55.2708, label: "Dubai" },
+    start: { lat: 30.0444, lng: 31.2357, label: "Cairo" },
+    end: { lat: 1.3521, lng: 103.8198, label: "Singapore" },
+  },
+  {
+    start: { lat: 1.3521, lng: 103.8198, label: "Singapore" },
     end: { lat: 35.6762, lng: 139.6503, label: "Tokyo" },
   },
   {
@@ -28,11 +36,11 @@ const TRAVEL_ROUTES = [
   },
   {
     start: { lat: -23.5505, lng: -46.6333, label: "São Paulo" },
-    end: { lat: 40.7128, lng: -74.006, label: "New York" },
+    end: { lat: -33.9249, lng: 18.4241, label: "Cape Town" },
   },
   {
-    start: { lat: 48.8566, lng: 2.3522, label: "Paris" },
-    end: { lat: -1.2921, lng: 36.8219, label: "Nairobi" },
+    start: { lat: -33.9249, lng: 18.4241, label: "Cape Town" },
+    end: { lat: 30.0444, lng: 31.2357, label: "Cairo" },
   },
 ] as const;
 
