@@ -78,7 +78,7 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
     const prefersReduced = useReducedMotion();
     const flowInput: FlowInput = { ...input, tripId };
 
-    const { state, dispatch, resetAllAndRestart, savedSession, resumeSavedSession, discardSavedSession } = useFlowState(flowInput);
+    const { state, dispatch, resetAllAndRestart } = useFlowState(flowInput);
 
     const [isLoading, setIsLoading] = useState(false);
     const [explainOpen, setExplainOpen] = useState(false);
@@ -343,40 +343,6 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
                     <TripDNASummaryStrip state={state} />
                 </div>
             </SystemHeader>
-
-            {/* ── Session resume banner ───────────────────────────────────── */}
-            <AnimatePresence>
-                {savedSession && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -8 }}
-                        transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                        className="flex-shrink-0 flex items-center justify-between gap-3 px-5 py-2.5 bg-indigo-500/10 border-b border-indigo-500/20 relative z-10"
-                    >
-                        <p className="text-xs text-indigo-300">
-                            <span className="font-semibold">Resume previous session?</span>
-                            {" "}You were planning{" "}
-                            <span className="font-semibold">{savedSession.input.destination}</span>
-                            {" "}— pick up where you left off.
-                        </p>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                            <button
-                                onClick={resumeSavedSession}
-                                className="px-3 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 text-indigo-300 text-[11px] font-semibold transition-colors"
-                            >
-                                Resume
-                            </button>
-                            <button
-                                onClick={discardSavedSession}
-                                className="px-3 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-slate-500 hover:text-slate-300 text-[11px] font-medium transition-colors"
-                            >
-                                Dismiss
-                            </button>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
 
             {/* ── 3-Column Layout ────────────────────────────────────────── */}
             <div className="flex-1 overflow-hidden flow-layout relative z-10">

@@ -77,38 +77,52 @@ function TripCard({
                 </div>
             </div>
 
-            {/* Menu Trigger & Popover moved outside to avoid overflow-hidden clipping */}
-            <div className="absolute top-5 right-5 z-20" ref={menuTripId === trip.id ? menuRef : undefined}>
+            {/* Menu: items-end so panel right edge aligns with trigger; w-max + nowrap avoids wrap/jagged rows */}
+            <div
+                className="absolute top-5 right-5 z-20 flex flex-col items-end gap-0"
+                ref={menuTripId === trip.id ? menuRef : undefined}
+            >
                 <button
+                    type="button"
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); onMenuToggle(trip.id); }}
-                    className="w-8 h-8 rounded-lg bg-black/40 backdrop-blur-md flex items-center justify-center text-white/80 hover:text-white hover:bg-black/60 border border-white/10 transition-all"
+                    className="shrink-0 w-8 h-8 rounded-lg bg-black/40 backdrop-blur-md flex items-center justify-center text-white/80 hover:text-white hover:bg-black/60 border border-white/10 transition-all"
                     aria-label="Trip options"
+                    aria-expanded={menuTripId === trip.id}
                 >
                     <MoreVertical className="w-4 h-4" />
                 </button>
                 {menuTripId === trip.id && (
-                    <div className="absolute right-0 top-full mt-1 py-1.5 min-w-[140px] bg-[#0B0F14] border border-white/10 rounded-xl shadow-xl z-50">
+                    <div
+                        role="menu"
+                        className="mt-1.5 w-max min-w-[11.5rem] py-1.5 bg-[#0B0F14] border border-white/10 rounded-xl shadow-xl z-[60] origin-top-right"
+                    >
                         <button
+                            type="button"
+                            role="menuitem"
                             onClick={(e) => { e.preventDefault(); e.stopPropagation(); onEdit(trip); }}
-                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-300 hover:bg-white/[0.06] hover:text-white"
+                            className="w-full flex items-center gap-3 px-3.5 py-2.5 text-left text-sm text-slate-300 hover:bg-white/[0.06] hover:text-white whitespace-nowrap"
                         >
-                            <Pencil className="w-4 h-4" />
-                            Edit
+                            <Pencil className="w-4 h-4 shrink-0 opacity-90" />
+                            <span>Edit</span>
                         </button>
                         <button
+                            type="button"
+                            role="menuitem"
                             onClick={(e) => onRefreshImage(trip, e)}
                             disabled={refreshingImageId === trip.id}
-                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-300 hover:bg-white/[0.06] hover:text-white disabled:opacity-50"
+                            className="w-full flex items-center gap-3 px-3.5 py-2.5 text-left text-sm text-slate-300 hover:bg-white/[0.06] hover:text-white disabled:opacity-50 whitespace-nowrap"
                         >
-                            <ImageIcon className="w-4 h-4" />
-                            {refreshingImageId === trip.id ? "Refreshing…" : "Refresh image"}
+                            <ImageIcon className="w-4 h-4 shrink-0 opacity-90" />
+                            <span>{refreshingImageId === trip.id ? "Refreshing…" : "Refresh image"}</span>
                         </button>
                         <button
+                            type="button"
+                            role="menuitem"
                             onClick={(e) => onDelete(trip, e)}
-                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-rose-400 hover:bg-rose-500/10"
+                            className="w-full flex items-center gap-3 px-3.5 py-2.5 text-left text-sm text-rose-400 hover:bg-rose-500/10 whitespace-nowrap"
                         >
-                            <Trash2 className="w-4 h-4" />
-                            Delete
+                            <Trash2 className="w-4 h-4 shrink-0" />
+                            <span>Delete</span>
                         </button>
                     </div>
                 )}

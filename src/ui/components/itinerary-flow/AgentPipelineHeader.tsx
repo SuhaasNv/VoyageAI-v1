@@ -169,18 +169,18 @@ export function AgentPipelineHeader({
                                 className="relative"
                                 variants={prefersReduced ? undefined : pipelineRowVariants}
                             >
-                                {/* Connector spine — centered on icon (30px), w-[2px] → left-[29px] */}
+                                {/* Connector spine — centered on icon (32px), w-[3px] */}
                                 {idx < STAGES.length - 1 && (
-                                    <div className="absolute left-[29px] top-[44px] bottom-[-4px] w-[2px] overflow-visible">
+                                    <div className="absolute left-[30px] top-[48px] bottom-[-8px] w-[3px] overflow-visible z-0">
                                         {/* Base line (unfilled) */}
-                                        <div className="w-full h-full bg-white/[0.09] rounded-full" />
+                                        <div className="w-full h-full bg-white/[0.05] rounded-full" />
                                         {/* Progress fill: gradient from current → next agent color */}
                                         {isCompleted && (
                                             <motion.div
                                                 className="absolute inset-x-0 top-0 w-full rounded-full"
                                                 style={{
                                                     background: `linear-gradient(to bottom, ${connectorFrom}, ${connectorTo})`,
-                                                    boxShadow: `0 0 8px ${connectorTo}99`,
+                                                    boxShadow: `0 0 12px ${connectorTo}a0`,
                                                 }}
                                                 initial={{ height: "0%" }}
                                                 animate={{ height: "100%" }}
@@ -196,10 +196,10 @@ export function AgentPipelineHeader({
                                             {showPacketOnConnector && (
                                                 <motion.span
                                                     key="v-packet"
-                                                    className="absolute left-1/2 -translate-x-1/2 w-2 h-2 rounded-full"
+                                                    className="absolute left-1/2 -translate-x-1/2 w-[6px] h-[6px] rounded-full"
                                                     style={{
                                                         backgroundColor: connectorTo,
-                                                        boxShadow: `0 0 12px ${connectorTo}f0`,
+                                                        boxShadow: `0 0 16px ${connectorTo}f0`,
                                                     }}
                                                     initial={{ top: "0%", opacity: 1 }}
                                                     animate={{ top: "100%", opacity: [1, 1, 0.6] }}
@@ -218,18 +218,25 @@ export function AgentPipelineHeader({
                                     whileHover={
                                         prefersReduced || isPending
                                             ? undefined
-                                            : { backgroundColor: "rgba(255,255,255,0.05)" }
+                                            : { scale: 1.02, backgroundColor: "rgba(255,255,255,0.06)" }
                                     }
                                     whileTap={prefersReduced || isPending ? undefined : { scale: 0.985 }}
                                     transition={{ layout: { type: "spring", stiffness: 400, damping: 34 } }}
-                                    className={`relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left overflow-hidden ${
+                                    className={`relative z-10 w-full flex items-center gap-3 px-3 py-3 rounded-2xl text-left transition-all duration-300 ${
                                         isActive
-                                            ? "bg-white/[0.06] border border-white/[0.12]"
+                                            ? "bg-white/[0.08] shadow-[0_8px_32px_rgba(0,0,0,0.2)] border border-white/[0.15] backdrop-blur-md"
                                             : isCompleted
                                             ? "hover:bg-white/[0.04] border border-transparent"
                                             : "opacity-[0.42] border border-transparent"
                                     }`}
                                 >
+                                    {/* Active: subtle radial gradient behind the card */}
+                                    {isActive && !prefersReduced && (
+                                        <div className="absolute inset-0 rounded-2xl pointer-events-none opacity-50" style={{
+                                            background: `radial-gradient(120% 120% at 0% 50%, ${colors.bg}, transparent)`
+                                        }} />
+                                    )}
+
                                     {/* Active: soft shimmer sweep */}
                                     {isActive && !prefersReduced && (
                                         <motion.span
@@ -249,26 +256,26 @@ export function AgentPipelineHeader({
                                         {isActive && !prefersReduced && (
                                             <>
                                                 <motion.span
-                                                    className="absolute inset-[-3px] rounded-xl pointer-events-none"
+                                                    className="absolute inset-[-4px] rounded-2xl pointer-events-none"
                                                     style={{ boxShadow: `0 0 0 1.5px ${colors.ring}` }}
                                                     animate={{ opacity: [0.35, 0.9, 0.35], scale: [1, 1.02, 1] }}
                                                     transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
                                                 />
                                                 <motion.span
-                                                    className="absolute inset-[-6px] rounded-[14px] pointer-events-none border border-white/[0.08]"
+                                                    className="absolute inset-[-8px] rounded-[18px] pointer-events-none border border-white/[0.08]"
                                                     animate={{ opacity: [0.15, 0.45, 0.15] }}
                                                     transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut", delay: 0.2 }}
                                                 />
                                             </>
                                         )}
                                         <motion.div
-                                            className="w-9 h-9 rounded-xl flex items-center justify-center border relative"
+                                            className="w-10 h-10 rounded-xl flex items-center justify-center border relative shadow-lg"
                                             style={
                                                 isActive
                                                     ? { background: colors.bg, borderColor: colors.ring, boxShadow: colors.glow }
                                                     : isCompleted
-                                                    ? { background: "rgba(16,185,129,0.12)", borderColor: "rgba(16,185,129,0.4)" }
-                                                    : { background: "rgba(255,255,255,0.03)", borderColor: "rgba(255,255,255,0.06)" }
+                                                    ? { background: "rgba(16,185,129,0.15)", borderColor: "rgba(16,185,129,0.3)" }
+                                                    : { background: "rgba(255,255,255,0.02)", borderColor: "rgba(255,255,255,0.05)" }
                                             }
                                             animate={
                                                 isActive && !prefersReduced
@@ -282,7 +289,7 @@ export function AgentPipelineHeader({
                                             }
                                         >
                                             <Icon
-                                                className="w-4 h-4 transition-colors duration-300"
+                                                className="w-5 h-5 transition-colors duration-300"
                                                 style={{
                                                     color: isActive ? colors.text : isCompleted ? "#34d399" : "rgba(148,163,184,0.35)",
                                                     filter: isActive ? `drop-shadow(0 0 4px ${colors.ring})` : undefined,
@@ -295,20 +302,20 @@ export function AgentPipelineHeader({
                                                 initial={{ scale: 0, rotate: -45 }}
                                                 animate={{ scale: 1, rotate: 0 }}
                                                 transition={{ type: "spring", stiffness: 520, damping: 22 }}
-                                                className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-[#0B0F19] flex items-center justify-center shadow-[0_0_8px_rgba(16,185,129,0.55)]"
+                                                className="absolute -top-1.5 -right-1.5 w-[18px] h-[18px] rounded-full bg-emerald-500 border-2 border-[#0B0F19] flex items-center justify-center shadow-[0_0_10px_rgba(16,185,129,0.6)]"
                                             >
-                                                <Check className="w-2 h-2 text-white" strokeWidth={3} />
+                                                <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />
                                             </motion.span>
                                         )}
                                     </div>
 
                                     {/* Label + description */}
-                                    <div className="flex-1 min-w-0 z-[1]">
-                                        <div className="flex items-center gap-2">
+                                    <div className="flex-1 min-w-0 z-[1] pr-1">
+                                        <div className="flex items-center justify-between">
                                             <motion.span
-                                                className="text-[12px] font-bold"
+                                                className={`font-bold tracking-wide ${isActive ? 'text-sm' : 'text-[13px]'}`}
                                                 style={{
-                                                    color: isActive ? colors.text : isCompleted ? "#34d399" : "rgba(100,116,139,0.6)",
+                                                    color: isActive ? colors.text : isCompleted ? "#fff" : "rgba(255,255,255,0.4)",
                                                 }}
                                                 animate={
                                                     isActive && !prefersReduced
@@ -319,40 +326,35 @@ export function AgentPipelineHeader({
                                             >
                                                 {STAGE_LABELS[stage]}
                                             </motion.span>
-                                            {stageMeta && (
-                                                <span className="text-[10px] text-slate-600 tabular-nums">
-                                                    {(stageMeta.durationMs / 1000).toFixed(1)}s
-                                                </span>
-                                            )}
+
+                                            {/* Status indicator / Time (right side) */}
+                                            <div className="flex items-center gap-2">
+                                                {isCompleted ? (
+                                                    <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-400/10 rounded-full px-1.5 py-0.5 border border-emerald-400/20">
+                                                        Done
+                                                    </span>
+                                                ) : isActive && !prefersReduced ? (
+                                                    <motion.span
+                                                        className="w-2 h-2 rounded-full block"
+                                                        style={{
+                                                            backgroundColor: colors.bar,
+                                                            boxShadow: `0 0 8px ${colors.bar}`,
+                                                        }}
+                                                        animate={{ scale: [1, 1.35, 1], opacity: [1, 0.45, 1] }}
+                                                        transition={{ duration: 1.25, repeat: Infinity, ease: "easeInOut" }}
+                                                    />
+                                                ) : null}
+
+                                                {stageMeta && (
+                                                    <span className={`text-[10px] tabular-nums font-mono ${isActive ? 'text-white/60' : 'text-white/30'}`}>
+                                                        {(stageMeta.durationMs / 1000).toFixed(1)}s
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
-                                        <p className="text-[10px] text-slate-600 leading-tight mt-0.5 truncate">
+                                        <p className={`text-[11px] leading-tight mt-0.5 truncate transition-colors duration-300 ${isActive ? 'text-slate-300' : 'text-slate-500'}`}>
                                             {STAGE_DESCRIPTIONS[stage]}
                                         </p>
-                                    </div>
-
-                                    {/* Status indicator */}
-                                    <div className="flex-shrink-0 z-[1]">
-                                        {isCompleted && (
-                                            <motion.span
-                                                initial={{ opacity: 0, scale: 0.85 }}
-                                                animate={{ opacity: 1, scale: 1 }}
-                                                transition={{ type: "spring", stiffness: 400, damping: 24 }}
-                                                className="text-[9px] font-bold text-emerald-500 bg-emerald-500/10 rounded-full px-1.5 py-0.5 inline-block"
-                                            >
-                                                Done
-                                            </motion.span>
-                                        )}
-                                        {isActive && !prefersReduced && (
-                                            <motion.span
-                                                className="w-2 h-2 rounded-full block mx-auto"
-                                                style={{
-                                                    backgroundColor: colors.bar,
-                                                    boxShadow: `0 0 8px ${colors.bar}`,
-                                                }}
-                                                animate={{ scale: [1, 1.35, 1], opacity: [1, 0.45, 1] }}
-                                                transition={{ duration: 1.25, repeat: Infinity, ease: "easeInOut" }}
-                                            />
-                                        )}
                                     </div>
                                 </motion.button>
                             </motion.div>
