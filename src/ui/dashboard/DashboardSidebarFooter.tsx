@@ -19,7 +19,7 @@ export function DashboardSidebarFooter({ mobileMinimal }: { mobileMinimal?: bool
     const handleLogout = () => {
         setIsLoggingOut(true);
         logout();
-        window.location.href = "/login";
+        window.location.href = "/";
     };
 
     const userName = user ? displayName(user.name, user.email) : "User";

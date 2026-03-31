@@ -67,7 +67,7 @@ export function DashboardSidebar() {
     const handleLogout = () => {
         setLoggingOut(true);
         logout();
-        window.location.href = "/login";
+        window.location.href = "/";
     };
 
     const userName = user ? displayName(user.name, user.email) : "User";

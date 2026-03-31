@@ -31,7 +31,7 @@ export default function AdminHeader({ email, notificationCount = 0 }: AdminHeade
 
     const handleSignOut = () => {
         logout();
-        window.location.href = "/login";
+        window.location.href = "/";
     };
 
     const initials = email.slice(0, 2).toUpperCase();

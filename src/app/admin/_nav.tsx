@@ -49,7 +49,7 @@ export default function AdminNav({ email }: AdminNavProps) {
     const handleSignOut = () => {
         setIsLoggingOut(true);
         logout();
-        window.location.href = "/login";
+        window.location.href = "/";
     };
 
     return (
