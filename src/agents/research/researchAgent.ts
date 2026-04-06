@@ -28,53 +28,24 @@ import {
     RESEARCH_SYSTEM_PROMPT,
     RESEARCH_SCHEMA_INSTRUCTION,
 } from "./researchPrompts";
+import type {
+    Activity,
+    ActivityType,
+    EnrichedDay,
+    EnrichedTripContext,
+    HotelOption,
+    PriceRange,
+    TripContext,
+} from "@/agents/shared/tripPipelineTypes";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export interface TripContext {
-    destination: string;
-    startDate: string;
-    endDate: string;
-    durationDays: number;
-    preferences?: {
-        budget?: number;
-        style?: string;
-        pace?: string;
-    };
-    days: Array<{
-        day: number;
-        theme: string;
-    }>;
-}
-
-export type ActivityType = "attraction" | "experience" | "restaurant";
-
-export interface Activity {
-    name: string;
-    type: ActivityType;
-    description: string;
-    estimatedCost?: number;
-}
-
-export type PriceRange = "$" | "$$" | "$$$" | "$$$$";
-
-export interface HotelOption {
-    name: string;
-    priceRange: PriceRange;
-    area: string;
-    tags: string[];
-    rating?: number;
-}
-
-export interface EnrichedDay {
-    day: number;
-    theme: string;
-    activities: Activity[];
-}
-
-export type EnrichedTripContext = Omit<TripContext, "days"> & {
-    days: EnrichedDay[];
-    hotels: HotelOption[];
+export type {
+    Activity,
+    ActivityType,
+    EnrichedDay,
+    EnrichedTripContext,
+    HotelOption,
+    PriceRange,
+    TripContext,
 };
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────

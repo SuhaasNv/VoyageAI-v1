@@ -92,25 +92,8 @@ function makeOptimizedContext(overBudget = false, dense = false): OptimizedTripC
 }
 
 function makeSafeContext(overBudget = false, dense = false): SafeTripContext {
-    const activities = dense
-        ? Array.from({ length: 5 }, (_, i) => ({
-              name: `Activity ${i}`,
-              type: "attraction" as const,
-              description: "desc",
-              timeSlot: "morning" as const,
-          }))
-        : [];
-
     return {
-        destination: "Tokyo",
-        startDate: "2025-04-01",
-        endDate: "2025-04-05",
-        durationDays: 5,
-        days: [
-            { day: 1, theme: "Arrival", activities },
-            { day: 2, theme: "Culture", activities: [] },
-        ],
-        budget: { totalEstimatedCost: overBudget ? 9999 : 400, isOverBudget: overBudget },
+        ...makeBudgeted(overBudget, dense),
         safety: { riskLevel: "low", warnings: [], tips: [] },
     };
 }

@@ -7,8 +7,7 @@
  * a metrics footer (total latency, stages completed). Styled as a live
  * AI system trace rather than a dry activity log.
  *
- * Uses buildTraceEntries from AgentTracePanel for the same data source
- * so behaviour is identical — only the visual treatment is upgraded.
+ * Uses buildTraceEntries from agentTraceEntries for the flow state snapshot.
  */
 
 import { useEffect, useRef } from "react";
@@ -21,7 +20,7 @@ import {
     Clock,
     Activity,
 } from "lucide-react";
-import { buildTraceEntries } from "./AgentTracePanel";
+import { buildTraceEntries } from "./agentTraceEntries";
 import { AGENT_REGISTRY } from "./agentRegistry";
 import type { FlowState, FlowStage, FlowMetadata } from "./types";
 

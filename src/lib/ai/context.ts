@@ -29,7 +29,8 @@ export interface LocationContext {
     timezone?: string;
 }
 
-export interface TripContext {
+/** Trip slice for chat / tool prompt assembly (not the multi-agent pipeline `TripContext`). */
+export interface ChatTripSummary {
     tripId?: string;
     destination: string;
     startDate: string;
@@ -46,7 +47,7 @@ export interface FullContextBundle {
     travelDNA?: TravelDNA;
     itinerary?: Itinerary;
     location?: LocationContext;
-    trip?: TripContext;
+    trip?: ChatTripSummary;
     chatHistory?: ChatMessage[];
     additionalContext?: Record<string, string>;
 }
@@ -185,7 +186,7 @@ export function buildLocationContext(location: LocationContext): string {
 /**
  * Builds trip-level context block.
  */
-export function buildTripContext(trip: TripContext): string {
+export function buildChatTripSummary(trip: ChatTripSummary): string {
     const lines: string[] = [
         "### Trip Details",
         `- **Destination**: ${trip.destination}`,
@@ -236,7 +237,7 @@ export function assembleContext(bundle: FullContextBundle): string {
     }
 
     if (bundle.trip) {
-        sections.push(buildTripContext(bundle.trip));
+        sections.push(buildChatTripSummary(bundle.trip));
     }
 
     if (bundle.itinerary) {

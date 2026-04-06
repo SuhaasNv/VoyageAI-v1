@@ -194,6 +194,19 @@ describe("runViaLangGraph — mocked Python service", () => {
         assertOrchestratorShape(result);
     });
 
+    it("falls back to TS orchestrator when response JSON fails OrchestratorResult validation", async () => {
+        (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+            ok: true,
+            // `ok` must be boolean when present — invalid type forces safeParse failure.
+            json: async () => ({ ok: "not-a-boolean" }),
+        });
+
+        const deps = buildDeps({});
+        const result = await runViaLangGraph("Trip to Tokyo for 5 days", deps);
+        assertOrchestratorShape(result);
+        expect("ok" in result && result.ok).toBe(true);
+    });
+
     it("passes request_id in the body", async () => {
         (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
             ok: true,

@@ -8,7 +8,9 @@ import {
 } from "@/agents/budget/budgetAgent";
 import { SafetyAgent, type SafeTripContext } from "@/agents/safety/safetyAgent";
 import { logStructured, generateRequestId, logError } from "@/infrastructure/logger";
+import { env } from "@/infrastructure/env";
 import { runWithReplayLog } from "@/services/ai/agentReplayLogger";
+import { OrchestratorResultSchema } from "../../shared/contracts/orchestratorResult";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -350,7 +352,7 @@ export class AgentOrchestrator {
 
 // ─── LangGraph bridge ─────────────────────────────────────────────────────────
 
-const LANGGRAPH_URL = process.env.LANGGRAPH_SERVICE_URL ?? "http://localhost:8000";
+const LANGGRAPH_URL = env.LANGGRAPH_SERVICE_URL ?? "http://localhost:8000";
 
 /**
  * Run the pipeline via the Python LangGraph service.
@@ -384,9 +386,20 @@ export async function runViaLangGraph(
             throw new Error(`LangGraph service returned HTTP ${response.status}: ${text}`);
         }
 
-        const data = (await response.json()) as OrchestratorResult;
-        logStructured({ layer: "orchestrator", step: "end", requestId, data: { source: "langgraph-bridge", ok: (data as { ok?: boolean }).ok } });
-        return data;
+        const data: unknown = await response.json();
+        const parsed = OrchestratorResultSchema.safeParse(data);
+        if (!parsed.success) {
+            logError("LangGraph response failed OrchestratorResult validation — falling back to TS orchestrator", {
+                requestId,
+                zodIssues: parsed.error.issues,
+            });
+            const orch = new AgentOrchestrator(deps);
+            return orch.run(input);
+        }
+
+        const result = parsed.data as OrchestratorResult;
+        logStructured({ layer: "orchestrator", step: "end", requestId, data: { source: "langgraph-bridge", ok: "ok" in result ? result.ok : undefined } });
+        return result;
     } catch (err) {
         logError("LangGraph service unreachable — falling back to TS orchestrator", {
             error: (err as Error).message,

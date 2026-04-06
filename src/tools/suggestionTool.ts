@@ -12,7 +12,7 @@ import {
 } from "@/lib/ai/schemas";
 import { rankSuggestions } from "@/lib/ai/travelDNARules";
 
-interface TripContext {
+interface SuggestionTripInput {
     tripId: string;
     destination: string;
     style: string | null;
@@ -21,7 +21,7 @@ interface TripContext {
 }
 
 export async function generateSuggestionsForTrip(
-    trip: TripContext,
+    trip: SuggestionTripInput,
     dnaData?: Record<string, unknown> | null
 ): Promise<DashboardSuggestionsOutput> {
     const system = SYSTEM_PROMPTS.DASHBOARD_SUGGESTIONS;

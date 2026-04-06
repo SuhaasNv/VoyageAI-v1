@@ -2,11 +2,11 @@ import { LLMClientFactory, executeWithRetry, parseJSONResponse } from "@/lib/ai/
 import { selectModelConfig } from "@/lib/ai/modelRouter";
 import { logError, logStructured, trunc } from "@/infrastructure/logger";
 import type {
-    ScheduledActivity,
-    OptimizedDay,
     HotelOption,
+    OptimizedDay,
     OptimizedTripContext,
-} from "@/agents/logistics/logisticsAgent";
+    ScheduledActivity,
+} from "@/agents/shared/tripPipelineTypes";
 
 // Re-export so existing importers (orchestrator, tests) don't need to change.
 export type { ScheduledActivity, OptimizedDay, HotelOption, OptimizedTripContext };

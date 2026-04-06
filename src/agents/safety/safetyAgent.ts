@@ -1,51 +1,6 @@
 import { LLMClientFactory, executeWithRetry, parseJSONResponse } from "@/lib/ai/llm";
 import { logError, logStructured, trunc } from "@/infrastructure/logger";
-
-// ─────────────────────────────────────────
-//  Domain Types
-// ─────────────────────────────────────────
-
-export type ScheduledActivity = {
-  name: string;
-  type: "attraction" | "experience" | "restaurant";
-  description: string;
-  estimatedCost?: number;
-  timeSlot: "morning" | "afternoon" | "evening";
-};
-
-export type OptimizedDay = {
-  day: number;
-  theme: string;
-  activities: ScheduledActivity[];
-};
-
-export type BudgetedTripContext = {
-  destination: string;
-  startDate: string;
-  endDate: string;
-  durationDays: number;
-  preferences?: {
-    budget?: number;
-    style?: string;
-    pace?: string;
-  };
-  days: OptimizedDay[];
-  /** Present when output came from BudgetAgent (full OptimizedTripContext). */
-  selectedHotel?: {
-    name: string;
-    priceRange: string;
-    area: string;
-    tags: string[];
-    rating?: number;
-  };
-  budget: {
-    totalEstimatedCost: number;
-    costPerDay?: number[];
-    isOverBudget: boolean;
-    budgetGap?: number;
-    suggestions?: string[];
-  };
-};
+import type { BudgetedTripContext } from "@/agents/budget/budgetAgent";
 
 export type SafetyResult = {
   riskLevel: "low" | "medium" | "high";

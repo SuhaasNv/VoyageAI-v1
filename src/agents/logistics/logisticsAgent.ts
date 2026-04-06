@@ -1,58 +1,23 @@
 import { LLMClientFactory, parseJSONResponse } from "@/lib/ai/llm";
 import { logInfo, logError, logStructured, trunc } from "@/infrastructure/logger";
+import type {
+    Activity,
+    EnrichedDay,
+    EnrichedTripContext,
+    HotelOption,
+    OptimizedDay,
+    OptimizedTripContext,
+    ScheduledActivity,
+} from "@/agents/shared/tripPipelineTypes";
 
-// ─────────────────────────────────────────
-//  Domain Types
-// ─────────────────────────────────────────
-
-export type Activity = {
-    name: string;
-    type: "attraction" | "experience" | "restaurant";
-    description: string;
-    estimatedCost?: number;
-};
-
-export type HotelOption = {
-    name: string;
-    priceRange: "$" | "$$" | "$$$" | "$$$$";
-    area: string;
-    tags: string[];
-    rating?: number;
-};
-
-export type EnrichedDay = {
-    day: number;
-    theme: string;
-    activities: Activity[];
-};
-
-export type EnrichedTripContext = {
-    destination: string;
-    startDate: string;
-    endDate: string;
-    durationDays: number;
-    preferences?: {
-        budget?: number;
-        style?: string;
-        pace?: string;
-    };
-    days: EnrichedDay[];
-    hotels: HotelOption[];
-};
-
-export type ScheduledActivity = Activity & {
-    timeSlot: "morning" | "afternoon" | "evening";
-};
-
-export type OptimizedDay = {
-    day: number;
-    theme: string;
-    activities: ScheduledActivity[];
-};
-
-export type OptimizedTripContext = Omit<EnrichedTripContext, "days"> & {
-    days: OptimizedDay[];
-    selectedHotel: HotelOption;
+export type {
+    Activity,
+    EnrichedDay,
+    EnrichedTripContext,
+    HotelOption,
+    OptimizedDay,
+    OptimizedTripContext,
+    ScheduledActivity,
 };
 
 // ─────────────────────────────────────────

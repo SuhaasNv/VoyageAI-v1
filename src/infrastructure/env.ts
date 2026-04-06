@@ -30,6 +30,12 @@ const EnvSchema = z
         ADMIN_EMAILS: z.string().optional(),
         // Optional Bright Data SERP key; tool degrades gracefully when absent.
         BRIGHT_DATA_API_KEY: z.string().optional(),
+        // LangGraph: shared secret for POST /api/internal/agent/execute (Python → Next). Optional when not using the Python service.
+        INTERNAL_AGENT_SECRET: z.string().optional(),
+        // Base URL of the Python LangGraph service (runViaLangGraph). Optional; defaults to http://localhost:8000 in code when unset.
+        LANGGRAPH_SERVICE_URL: z.string().url().optional(),
+        // Mapbox GL (dashboard maps). Optional; maps show a graceful empty state when unset.
+        NEXT_PUBLIC_MAPBOX_TOKEN: z.string().optional(),
     })
     .superRefine((data, ctx) => {
         if (!isProduction) return;
@@ -97,6 +103,9 @@ function getEnvInput() {
         PEXELS_API_KEY: process.env.PEXELS_API_KEY,
         ADMIN_EMAILS: process.env.ADMIN_EMAILS,
         BRIGHT_DATA_API_KEY: process.env.BRIGHT_DATA_API_KEY,
+        INTERNAL_AGENT_SECRET: process.env.INTERNAL_AGENT_SECRET,
+        LANGGRAPH_SERVICE_URL: process.env.LANGGRAPH_SERVICE_URL?.trim() || undefined,
+        NEXT_PUBLIC_MAPBOX_TOKEN: process.env.NEXT_PUBLIC_MAPBOX_TOKEN?.trim() || undefined,
     };
     if (isProduction) return raw;
     return {
