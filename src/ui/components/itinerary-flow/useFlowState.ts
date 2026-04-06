@@ -173,13 +173,19 @@ export function useFlowState(input: FlowInput): UseFlowStateReturn {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Persist state on every change (except "saved" terminal state)
+    // Persist state on change, debounced to avoid excessive localStorage writes.
+    const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     useEffect(() => {
         if (state.stage !== "saved") {
-            saveToStorage(state);
+            if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+            saveTimerRef.current = setTimeout(() => saveToStorage(state), 500);
         } else {
+            if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
             clearStorage();
         }
+        return () => {
+            if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        };
     }, [state]);
 
     const resetAllAndRestart = useCallback(() => {

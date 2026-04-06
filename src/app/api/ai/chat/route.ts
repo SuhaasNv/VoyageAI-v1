@@ -110,6 +110,9 @@ export async function POST(req: NextRequest): Promise<Response> {
             const memCtx = await buildMemoryContext(sessionId);
             const latestItinerary = trip.itineraries[0]?.rawJson as unknown as Itinerary;
 
+            // Cap chat history at 20 messages to bound prompt size and DB load.
+            const recentMessages = chatPayload.messages.slice(-20);
+
             const contextString = assembleContext({
                 travelDNA: dna,
                 itinerary: latestItinerary,
@@ -119,7 +122,7 @@ export async function POST(req: NextRequest): Promise<Response> {
                     endDate: trip.endDate.toISOString().split("T")[0],
                     budget: { total: trip.budgetTotal, spent: 0, currency: trip.budgetCurrency },
                 },
-                chatHistory: chatPayload.messages,
+                chatHistory: recentMessages,
                 additionalContext: {
                     currentDay: String(chatPayload.currentDay ?? 1),
                     ...(memCtx ? { sessionMemory: memCtx } : {}),
@@ -127,7 +130,7 @@ export async function POST(req: NextRequest): Promise<Response> {
             });
 
             // Sanitize user messages before sending to LLM.
-            const safeMessages = chatPayload.messages.map((m) =>
+            const safeMessages = recentMessages.map((m) =>
                 m.role === "user" ? { ...m, content: sanitizeUserInput(m.content) } : m
             );
             const safeLatest = safeMessages.findLast?.((m) => m.role === "user");

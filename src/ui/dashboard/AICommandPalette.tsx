@@ -26,11 +26,13 @@ export function AICommandPalette({ onTripCreated, onFlowStart }: AICommandPalett
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const successTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const errorTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const focusTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
         if (isOpen) {
-            setTimeout(() => textareaRef.current?.focus(), 50);
+            focusTimer.current = setTimeout(() => textareaRef.current?.focus(), 50);
         } else {
+            if (focusTimer.current) clearTimeout(focusTimer.current);
             setPrompt("");
             setExtractedParams(null);
             setSuccessMsg(null);
@@ -49,6 +51,7 @@ export function AICommandPalette({ onTripCreated, onFlowStart }: AICommandPalett
     useEffect(() => () => {
         if (successTimer.current) clearTimeout(successTimer.current);
         if (errorTimer.current)   clearTimeout(errorTimer.current);
+        if (focusTimer.current)   clearTimeout(focusTimer.current);
     }, []);
 
     const handleExtract = async () => {

@@ -329,6 +329,7 @@ export class AgentOrchestrator {
 
             const nextSafe = await this.runBudgetAndSafety(optimized, requestId);
             if (nextSafe) lastSafe = nextSafe;
+            else break;
         }
 
         // ── Human-in-the-loop: loop exhausted with unresolved issues ──────────

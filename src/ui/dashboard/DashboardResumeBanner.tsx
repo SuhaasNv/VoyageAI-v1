@@ -6,32 +6,51 @@ import { Sparkles, ArrowRight, X } from "lucide-react";
 import { loadFromStorage, clearStorage } from "../components/itinerary-flow/flowStorage";
 import type { FlowState, FlowInput } from "../components/itinerary-flow/types";
 
+// Only show the resume banner when the user has made meaningful progress.
+// "planner" alone is trivial (< 5s to redo) and causes banner noise on every visit.
+const MEANINGFUL_STAGES = new Set(["research", "logistics", "budget", "safety"]);
+
 interface DashboardResumeBannerProps {
     onResume: (tripId: string, input: FlowInput) => void;
 }
 
+function readMeaningfulSession(): FlowState | null {
+    const saved = loadFromStorage();
+    if (!saved) return null;
+    if (!MEANINGFUL_STAGES.has(saved.stage)) {
+        // Not enough progress to be worth resuming — clean up silently.
+        clearStorage();
+        return null;
+    }
+    return saved;
+}
+
 export function DashboardResumeBanner({ onResume }: DashboardResumeBannerProps) {
     const [savedSession, setSavedSession] = useState<FlowState | null>(null);
-    const [isDismissed, setIsDismissed] = useState(false);
 
     useEffect(() => {
-        const saved = loadFromStorage();
-        if (saved) {
-            setSavedSession(saved);
-        }
-    }, []);
+        // Initial read on mount.
+        setSavedSession(readMeaningfulSession());
 
-    if (!savedSession || isDismissed) return null;
+        // Re-sync when the tab becomes visible again (e.g. after the flow completes
+        // in a different context and clears localStorage).
+        function handleVisibility() {
+            if (document.visibilityState === "visible") {
+                setSavedSession(readMeaningfulSession());
+            }
+        }
+        document.addEventListener("visibilitychange", handleVisibility);
+        return () => document.removeEventListener("visibilitychange", handleVisibility);
+    }, []);
 
     const handleDismiss = (e: React.MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
-        setIsDismissed(true);
-        // We don't necessarily clearStorage here, just hide it for this session
-        // or we could clear it if the user explicitly wants it gone. 
-        // Let's clear it to be clean as per "If it's useless... remove it".
         clearStorage();
+        setSavedSession(null);
     };
+
+    if (!savedSession) return null;
 
     return (
         <AnimatePresence>
@@ -45,7 +64,7 @@ export function DashboardResumeBanner({ onResume }: DashboardResumeBannerProps) 
                 <div className="relative flex flex-col md:flex-row items-center justify-between gap-4 p-5 rounded-2xl bg-[#0B0F19]/80 backdrop-blur-xl border border-white/10 shadow-2xl overflow-hidden">
                     {/* Animated background flare */}
                     <div className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/4 w-64 h-64 bg-indigo-500/10 rounded-full blur-[80px] pointer-events-none" />
-                    
+
                     <div className="flex items-center gap-4 relative z-10">
                         <div className="w-12 h-12 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.2)]">
                             <Sparkles className="w-6 h-6" />
@@ -58,7 +77,11 @@ export function DashboardResumeBanner({ onResume }: DashboardResumeBannerProps) 
                                 </span>
                             </h3>
                             <p className="text-zinc-400 text-sm mt-0.5">
-                                You were planning a trip to <span className="text-indigo-300 font-semibold">{savedSession.input.destination}</span>. Pick up right where you left off.
+                                You were planning a trip to{" "}
+                                <span className="text-indigo-300 font-semibold">
+                                    {savedSession.input.destination}
+                                </span>
+                                . Pick up right where you left off.
                             </p>
                         </div>
                     </div>

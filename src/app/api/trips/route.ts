@@ -143,11 +143,12 @@ export async function GET(req: NextRequest) {
                         const tripIds = needsImage
                             .filter((t) => t.destination === r.value.dest)
                             .map((t) => t.id);
-                        void Promise.allSettled(
-                            tripIds.map((id) =>
-                                prisma.trip.update({ where: { id }, data: { imageUrl: r.value.url } })
-                            )
-                        );
+                        if (r.value.url && tripIds.length > 0) {
+                            void prisma.trip.updateMany({
+                                where: { id: { in: tripIds } },
+                                data: { imageUrl: r.value.url },
+                            });
+                        }
                     }
                 }
             }

@@ -173,6 +173,22 @@ export class SafetyAgent {
     logStructured({ layer: "agent", agent: "safety", step: "start", requestId });
     logStructured({ layer: "agent", agent: "safety", step: "input", requestId, data: { destination: context.destination, maxActivitiesInDay: signals.maxActivitiesInDay, hasFastPace: signals.hasFastPace, isOverBudget: signals.isOverBudget, hasOutdoorHeavyDay: signals.hasOutdoorHeavyDay, hasFamousAttractions: signals.hasFamousAttractions } });
 
+    // Short-circuit: skip LLM call when no risk signals are present — saves ~2s per low-risk trip.
+    const hasRiskSignals =
+      signals.isOverBudget ||
+      signals.hasFastPace ||
+      signals.hasOutdoorHeavyDay ||
+      signals.hasFamousAttractions ||
+      signals.maxActivitiesInDay > 4;
+
+    if (!hasRiskSignals) {
+      const safety: SafetyResult = { riskLevel: "low", warnings: [], tips: ["Have a great trip! Stay hydrated and keep copies of important documents."] };
+      const result = { ...context, safety };
+      logStructured({ layer: "agent", agent: "safety", step: "output", requestId, data: { riskLevel: "low", warnings: 0, tips: 1, llmSkipped: true } });
+      logStructured({ layer: "agent", agent: "safety", step: "end", requestId });
+      return result;
+    }
+
     let safety: SafetyResult = { riskLevel: "low", warnings: [], tips: [] };
 
     try {

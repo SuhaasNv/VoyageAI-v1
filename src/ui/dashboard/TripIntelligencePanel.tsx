@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { Brain, Lightbulb, CalendarDays, Wallet, PlusCircle, Dna } from "lucide-react";
-import type { Trip } from "@/lib/api";
+import { getCsrfToken, type Trip } from "@/lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -161,7 +161,9 @@ export function TripIntelligencePanel({ trips, isLoading = false }: TripIntellig
                     setDna(data.data.preference.data as DNAPreference);
                 }
             })
-            .catch(() => {})
+            .catch((err: unknown) => {
+                console.error("[TripIntelligencePanel] Failed to load preferences:", err);
+            })
             .finally(() => setDnaLoaded(true));
     }, []);
 
@@ -183,9 +185,14 @@ export function TripIntelligencePanel({ trips, isLoading = false }: TripIntellig
             try {
                 const res = await fetch("/api/ai/trip-intelligence", {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    credentials: "include",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-CSRF-Token": getCsrfToken(),
+                    },
                     body: JSON.stringify({ nextTrip, dna })
                 });
+                if (!res.ok) throw new Error(`AI insight request failed (${res.status})`);
                 const data = await res.json();
                 if (data.success && data.data?.insight) {
                     setAiInsight(data.data.insight);

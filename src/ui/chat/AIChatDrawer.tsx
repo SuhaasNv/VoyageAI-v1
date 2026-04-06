@@ -57,6 +57,8 @@ export function AIChatDrawer({
 
     const bottomRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+    // Tracks the active streaming request so it can be aborted on unmount.
+    const activeAbortRef = useRef<AbortController | null>(null);
 
     useEffect(() => {
         if (isOpen) {
@@ -64,6 +66,10 @@ export function AIChatDrawer({
             inputRef.current?.focus();
         }
     }, [messages, isOpen]);
+
+    useEffect(() => {
+        return () => { activeAbortRef.current?.abort(); };
+    }, []);
 
     // ── Send chat message (streaming) ─────────────────────────────────────────
     async function handleSend(overrideText?: string) {
@@ -81,6 +87,9 @@ export function AIChatDrawer({
         setMessages((prev) => [...prev, { id: streamingId, role: "assistant", content: "" }]);
 
         try {
+            const controller = new AbortController();
+            activeAbortRef.current = controller;
+
             const res = await fetch("/api/ai/chat", {
                 method: "POST",
                 credentials: "include",
@@ -94,6 +103,7 @@ export function AIChatDrawer({
                     currentDay,
                     currentItinerary: rawItinerary,
                 }),
+                signal: controller.signal,
             });
 
             if (!res.ok) {

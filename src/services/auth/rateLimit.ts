@@ -123,6 +123,14 @@ interface MemoryWindow {
 
 const memoryStore = new Map<string, MemoryWindow>();
 
+// Clean up expired windows every 60 seconds to prevent unbounded memory growth.
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, win] of memoryStore) {
+        if (win.resetAt <= now) memoryStore.delete(key);
+    }
+}, 60_000);
+
 function memoryRateLimit(key: string, opts: RateLimitOptions): RateLimitResult {
     const now = Date.now();
     const existing = memoryStore.get(key);

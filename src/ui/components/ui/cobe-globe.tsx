@@ -2,7 +2,7 @@
 
 import createGlobe from "cobe";
 import { useReducedMotion } from "framer-motion";
-import { useCallback, useEffect, useRef, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 
 export interface GlobeMarker {
     id: string;
@@ -65,6 +65,8 @@ export function Globe({
     showHint = true,
 }: GlobeProps) {
     const prefersReducedMotion = useReducedMotion();
+    /** Must be React state — not a direct node.style tweak — or any parent re-render resets inline opacity: 0 from JSX. */
+    const [canvasVisible, setCanvasVisible] = useState(false);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const speedRef = useRef(speed);
     useEffect(() => {
@@ -141,6 +143,7 @@ export function Globe({
         let globe: ReturnType<typeof createGlobe> | null = null;
         let phi = 0;
         let cancelled = false;
+        setCanvasVisible(false);
 
         function measure(node: HTMLCanvasElement) {
             const w = node.offsetWidth;
@@ -151,37 +154,44 @@ export function Globe({
             const { width } = measure(node);
             if (width === 0 || globe || cancelled) return;
 
-            const dpr = Math.min(window.devicePixelRatio || 1, 2);
-            globe = createGlobe(node, {
-                devicePixelRatio: dpr,
-                width,
-                height: width,
-                phi: 0,
-                theta,
-                dark,
-                diffuse,
-                mapSamples,
-                mapBrightness,
-                baseColor,
-                markerColor,
-                glowColor,
-                markerElevation,
-                scale: scaleRef.current,
-                markers: markers.map((m) => ({
-                    location: m.location,
-                    size: markerSize,
-                    id: m.id,
-                })),
-                arcs: arcs.map((a) => ({
-                    from: a.from,
-                    to: a.to,
-                    id: a.id,
-                })),
-                arcColor,
-                arcWidth,
-                arcHeight,
-                opacity: 0.7,
-            });
+            let created: ReturnType<typeof createGlobe>;
+            try {
+                const dpr = Math.min(window.devicePixelRatio || 1, 2);
+                created = createGlobe(node, {
+                    devicePixelRatio: dpr,
+                    width,
+                    height: width,
+                    phi: 0,
+                    theta,
+                    dark,
+                    diffuse,
+                    mapSamples,
+                    mapBrightness,
+                    baseColor,
+                    markerColor,
+                    glowColor,
+                    markerElevation,
+                    scale: scaleRef.current,
+                    markers: markers.map((m) => ({
+                        location: m.location,
+                        size: markerSize,
+                        id: m.id,
+                    })),
+                    arcs: arcs.map((a) => ({
+                        from: a.from,
+                        to: a.to,
+                        id: a.id,
+                    })),
+                    arcColor,
+                    arcWidth,
+                    arcHeight,
+                    opacity: 0.7,
+                });
+            } catch {
+                return;
+            }
+
+            globe = created;
 
             function frame() {
                 if (cancelled || !globe) return;
@@ -233,7 +243,7 @@ export function Globe({
 
             frame();
             requestAnimationFrame(() => {
-                node.style.opacity = "1";
+                if (!cancelled) setCanvasVisible(true);
             });
         }
 
@@ -267,6 +277,7 @@ export function Globe({
 
         return () => {
             cancelled = true;
+            setCanvasVisible(false);
             resizeRo.disconnect();
             if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
             globe?.destroy();
@@ -300,7 +311,7 @@ export function Globe({
                     width: "100%",
                     height: "100%",
                     cursor: "grab",
-                    opacity: 0,
+                    opacity: canvasVisible ? 1 : 0,
                     transition: "opacity 1.2s ease",
                     borderRadius: "50%",
                     touchAction: "none",

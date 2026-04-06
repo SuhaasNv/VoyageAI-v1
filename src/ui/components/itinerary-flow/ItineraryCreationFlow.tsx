@@ -145,6 +145,8 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
     async function callApi<T>(endpoint: string, body: unknown): Promise<T> {
         // Use the pre-fetched cached token; fall back to a fresh fetch.
         let csrfToken = csrfTokenRef.current || (await ensureCsrfToken());
+        // Hard timeout: agent stages can take 20–60s; 90s covers worst-case LLM latency.
+        const timeoutSignal = AbortSignal.timeout(90_000);
 
         const doRequest = async (token: string) =>
             fetch(`/api/ai/itinerary-flow/${endpoint}`, {
@@ -158,6 +160,7 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
                     "X-Flow-Session-Id": state.sessionId,
                 },
                 body: JSON.stringify(body),
+                signal: timeoutSignal,
             });
 
         let res = await doRequest(csrfToken);
