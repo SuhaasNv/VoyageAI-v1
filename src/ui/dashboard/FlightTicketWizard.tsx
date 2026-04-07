@@ -16,43 +16,39 @@ import {
     Sparkles,
     FileText,
     AlertCircle,
-    ExternalLink,
 } from "lucide-react";
 import { ensureCsrfToken } from "@/lib/api";
+import type { FlowInput } from "@/ui/components/itinerary-flow/types";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ExtractedTicket {
-    destination:    string;
-    departureCity:  string;
-    departureDate:  string;
-    returnDate:     string;
-    airline?:       string;
-    flightNumber?:  string;
+    destination:   string;
+    departureCity: string;
+    departureDate: string;
+    returnDate:    string;
+    airline?:      string;
+    flightNumber?: string;
 }
 
-type WizardStep = "upload" | "extracting" | "review" | "creating" | "done";
+type FieldKey = "destination" | "departureCity" | "departureDate" | "returnDate";
+
+type WizardStep = "upload" | "extracting" | "review" | "creating";
 
 interface FlightTicketWizardProps {
-    isOpen:    boolean;
-    onClose:   () => void;
-    onTripCreated?: (tripId: string) => void;
+    isOpen:       boolean;
+    onClose:      () => void;
+    onFlowStart?: (tripId: string, input: FlowInput) => void;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function fmtDate(iso: string): string {
-    if (!iso) return "";
-    const d = new Date(iso + "T00:00:00");
-    return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
-
 const STYLES = [
-    { value: "relaxed",   label: "Relaxed" },
-    { value: "creative",  label: "Creative" },
-    { value: "exciting",  label: "Exciting" },
-    { value: "luxury",    label: "Luxury" },
-    { value: "budget",    label: "Budget" },
+    { value: "relaxed",  label: "Relaxed"  },
+    { value: "creative", label: "Creative" },
+    { value: "exciting", label: "Exciting" },
+    { value: "luxury",   label: "Luxury"   },
+    { value: "budget",   label: "Budget"   },
 ] as const;
 
 const stepVariants = {
@@ -64,10 +60,9 @@ const stepVariants = {
 // ─── Progress Step Indicator ─────────────────────────────────────────────────
 
 const STEPS: { key: WizardStep; label: string }[] = [
-    { key: "upload",    label: "Upload" },
-    { key: "review",    label: "Review" },
-    { key: "creating",  label: "Plan" },
-    { key: "done",      label: "Done" },
+    { key: "upload",   label: "Upload"  },
+    { key: "review",   label: "Review"  },
+    { key: "creating", label: "Confirm" },
 ];
 
 function StepDots({ current }: { current: WizardStep }) {
@@ -94,55 +89,80 @@ function StepDots({ current }: { current: WizardStep }) {
     );
 }
 
+// ─── Field row used in the review step ───────────────────────────────────────
+
+function FieldRow({
+    icon,
+    label,
+    error,
+    children,
+}: {
+    icon: React.ReactNode;
+    label: string;
+    error?: string;
+    children: React.ReactNode;
+}) {
+    return (
+        <div className="space-y-1">
+            <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-white/30">
+                {icon}
+                {label}
+            </label>
+            {children}
+            {error && (
+                <p className="text-rose-400 text-[11px] flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 shrink-0" />
+                    {error}
+                </p>
+            )}
+        </div>
+    );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function FlightTicketWizard({ isOpen, onClose, onTripCreated }: FlightTicketWizardProps) {
+export function FlightTicketWizard({ isOpen, onClose, onFlowStart }: FlightTicketWizardProps) {
     const [step,       setStep]       = useState<WizardStep>("upload");
     const [file,       setFile]       = useState<File | null>(null);
     const [isDragOver, setIsDragOver] = useState(false);
     const [extracted,  setExtracted]  = useState<ExtractedTicket | null>(null);
+    const [edited,     setEdited]     = useState<ExtractedTicket | null>(null);
     const [error,      setError]      = useState<string | null>(null);
+    const [fieldErrors, setFieldErrors] = useState<Partial<Record<FieldKey, string>>>({});
 
-    // Step-2 form state
+    // Step-2 preference state
     const [budget,   setBudget]   = useState("");
     const [currency, setCurrency] = useState("USD");
     const [style,    setStyle]    = useState<typeof STYLES[number]["value"]>("relaxed");
-
-    // Step-3 progress
-    const [createMsg,  setCreateMsg]  = useState<string>("");
-    const [tripId,     setTripId]     = useState<string | null>(null);
-    const [tripDone,   setTripDone]   = useState(false);
-    const [itiDone,    setItiDone]    = useState(false);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [mounted, setMounted] = useState(false);
     useEffect(() => { setMounted(true); }, []);
 
-    // Reset on close
-    const handleClose = () => {
+    // Sync editable copy whenever extraction completes
+    useEffect(() => {
+        if (extracted) setEdited({ ...extracted });
+    }, [extracted]);
+
+    // ── Reset ─────────────────────────────────────────────────────────────────
+
+    const handleClose = useCallback(() => {
         setStep("upload");
         setFile(null);
         setExtracted(null);
+        setEdited(null);
         setError(null);
+        setFieldErrors({});
         setBudget("");
         setStyle("relaxed");
-        setTripId(null);
-        setTripDone(false);
-        setItiDone(false);
         onClose();
-    };
+    }, [onClose]);
 
-    // ── File selection helpers ────────────────────────────────────────────────
+    // ── File helpers ──────────────────────────────────────────────────────────
 
     const acceptFile = useCallback((f: File) => {
-        if (f.type !== "application/pdf") {
-            setError("Please upload a PDF file.");
-            return;
-        }
-        if (f.size > 10 * 1024 * 1024) {
-            setError("File too large — maximum 10 MB.");
-            return;
-        }
+        if (f.type !== "application/pdf") { setError("Please upload a PDF file."); return; }
+        if (f.size > 10 * 1024 * 1024) { setError("File too large — maximum 10 MB."); return; }
         setError(null);
         setFile(f);
     }, []);
@@ -160,10 +180,7 @@ export function FlightTicketWizard({ isOpen, onClose, onTripCreated }: FlightTic
         if (f) acceptFile(f);
     }, [acceptFile]);
 
-    const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragOver(true); };
-    const handleDragLeave = () => setIsDragOver(false);
-
-    // ── Step 1 → 2: Extract from PDF ─────────────────────────────────────────
+    // ── Step 1 → 2: Extract ───────────────────────────────────────────────────
 
     const handleExtract = useCallback(async () => {
         if (!file) return;
@@ -198,20 +215,43 @@ export function FlightTicketWizard({ isOpen, onClose, onTripCreated }: FlightTic
         }
     }, [file]);
 
-    // ── Step 2 → 3: Create trip + generate itinerary ─────────────────────────
+    // ── Field-level validation ────────────────────────────────────────────────
+
+    const validateEdited = useCallback((): boolean => {
+        if (!edited) return false;
+        const errs: Partial<Record<FieldKey, string>> = {};
+
+        if (!edited.destination.trim())  errs.destination  = "Destination is required";
+        if (!edited.departureCity.trim()) errs.departureCity = "Origin city is required";
+
+        if (!edited.departureDate) {
+            errs.departureDate = "Departure date is required";
+        } else if (isNaN(Date.parse(edited.departureDate))) {
+            errs.departureDate = "Invalid date";
+        }
+
+        if (!edited.returnDate) {
+            errs.returnDate = "Return date is required";
+        } else if (edited.departureDate && edited.returnDate <= edited.departureDate) {
+            errs.returnDate = "Return must be after departure";
+        }
+
+        setFieldErrors(errs);
+        return Object.keys(errs).length === 0;
+    }, [edited]);
+
+    // ── Step 2 → 3: Create trip → fire flow ──────────────────────────────────
 
     const handleCreate = useCallback(async () => {
-        if (!extracted) return;
+        if (!edited) return;
+        if (!validateEdited()) return;
+
         setError(null);
         setStep("creating");
-        setCreateMsg("Creating trip…");
-        setTripDone(false);
-        setItiDone(false);
 
         try {
-            // Phase A: create trip
             const csrf = await ensureCsrfToken();
-            const createRes = await fetch("/api/trips/from-ticket", {
+            const res = await fetch("/api/trips/from-ticket", {
                 method:      "POST",
                 credentials: "include",
                 headers: {
@@ -219,67 +259,52 @@ export function FlightTicketWizard({ isOpen, onClose, onTripCreated }: FlightTic
                     ...(csrf ? { "x-csrf-token": csrf } : {}),
                 },
                 body: JSON.stringify({
-                    destination:   extracted.destination,
-                    departureCity: extracted.departureCity,
-                    departureDate: extracted.departureDate,
-                    returnDate:    extracted.returnDate,
-                    airline:       extracted.airline,
-                    flightNumber:  extracted.flightNumber,
+                    destination:   edited.destination,
+                    departureCity: edited.departureCity,
+                    departureDate: edited.departureDate,
+                    returnDate:    edited.returnDate,
+                    airline:       edited.airline,
+                    flightNumber:  edited.flightNumber,
                     budget:        budget ? Number(budget) : undefined,
-                    currency:      currency,
-                    style:         style,
+                    currency,
+                    style,
                 }),
             });
 
-            const createJson = await createRes.json();
-            if (!createJson.success) throw new Error(createJson.error?.message ?? "Trip creation failed.");
+            const json = await res.json();
+            if (!json.success) throw new Error(json.error?.message ?? "Trip creation failed.");
 
-            const newTripId: string = createJson.data.id;
-            setTripId(newTripId);
-            setTripDone(true);
-            setCreateMsg("Generating AI itinerary…");
+            const trip = json.data as { id: string; imageUrl?: string | null };
+            const flowInput: FlowInput = {
+                tripId:      trip.id,
+                destination: edited.destination,
+                startDate:   edited.departureDate,
+                endDate:     edited.returnDate,
+                style,
+                imageUrl:    trip.imageUrl ?? null,
+            };
 
-            // Phase B: generate itinerary
-            const csrf2 = await ensureCsrfToken();
-            const itiRes = await fetch("/api/ai/itinerary", {
-                method:      "POST",
-                credentials: "include",
-                headers: {
-                    "Content-Type": "application/json",
-                    ...(csrf2 ? { "x-csrf-token": csrf2 } : {}),
-                },
-                body: JSON.stringify({
-                    tripId:      newTripId,
-                    destination: extracted.destination,
-                    startDate:   extracted.departureDate,
-                    endDate:     extracted.returnDate,
-                    budget: {
-                        total:       budget ? Number(budget) : 2500,
-                        currency:    currency,
-                        flexibility: "flexible",
-                    },
-                }),
-            });
-
-            const itiJson = await itiRes.json();
-            if (!itiJson.success) {
-                // Itinerary generation is best-effort — trip is still created.
-                setItiDone(false);
-            } else {
-                setItiDone(true);
-            }
-
-            onTripCreated?.(newTripId);
-            setStep("done");
+            onFlowStart?.(trip.id, flowInput);
+            handleClose();
         } catch (err) {
             setError(err instanceof Error ? err.message : "Something went wrong.");
             setStep("review");
         }
-    }, [extracted, budget, currency, style, onTripCreated]);
+    }, [edited, budget, currency, style, onFlowStart, handleClose, validateEdited]);
+
+    // ── Editable field updater ────────────────────────────────────────────────
+
+    function setField(key: FieldKey, value: string) {
+        setEdited(prev => prev ? { ...prev, [key]: value } : prev);
+        setFieldErrors(prev => { const next = { ...prev }; delete next[key]; return next; });
+    }
 
     // ─── Render ───────────────────────────────────────────────────────────────
 
     if (!mounted || !isOpen) return null;
+
+    const inputCls = "w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-white placeholder-white/25 focus:outline-none focus:border-white/20 focus:bg-white/[0.06] transition-all";
+    const inputErrCls = "w-full bg-white/[0.04] border border-rose-500/40 rounded-xl px-3 py-2 text-sm text-white placeholder-white/25 focus:outline-none focus:border-rose-500/60 transition-all";
 
     const modal = (
         <div
@@ -330,12 +355,11 @@ export function FlightTicketWizard({ isOpen, onClose, onTripCreated }: FlightTic
                                     Drop your flight e-ticket or booking confirmation PDF
                                 </p>
 
-                                {/* Drop zone */}
                                 <div
                                     onClick={() => fileInputRef.current?.click()}
                                     onDrop={handleDrop}
-                                    onDragOver={handleDragOver}
-                                    onDragLeave={handleDragLeave}
+                                    onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}
+                                    onDragLeave={() => setIsDragOver(false)}
                                     className={`relative flex flex-col items-center justify-center gap-3 border-2 border-dashed rounded-2xl py-10 px-6 cursor-pointer transition-all duration-200 select-none ${
                                         isDragOver
                                             ? "border-indigo-400/60 bg-indigo-500/8"
@@ -383,9 +407,9 @@ export function FlightTicketWizard({ isOpen, onClose, onTripCreated }: FlightTic
                                 </div>
 
                                 {error && (
-                                    <div className="flex items-center gap-2 mt-3 text-xs text-rose-400">
-                                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                                        {error}
+                                    <div className="flex items-start gap-2 mt-3 p-3 rounded-xl bg-rose-500/8 border border-rose-500/20 text-xs text-rose-400">
+                                        <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                                        <span>{error}</span>
                                     </div>
                                 )}
 
@@ -397,7 +421,7 @@ export function FlightTicketWizard({ isOpen, onClose, onTripCreated }: FlightTic
                                     {step === "extracting" ? (
                                         <>
                                             <Loader2 className="w-4 h-4 animate-spin" />
-                                            Reading ticket…
+                                            Reading your ticket…
                                         </>
                                     ) : (
                                         <>
@@ -409,44 +433,74 @@ export function FlightTicketWizard({ isOpen, onClose, onTripCreated }: FlightTic
                             </motion.div>
                         )}
 
-                        {/* ── STEP 2: Review + customize ───────────────────── */}
-                        {step === "review" && extracted && (
+                        {/* ── STEP 2: Review + edit ─────────────────────────── */}
+                        {step === "review" && edited && (
                             <motion.div key="review" variants={stepVariants} initial="enter" animate="center" exit="exit" className="space-y-4">
 
-                                {/* Extracted ticket card */}
-                                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 space-y-2.5">
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                                        <span className="text-xs font-bold text-emerald-300 uppercase tracking-wider">Trip Detected</span>
+                                {/* Success banner */}
+                                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-500/8 border border-emerald-500/20">
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                    <span className="text-xs font-semibold text-emerald-300">
+                                        Trip detected: {extracted?.destination}
+                                        {extracted?.departureDate ? ` · ${extracted.departureDate.slice(5).replace("-", "/")}` : ""}
+                                        {extracted?.returnDate    ? ` → ${extracted.returnDate.slice(5).replace("-", "/")}` : ""}
+                                    </span>
+                                </div>
+
+                                {/* Editable core fields */}
+                                <div className="space-y-3 rounded-xl bg-white/[0.02] border border-white/[0.06] p-4">
+                                    <p className="text-[10px] font-bold uppercase tracking-wider text-white/25 mb-3">Review your trip details</p>
+
+                                    <FieldRow icon={<MapPin className="w-3 h-3" />} label="Destination" error={fieldErrors.destination}>
+                                        <input
+                                            type="text"
+                                            value={edited.destination}
+                                            onChange={e => setField("destination", e.target.value)}
+                                            placeholder="e.g. Tokyo"
+                                            className={fieldErrors.destination ? inputErrCls : inputCls}
+                                        />
+                                    </FieldRow>
+
+                                    <FieldRow icon={<Plane className="w-3 h-3" />} label="Origin city" error={fieldErrors.departureCity}>
+                                        <input
+                                            type="text"
+                                            value={edited.departureCity}
+                                            onChange={e => setField("departureCity", e.target.value)}
+                                            placeholder="e.g. Singapore"
+                                            className={fieldErrors.departureCity ? inputErrCls : inputCls}
+                                        />
+                                    </FieldRow>
+
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <FieldRow icon={<Calendar className="w-3 h-3" />} label="Departure" error={fieldErrors.departureDate}>
+                                            <input
+                                                type="date"
+                                                value={edited.departureDate}
+                                                onChange={e => setField("departureDate", e.target.value)}
+                                                className={`${fieldErrors.departureDate ? inputErrCls : inputCls} [color-scheme:dark]`}
+                                            />
+                                        </FieldRow>
+                                        <FieldRow icon={<Calendar className="w-3 h-3" />} label="Return" error={fieldErrors.returnDate}>
+                                            <input
+                                                type="date"
+                                                value={edited.returnDate}
+                                                onChange={e => setField("returnDate", e.target.value)}
+                                                className={`${fieldErrors.returnDate ? inputErrCls : inputCls} [color-scheme:dark]`}
+                                            />
+                                        </FieldRow>
                                     </div>
-                                    <div className="flex items-start gap-2 text-sm">
-                                        <MapPin className="w-3.5 h-3.5 text-white/40 mt-0.5 shrink-0" />
-                                        <div>
-                                            <span className="text-white/40 text-xs">From </span>
-                                            <span className="font-medium text-white/80">{extracted.departureCity}</span>
-                                            <span className="text-white/40 text-xs"> → </span>
-                                            <span className="font-bold text-white">{extracted.destination}</span>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-2 text-sm">
-                                        <Calendar className="w-3.5 h-3.5 text-white/40 shrink-0" />
-                                        <span className="text-white/60">{fmtDate(extracted.departureDate)}</span>
-                                        <span className="text-white/25 text-xs">→</span>
-                                        <span className="text-white/60">{fmtDate(extracted.returnDate)}</span>
-                                    </div>
-                                    {(extracted.airline || extracted.flightNumber) && (
-                                        <div className="flex items-center gap-2 text-sm">
-                                            <Plane className="w-3.5 h-3.5 text-white/40 shrink-0" />
-                                            <span className="text-white/50 text-xs">
-                                                {[extracted.airline, extracted.flightNumber].filter(Boolean).join(" · ")}
-                                            </span>
+
+                                    {(edited.airline || edited.flightNumber) && (
+                                        <div className="flex items-center gap-2 pt-1 text-xs text-white/30">
+                                            <Plane className="w-3 h-3 shrink-0" />
+                                            {[edited.airline, edited.flightNumber].filter(Boolean).join(" · ")}
                                         </div>
                                     )}
                                 </div>
 
                                 {/* Budget + style */}
                                 <div className="space-y-3">
-                                    <p className="text-[11px] font-bold text-white/25 uppercase tracking-wider">Customize Your Plan</p>
+                                    <p className="text-[10px] font-bold text-white/25 uppercase tracking-wider">Customize Your Plan</p>
 
                                     <div className="flex gap-2">
                                         <div className="relative flex-1">
@@ -489,15 +543,15 @@ export function FlightTicketWizard({ isOpen, onClose, onTripCreated }: FlightTic
                                 </div>
 
                                 {error && (
-                                    <div className="flex items-center gap-2 text-xs text-rose-400">
-                                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                                        {error}
+                                    <div className="flex items-start gap-2 p-3 rounded-xl bg-rose-500/8 border border-rose-500/20 text-xs text-rose-400">
+                                        <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                                        <span>{error}</span>
                                     </div>
                                 )}
 
                                 <div className="flex gap-2 pt-1">
                                     <button
-                                        onClick={() => { setError(null); setStep("upload"); }}
+                                        onClick={() => { setError(null); setFieldErrors({}); setStep("upload"); }}
                                         className="px-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white/40 hover:text-white/70 text-sm font-medium transition-colors"
                                     >
                                         Back
@@ -507,7 +561,7 @@ export function FlightTicketWizard({ isOpen, onClose, onTripCreated }: FlightTic
                                         className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-semibold transition-all"
                                     >
                                         <Sparkles className="w-4 h-4" />
-                                        Create &amp; Plan
+                                        Confirm &amp; Start Planning
                                         <ArrowRight className="w-3.5 h-3.5" />
                                     </button>
                                 </div>
@@ -516,64 +570,18 @@ export function FlightTicketWizard({ isOpen, onClose, onTripCreated }: FlightTic
 
                         {/* ── STEP 3: Creating ─────────────────────────────── */}
                         {step === "creating" && (
-                            <motion.div key="creating" variants={stepVariants} initial="enter" animate="center" exit="exit" className="flex flex-col items-center gap-5 py-4">
+                            <motion.div key="creating" variants={stepVariants} initial="enter" animate="center" exit="exit" className="flex flex-col items-center gap-5 py-6">
                                 <div className="relative">
                                     <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
                                         <Plane className="w-6 h-6 text-indigo-400 animate-pulse" />
                                     </div>
                                     <Loader2 className="absolute -top-1 -right-1 w-5 h-5 text-indigo-400 animate-spin" />
                                 </div>
-
-                                <div className="text-center space-y-1">
-                                    <p className="text-sm font-semibold text-white">{createMsg}</p>
+                                <div className="text-center space-y-1.5">
+                                    <p className="text-sm font-semibold text-white">Creating your trip…</p>
                                     <p className="text-xs text-white/30">
-                                        {tripDone && !itiDone
-                                            ? `Building your ${extracted?.destination} itinerary… ~20–30 s`
-                                            : "Please wait a moment"}
+                                        Building your {edited?.destination ?? "trip"} itinerary with AI
                                     </p>
-                                </div>
-
-                                <div className="w-full space-y-2">
-                                    <ProgressRow label="Create trip" done={tripDone} active={!tripDone} />
-                                    <ProgressRow label="Generate AI itinerary" done={itiDone} active={tripDone && !itiDone} />
-                                </div>
-                            </motion.div>
-                        )}
-
-                        {/* ── STEP 4: Done ─────────────────────────────────── */}
-                        {step === "done" && tripId && (
-                            <motion.div key="done" variants={stepVariants} initial="enter" animate="center" exit="exit" className="flex flex-col items-center gap-5 py-4 text-center">
-                                <div className="w-14 h-14 rounded-2xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center">
-                                    <CheckCircle2 className="w-7 h-7 text-emerald-400" />
-                                </div>
-
-                                <div className="space-y-1.5">
-                                    <p className="text-base font-bold text-white">Your trip is ready! 🎉</p>
-                                    <p className="text-sm font-medium text-white/60">{extracted?.destination}</p>
-                                    <p className="text-xs text-white/35">
-                                        {fmtDate(extracted?.departureDate ?? "")} → {fmtDate(extracted?.returnDate ?? "")}
-                                    </p>
-                                    {!itiDone && (
-                                        <p className="text-xs text-amber-400/70 mt-1">
-                                            Itinerary generation is still running — open the trip to check.
-                                        </p>
-                                    )}
-                                </div>
-
-                                <div className="flex gap-2 w-full">
-                                    <button
-                                        onClick={handleClose}
-                                        className="flex-1 px-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white/40 hover:text-white/70 text-sm font-medium transition-colors"
-                                    >
-                                        Close
-                                    </button>
-                                    <a
-                                        href={`/dashboard/trip/${tripId}`}
-                                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white text-sm font-semibold transition-all"
-                                    >
-                                        View Trip
-                                        <ExternalLink className="w-3.5 h-3.5" />
-                                    </a>
                                 </div>
                             </motion.div>
                         )}
@@ -589,25 +597,5 @@ export function FlightTicketWizard({ isOpen, onClose, onTripCreated }: FlightTic
             {isOpen && modal}
         </AnimatePresence>,
         document.body
-    );
-}
-
-// ─── Helper sub-component ─────────────────────────────────────────────────────
-
-function ProgressRow({ label, done, active }: { label: string; done: boolean; active: boolean }) {
-    return (
-        <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-white/[0.03] border border-white/[0.05]">
-            <div className="w-5 h-5 shrink-0 flex items-center justify-center">
-                {done
-                    ? <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                    : active
-                    ? <Loader2 className="w-4 h-4 text-indigo-400 animate-spin" />
-                    : <div className="w-4 h-4 rounded-full border border-white/15" />
-                }
-            </div>
-            <span className={`text-xs font-medium ${done ? "text-emerald-400" : active ? "text-white" : "text-white/25"}`}>
-                {label}
-            </span>
-        </div>
     );
 }

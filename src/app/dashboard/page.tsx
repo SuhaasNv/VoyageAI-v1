@@ -127,6 +127,7 @@ export default function DashboardPage() {
                     isLoading={isLoading}
                     onTripsChange={setTrips}
                     onNewTripClick={() => setIsModalOpen(true)}
+                    onTicketUploadClick={() => setShowTicketWizard(true)}
                     isSearching={debouncedQuery.trim().length > 0}
                 />
 
@@ -162,10 +163,9 @@ export default function DashboardPage() {
             <FlightTicketWizard
                 isOpen={showTicketWizard}
                 onClose={() => setShowTicketWizard(false)}
-                onTripCreated={() => {
+                onFlowStart={(tripId, input) => {
                     setShowTicketWizard(false);
-                    // Refresh trip list after a short delay so the DB write settles.
-                    setTimeout(() => window.location.reload(), 400);
+                    setFlowSession({ tripId, input });
                 }}
             />
 

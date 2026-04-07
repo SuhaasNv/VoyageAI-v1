@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { MapPin, ChevronRight, Star, MoreVertical, Pencil, Trash2, Plane, Plus, ImageIcon, ArrowRight } from "lucide-react";
+import { MapPin, ChevronRight, Star, MoreVertical, Pencil, Trash2, Plane, Plus, ImageIcon, ArrowRight, FileUp } from "lucide-react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import Image from "next/image";
@@ -14,6 +14,7 @@ interface UpcomingTripsGridProps {
     isLoading?: boolean;
     onTripsChange?: (trips: Trip[]) => void;
     onNewTripClick?: () => void;
+    onTicketUploadClick?: () => void;
     isSearching?: boolean;
 }
 
@@ -147,7 +148,7 @@ const SUGGESTIONS = [
     { label: "Bali", flag: "🇮🇩" },
 ];
 
-function PlanNewTripPanel({ onNewTripClick }: { onNewTripClick?: () => void }) {
+function PlanNewTripPanel({ onNewTripClick, onTicketUploadClick }: { onNewTripClick?: () => void; onTicketUploadClick?: () => void }) {
     const [destination, setDestination] = useState("");
 
     function handleSubmit() {
@@ -220,11 +221,23 @@ function PlanNewTripPanel({ onNewTripClick }: { onNewTripClick?: () => void }) {
                     </button>
                 ))}
             </div>
+
+            {/* PDF upload shortcut */}
+            {onTicketUploadClick && (
+                <button
+                    type="button"
+                    onClick={onTicketUploadClick}
+                    className="relative z-10 flex items-center gap-1.5 text-[11px] text-zinc-600 hover:text-zinc-400 transition-colors duration-200 mt-1"
+                >
+                    <FileUp className="w-3 h-3" />
+                    Import from flight ticket PDF
+                </button>
+            )}
         </motion.div>
     );
 }
 
-export function UpcomingTripsGrid({ trips, isLoading, onTripsChange, onNewTripClick, isSearching }: UpcomingTripsGridProps) {
+export function UpcomingTripsGrid({ trips, isLoading, onTripsChange, onNewTripClick, onTicketUploadClick, isSearching }: UpcomingTripsGridProps) {
     const [menuTripId, setMenuTripId] = useState<string | null>(null);
     const [editTrip, setEditTrip] = useState<Trip | null>(null);
     const [deleteTrip, setDeleteTrip] = useState<Trip | null>(null);
@@ -341,7 +354,7 @@ export function UpcomingTripsGrid({ trips, isLoading, onTripsChange, onNewTripCl
                             />
                         ))}
 
-                        <PlanNewTripPanel onNewTripClick={onNewTripClick} />
+                        <PlanNewTripPanel onNewTripClick={onNewTripClick} onTicketUploadClick={onTicketUploadClick} />
                     </>
                 )}
             </div>
