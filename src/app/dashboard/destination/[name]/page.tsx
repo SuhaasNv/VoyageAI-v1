@@ -46,8 +46,21 @@ export default function DestinationPage({ params }: { params: Promise<{ name: st
     const destinationName = decodeURIComponent(resolvedParams.name);
 
     useEffect(() => {
+        // Serve from sessionStorage instantly — avoids "Researching..." on back-navigation
+        const sessionKey = `voyage:dest:${destinationName}`;
+        try {
+            const cached = sessionStorage.getItem(sessionKey);
+            if (cached) {
+                setInfo(JSON.parse(cached) as DestinationInfo);
+                setIsLoading(false);
+                return;
+            }
+        } catch { /* non-fatal */ }
+
         setIsLoading(true);
-        fetch(`/api/ai/destination-info?name=${encodeURIComponent(destinationName)}`)
+        fetch(`/api/ai/destination-info?name=${encodeURIComponent(destinationName)}`, {
+            credentials: "include",
+        })
             .then(res => {
                 if (!res.ok) {
                     if (res.status === 429) throw new Error("Too many requests. Please try again in a minute.");
@@ -58,12 +71,13 @@ export default function DestinationPage({ params }: { params: Promise<{ name: st
             .then(data => {
                 if (data.success && data.data) {
                     setInfo(data.data);
+                    try { sessionStorage.setItem(sessionKey, JSON.stringify(data.data)); } catch { /* non-fatal */ }
                 } else {
                     throw new Error(data.error?.message || "Failed to parse destination info.");
                 }
             })
             .catch(err => {
-                setError(err.message);
+                setError((err as Error).message);
             })
             .finally(() => {
                 setIsLoading(false);

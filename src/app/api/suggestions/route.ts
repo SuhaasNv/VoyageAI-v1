@@ -19,6 +19,10 @@ import {
     suggestionsCacheKey,
     getSuggestionsCached,
     setSuggestionsCached,
+    destinationsCacheKey,
+    getDestinationsCached,
+    setDestinationsCached,
+    STALE_DESTINATIONS_MS,
 } from "@/lib/ai/cache";
 import { generateSuggestionsForTrip } from "@/tools/suggestionTool";
 import { rankSuggestions } from "@/lib/ai/travelDNARules";
@@ -95,10 +99,35 @@ export async function GET(req: NextRequest) {
             });
 
             let destinations: DestinationSuggestion[] = [];
-            try {
-                destinations = await generateSuggestions(allTrips, dnaData, 5);
-            } catch (err) {
-                logError("[GET /api/suggestions] Destination suggestions failed", err);
+            const destKey = destinationsCacheKey(auth.user.sub);
+            const destCached = await getDestinationsCached(destKey);
+
+            if (destCached) {
+                console.log("[REDIS] suggestions cache hit");
+                destinations = destCached.data as DestinationSuggestion[];
+
+                // Stale-while-revalidate: refresh silently if older than 5h
+                const age = Date.now() - destCached.cachedAt;
+                if (age > STALE_DESTINATIONS_MS) {
+                    void (async () => {
+                        try {
+                            const fresh = await generateSuggestions(allTrips, dnaData, 5);
+                            await setDestinationsCached(destKey, fresh);
+                            console.log("[REDIS] suggestions cached (background refresh)");
+                        } catch {
+                            // Non-fatal — stale data already served
+                        }
+                    })();
+                }
+            } else {
+                console.log("[REDIS] suggestions cache miss");
+                try {
+                    destinations = await generateSuggestions(allTrips, dnaData, 5);
+                    await setDestinationsCached(destKey, destinations);
+                    console.log("[REDIS] suggestions cached");
+                } catch (err) {
+                    logError("[GET /api/suggestions] Destination suggestions failed", err);
+                }
             }
 
             return successResponse({ tripSuggestions, destinations });

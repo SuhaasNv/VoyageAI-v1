@@ -138,3 +138,43 @@ export async function getSuggestionsCached(key: string): Promise<unknown | null>
 export async function setSuggestionsCached(key: string, value: unknown): Promise<void> {
     await setCached(key, value, TTL_SUGGESTIONS);
 }
+
+// ─── Destination info (LLM) ──────────────────────────────────────────────────
+
+const TTL_DESTINATION_INFO = 24 * 60 * 60; // 24h — destination facts don't change
+
+export function destinationInfoCacheKey(name: string): string {
+    return `${PREFIX}:destination-info:${hash(name.toLowerCase().trim())}`;
+}
+
+export async function getDestinationInfoCached(key: string): Promise<unknown | null> {
+    return getCached(key);
+}
+
+export async function setDestinationInfoCached(key: string, value: unknown): Promise<void> {
+    await setCached(key, value, TTL_DESTINATION_INFO);
+}
+
+// ─── Destination suggestions ─────────────────────────────────────────────────
+
+const TTL_DESTINATIONS = 6 * 60 * 60; // 6h
+/** Background refresh threshold: serve cache and quietly refresh after 5h. */
+export const STALE_DESTINATIONS_MS = 5 * 60 * 60 * 1000;
+
+export interface DestinationsCacheEntry {
+    data: unknown[];
+    cachedAt: number; // Unix ms
+}
+
+export function destinationsCacheKey(userId: string): string {
+    return `${PREFIX}:destinations:user:${userId}`;
+}
+
+export async function getDestinationsCached(key: string): Promise<DestinationsCacheEntry | null> {
+    return getCached<DestinationsCacheEntry>(key);
+}
+
+export async function setDestinationsCached(key: string, data: unknown[]): Promise<void> {
+    const entry: DestinationsCacheEntry = { data, cachedAt: Date.now() };
+    await setCached(key, entry, TTL_DESTINATIONS);
+}

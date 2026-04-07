@@ -32,18 +32,57 @@ function SkeletonRow() {
     );
 }
 
+const SESSION_KEY = "voyage:suggestions";
+const SESSION_TTL_MS = 6 * 60 * 60 * 1000; // 6h — matches server Redis TTL
+
+function readSessionCache(): DestinationSuggestion[] | null {
+    try {
+        const raw = sessionStorage.getItem(SESSION_KEY);
+        if (!raw) return null;
+        const { data, ts } = JSON.parse(raw) as { data: DestinationSuggestion[]; ts: number };
+        if (Date.now() - ts > SESSION_TTL_MS) return null;
+        return data;
+    } catch {
+        return null;
+    }
+}
+
+function writeSessionCache(data: DestinationSuggestion[]) {
+    try {
+        sessionStorage.setItem(SESSION_KEY, JSON.stringify({ data, ts: Date.now() }));
+    } catch { /* non-fatal */ }
+}
+
 export function AISuggestionsCard() {
     const [destinations, setDestinations] = useState<DestinationSuggestion[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
 
-    const loadDestinations = async () => {
+    const loadDestinations = async (forceRefresh = false) => {
+        // Serve from sessionStorage instantly — no spinner on back-navigation
+        if (!forceRefresh) {
+            const cached = readSessionCache();
+            if (cached) {
+                setDestinations(cached);
+                setIsLoading(false);
+                // Background refresh (silent — no spinner)
+                void fetchAndCache(false);
+                return;
+            }
+        }
+
         setIsRefreshing(true);
+        await fetchAndCache(true);
+    };
+
+    const fetchAndCache = async (showSpinner: boolean) => {
+        if (showSpinner) setIsRefreshing(true);
         try {
-            const res = await fetch("/api/suggestions");
+            const res = await fetch("/api/suggestions", { credentials: "include" });
             const data = await res.json();
             if (data.success && Array.isArray(data.data?.destinations)) {
                 setDestinations(data.data.destinations);
+                writeSessionCache(data.data.destinations);
             }
         } catch (error) {
             console.error("Failed to load suggestions:", error);
@@ -64,8 +103,8 @@ export function AISuggestionsCard() {
                     <Sparkles className="w-5 h-5 text-[#10B981]" />
                     Suggested For You
                 </h2>
-                <button 
-                    onClick={loadDestinations}
+                <button
+                    onClick={() => loadDestinations(true)}
                     disabled={isRefreshing}
                     className="p-2 rounded-full hover:bg-white/5 text-zinc-500 hover:text-[#10B981] transition-all disabled:opacity-50"
                     title="Refresh Suggestions"

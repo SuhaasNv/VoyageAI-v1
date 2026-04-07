@@ -8,6 +8,11 @@ import { getDestinationImage } from "@/lib/services/image.service";
 import { logInfo, logError } from "@/infrastructure/logger";
 import { validateLLMOutput } from "@/security/safety";
 import { selectModelConfig } from "@/lib/ai/modelRouter";
+import {
+    destinationInfoCacheKey,
+    getDestinationInfoCached,
+    setDestinationInfoCached,
+} from "@/lib/ai/cache";
 
 export const runtime = "nodejs";
 
@@ -36,6 +41,14 @@ export async function GET(req: NextRequest) {
 
         try {
             await checkRateLimit(`ai:${auth.user.sub}:destination-info`);
+
+            // ── Redis cache check ─────────────────────────────────────────────
+            const cacheKey = destinationInfoCacheKey(name);
+            const cached = await getDestinationInfoCached(cacheKey);
+            if (cached) {
+                logInfo("[/api/ai/destination-info] cache hit", { destination: name });
+                return NextResponse.json({ success: true, data: cached });
+            }
 
             logInfo("[/api/ai/destination-info] fetching info for", { destination: name });
 
@@ -70,14 +83,10 @@ Schema:
                 logError("[/api/ai/destination-info] image fetch error", err);
             }
 
-            return NextResponse.json({
-                success: true,
-                data: {
-                    ...aiData,
-                    imageUrl,
-                    name
-                }
-            });
+            const result = { ...aiData, imageUrl, name };
+            await setDestinationInfoCached(cacheKey, result);
+
+            return NextResponse.json({ success: true, data: result });
         } catch (err) {
             logError("[/api/ai/destination-info] error", err);
             if (err && typeof err === "object" && "code" in err && err.code === "RATE_LIMITED") {
