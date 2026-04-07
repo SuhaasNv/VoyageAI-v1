@@ -7,23 +7,24 @@ import { NextRequest } from "next/server";
 import { successResponse } from "@/lib/api/response";
 import { runWithRequestContext } from "@/lib/requestContext";
 import { requireAdminApiAuth } from "@/lib/admin";
+import { getRedisClient, hasRedisConfig } from "@/lib/redis";
 
 export async function POST(req: NextRequest) {
     return runWithRequestContext(req, async () => {
         const adminAuth = requireAdminApiAuth(req);
         if (!adminAuth.ok) return adminAuth.response;
 
-        const url = process.env.UPSTASH_REDIS_REST_URL;
-        const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-        if (!url || !token) {
+        if (!hasRedisConfig()) {
             return successResponse({ cleared: 0, error: "Redis not configured" });
         }
 
-        const { Redis } = await import("@upstash/redis");
-        const redis = new Redis({ url, token });
+        const redis = getRedisClient();
+        if (!redis) {
+            return successResponse({ cleared: 0, error: "Redis not configured" });
+        }
         const keys = await redis.keys("destination-image:*");
         if (keys.length > 0) {
-            await redis.del(...(keys as [string, ...string[]]));
+            await redis.del(...keys);
         }
         return successResponse({ cleared: keys.length });
     });

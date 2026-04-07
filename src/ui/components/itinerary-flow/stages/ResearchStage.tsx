@@ -17,6 +17,8 @@ import {
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { AgentThinkingCard } from "../AgentThinkingCard";
+import { ResearchSkeleton } from "../skeletons/StageSkeletons";
+import { stageContentVariants, stageContentTransition } from "../transitions";
 import { WhyTooltip } from "../WhyTooltip";
 import type { StageProps, EnrichedTripContext, FlowMetadata } from "../types";
 import type { Activity } from "@/agents/research/researchAgent";
@@ -339,31 +341,8 @@ export function ResearchStage({
         return slots.get(parseInt(dayNumStr))?.pool.find((a) => a.name === actName) ?? null;
     })();
 
-    // ─── Loading / Error ──────────────────────────────────────────────────────
-
-    if (isLoading) {
-        return (
-            <AgentThinkingCard
-                stage="research"
-                onRetry={onRetry}
-                skeleton={
-                    <div className="space-y-3 animate-pulse">
-                        <div className="flex gap-2">
-                            {[1, 2, 3].map((i) => <div key={i} className="h-8 w-16 bg-white/[0.04] rounded-full" />)}
-                        </div>
-                        <div className="grid grid-cols-2 gap-2.5">
-                            {[1, 2, 3, 4].map((i) => <div key={i} className="h-28 bg-white/[0.04] rounded-xl" />)}
-                        </div>
-                    </div>
-                }
-            />
-        );
-    }
-
-    if (error) return <AgentThinkingCard stage="research" isError errorMessage={error ?? undefined} onRetry={onRetry} />;
-    if (!localResult) return null;
-
-    const currentDayData = localResult.days.find((d) => d.day === activeDay);
+    // ─── Derived (only meaningful once localResult is present) ───────────────
+    const currentDayData = localResult?.days.find((d) => d.day === activeDay);
     const currentSlots   = slots.get(activeDay) ?? { selected: [], pool: [] };
     const isDragActive   = activeDragId !== null;
 
@@ -371,10 +350,48 @@ export function ResearchStage({
 
     return (
         <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+            <AnimatePresence mode="wait">
+                {isLoading ? (
+                    <motion.div
+                        key="loading"
+                        variants={stageContentVariants}
+                        initial={prefersReduced ? false : "initial"}
+                        animate="animate"
+                        exit={prefersReduced ? undefined : "exit"}
+                        transition={stageContentTransition}
+                    >
+                        <AgentThinkingCard
+                            stage="research"
+                            destination={input.destination}
+                            onRetry={onRetry}
+                            skeleton={<ResearchSkeleton />}
+                        />
+                    </motion.div>
+                ) : error ? (
+                    <motion.div
+                        key="error"
+                        variants={stageContentVariants}
+                        initial={prefersReduced ? false : "initial"}
+                        animate="animate"
+                        exit={prefersReduced ? undefined : "exit"}
+                        transition={stageContentTransition}
+                    >
+                        <AgentThinkingCard
+                            stage="research"
+                            isError
+                            errorMessage={error ?? undefined}
+                            onRetry={onRetry}
+                            destination={input.destination}
+                        />
+                    </motion.div>
+                ) : localResult ? (
             <motion.div
-                initial={prefersReduced ? {} : { opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+                key="loaded"
+                variants={stageContentVariants}
+                initial={prefersReduced ? false : "initial"}
+                animate="animate"
+                exit={prefersReduced ? undefined : "exit"}
+                transition={stageContentTransition}
                 className="space-y-6"
             >
                 {/* Header */}
@@ -618,6 +635,8 @@ export function ResearchStage({
                     </AnimatePresence>
                 </div>
             </motion.div>
+                ) : null}
+            </AnimatePresence>
 
             {/* Floating ghost card that follows the cursor during drag */}
             <DragOverlay dropAnimation={null}>

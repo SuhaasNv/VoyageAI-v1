@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { motion, useMotionValue, useTransform, animate, useReducedMotion } from "framer-motion";
+import { motion, useMotionValue, useTransform, animate, useReducedMotion, AnimatePresence } from "framer-motion";
 import { Wallet, ChevronDown, ChevronUp, Sparkles, AlertTriangle } from "lucide-react";
 import { AgentThinkingCard } from "../AgentThinkingCard";
+import { BudgetSkeleton } from "../skeletons/StageSkeletons";
+import { stageContentVariants, stageContentTransition } from "../transitions";
 import type { StageProps, BudgetedTripContext } from "../types";
 
 const CURRENCIES = [
@@ -37,84 +39,6 @@ function AnimatedNumber({ to, symbol }: { to: number; symbol: string }) {
     }, [to, motionValue, prefersReduced]);
 
     return <motion.span>{rounded}</motion.span>;
-}
-
-function CrunchingCounter({ label, emoji, target, speed }: { label: string; emoji: string; target: number; speed: number }) {
-    const motionValue = useMotionValue(0);
-    const display = useTransform(motionValue, (v) => `$${Math.round(v).toLocaleString()}`);
-    const prefersReduced = useReducedMotion();
-
-    useEffect(() => {
-        const ctrl = animate(motionValue, target, {
-            duration: prefersReduced ? 0 : speed,
-            ease: "easeOut",
-        });
-        return ctrl.stop;
-    }, [target, motionValue, speed, prefersReduced]);
-
-    return (
-        <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3">
-            <p className="text-xs text-slate-500 mb-1">{emoji} {label}</p>
-            <motion.p className="text-2xl font-bold text-white">{display}</motion.p>
-        </div>
-    );
-}
-
-function BudgetLoadingCard() {
-    const prefersReduced = useReducedMotion();
-    const [lineIdx, setLineIdx] = useState(0);
-    const lines = [
-        "Calculating hotel costs...",
-        "Tallying activity costs...",
-        "Estimating transport...",
-        "Adding daily food budget...",
-    ];
-
-    useEffect(() => {
-        const iv = setInterval(() => {
-            setLineIdx((i) => (i + 1) % lines.length);
-        }, 1200);
-        return () => clearInterval(iv);
-    }, [lines.length]);
-
-    return (
-        <div className="bg-white/[0.04] border border-white/[0.08] rounded-3xl p-6 space-y-5">
-            <div className="flex items-center gap-3">
-                <motion.div
-                    className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center"
-                    animate={prefersReduced ? {} : {
-                        boxShadow: [
-                            "0 0 0px rgba(16,185,129,0.35)",
-                            "0 0 24px rgba(16,185,129,0.35)",
-                            "0 0 0px rgba(16,185,129,0.35)",
-                        ],
-                    }}
-                    transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
-                >
-                    <Wallet className="w-6 h-6 text-emerald-400" />
-                </motion.div>
-                <div>
-                    <p className="text-sm font-semibold text-white">Budget Agent</p>
-                    <p className="text-xs text-emerald-400">Crunching the numbers...</p>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-                <CrunchingCounter emoji="\u{1F3E8}" label="Hotels" target={1200} speed={1.2} />
-                <CrunchingCounter emoji="\u{1F3AF}" label="Activities" target={840} speed={1.8} />
-                <CrunchingCounter emoji="\u{1F68C}" label="Transport" target={240} speed={0.9} />
-                <CrunchingCounter emoji="\u{1F37D}" label="Food" target={360} speed={2.1} />
-            </div>
-
-            <p className="font-mono text-xs text-emerald-400/70">{lines[lineIdx]}</p>
-
-            <div className="flex justify-end">
-                <span className="text-[10px] text-slate-500 border border-white/[0.06] rounded-full px-2 py-0.5">
-                    Transparent AI · Budget
-                </span>
-            </div>
-        </div>
-    );
 }
 
 function DonutChart({ values, colors, labels, currency }: { values: number[]; colors: string[]; labels: { name: string, desc: string }[]; currency: typeof CURRENCIES[0] }) {
@@ -209,16 +133,12 @@ export function BudgetStage({
     const [currency, setCurrency] = useState(CURRENCIES[0]);
     const [expandedDays, setExpandedDays] = useState<Set<number>>(new Set());
 
-    if (isLoading) return <BudgetLoadingCard />;
-    if (error) return <AgentThinkingCard stage="budget" isError errorMessage={error ?? undefined} onRetry={onRetry} />;
-    if (!result) return null;
-
-    const { budget } = result;
     const cxRate = currency.rate;
-    const total = budget.totalEstimatedCost * cxRate;
-    const userBudget = result.preferences?.budget ? result.preferences.budget * cxRate : undefined;
-    const isOver = budget.isOverBudget;
-    const budgetGap = budget.budgetGap ? budget.budgetGap * cxRate : 0;
+    const budget = result?.budget;
+    const total = (budget?.totalEstimatedCost ?? 0) * cxRate;
+    const userBudget = result?.preferences?.budget ? result.preferences.budget * cxRate : undefined;
+    const isOver = budget?.isOverBudget ?? false;
+    const budgetGap = budget?.budgetGap ? budget.budgetGap * cxRate : 0;
 
     const totalColor = isOver
         ? "text-rose-400"
@@ -226,10 +146,10 @@ export function BudgetStage({
         ? "text-amber-400"
         : "text-emerald-400";
 
-    const hotelNights = result.durationDays;
-    const hotelCostPerNight = (result.selectedHotel?.priceRange === "$$$$" ? 400
-        : result.selectedHotel?.priceRange === "$$$" ? 200
-        : result.selectedHotel?.priceRange === "$$" ? 100 : 50) * cxRate;
+    const hotelNights = result?.durationDays ?? 0;
+    const hotelCostPerNight = (result?.selectedHotel?.priceRange === "$$$$" ? 400
+        : result?.selectedHotel?.priceRange === "$$$" ? 200
+        : result?.selectedHotel?.priceRange === "$$" ? 100 : 50) * cxRate;
     const hotelTotal = hotelCostPerNight * hotelNights;
     const activitiesTotal = Math.round(total * 0.45);
     const transportTotal = Math.round(total * 0.1);
@@ -243,10 +163,48 @@ export function BudgetStage({
     ];
 
     return (
+        <AnimatePresence mode="wait">
+            {isLoading ? (
+                <motion.div
+                    key="loading"
+                    variants={stageContentVariants}
+                    initial={prefersReduced ? false : "initial"}
+                    animate="animate"
+                    exit={prefersReduced ? undefined : "exit"}
+                    transition={stageContentTransition}
+                >
+                    <AgentThinkingCard
+                        stage="budget"
+                        destination={input.destination}
+                        onRetry={onRetry}
+                        skeleton={<BudgetSkeleton days={result?.durationDays} />}
+                    />
+                </motion.div>
+            ) : error ? (
+                <motion.div
+                    key="error"
+                    variants={stageContentVariants}
+                    initial={prefersReduced ? false : "initial"}
+                    animate="animate"
+                    exit={prefersReduced ? undefined : "exit"}
+                    transition={stageContentTransition}
+                >
+                    <AgentThinkingCard
+                        stage="budget"
+                        isError
+                        errorMessage={error ?? undefined}
+                        onRetry={onRetry}
+                        destination={input.destination}
+                    />
+                </motion.div>
+            ) : result && budget ? (
         <motion.div
-            initial={prefersReduced ? {} : { opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+            key="loaded"
+            variants={stageContentVariants}
+            initial={prefersReduced ? false : "initial"}
+            animate="animate"
+            exit={prefersReduced ? undefined : "exit"}
+            transition={stageContentTransition}
             className="space-y-5"
         >
             {/* Header */}
@@ -374,5 +332,7 @@ export function BudgetStage({
                 </button>
             </div>
         </motion.div>
+            ) : null}
+        </AnimatePresence>
     );
 }

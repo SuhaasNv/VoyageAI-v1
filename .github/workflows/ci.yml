@@ -24,8 +24,7 @@ env:
   JWT_REFRESH_SECRET: "ci-jwt-refresh-secret-at-least-32-characters-long"
   CSRF_SECRET: "ci-csrf-secret-at-least-32-characters-long-ok"
   LLM_PROVIDER: "mock"
-  UPSTASH_REDIS_REST_URL: "https://ci.upstash.io"
-  UPSTASH_REDIS_REST_TOKEN: "ci-token"
+  REDIS_URL: "redis://localhost:6379"
   NEXT_PUBLIC_MAPBOX_TOKEN: "ci-mapbox-token"
 
 jobs:

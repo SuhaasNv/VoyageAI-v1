@@ -4,6 +4,8 @@ import { useState } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { Navigation, Sparkles } from "lucide-react";
 import { AgentThinkingCard } from "../AgentThinkingCard";
+import { LogisticsSkeleton } from "../skeletons/StageSkeletons";
+import { stageContentVariants, stageContentTransition } from "../transitions";
 import { LogisticsMap } from "./LogisticsMap";
 import type { StageProps, OptimizedTripContext } from "../types";
 
@@ -23,6 +25,7 @@ interface LogisticsStageProps extends StageProps<OptimizedTripContext> {
 }
 
 export function LogisticsStage({
+    input,
     result,
     isLoading,
     error,
@@ -36,39 +39,53 @@ export function LogisticsStage({
     const [note, setNote] = useState("");
     const [activeDay, setActiveDay] = useState(1);
 
-    if (isLoading) {
-        return (
-            <AgentThinkingCard
-                stage="logistics"
-                onRetry={onRetry}
-                skeleton={
-                    <div className="space-y-3 animate-pulse">
-                        <div className="h-16 bg-white/[0.04] rounded-2xl" />
-                        <div className="grid lg:grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                {[1, 2, 3].map((i) => (
-                                    <div key={i} className="h-24 bg-white/[0.04] rounded-xl" />
-                                ))}
-                            </div>
-                            <div className="h-60 bg-white/[0.04] rounded-2xl animate-pulse" />
-                        </div>
-                    </div>
-                }
-            />
-        );
-    }
-    if (error) return <AgentThinkingCard stage="logistics" isError errorMessage={error ?? undefined} onRetry={onRetry} />;
-    if (!result) return null;
-
-    const totalActivities = result.days.reduce((s, d) => s + d.activities.length, 0);
-    const currentDayData = result.days.find((d) => d.day === activeDay);
+    const totalActivities = result?.days.reduce((s, d) => s + d.activities.length, 0) ?? 0;
+    const currentDayData  = result?.days.find((d) => d.day === activeDay);
     const slots = ["morning", "afternoon", "evening"] as const;
 
     return (
+        <AnimatePresence mode="wait">
+            {isLoading ? (
+                <motion.div
+                    key="loading"
+                    variants={stageContentVariants}
+                    initial={prefersReduced ? false : "initial"}
+                    animate="animate"
+                    exit={prefersReduced ? undefined : "exit"}
+                    transition={stageContentTransition}
+                >
+                    <AgentThinkingCard
+                        stage="logistics"
+                        destination={input.destination}
+                        onRetry={onRetry}
+                        skeleton={<LogisticsSkeleton />}
+                    />
+                </motion.div>
+            ) : error ? (
+                <motion.div
+                    key="error"
+                    variants={stageContentVariants}
+                    initial={prefersReduced ? false : "initial"}
+                    animate="animate"
+                    exit={prefersReduced ? undefined : "exit"}
+                    transition={stageContentTransition}
+                >
+                    <AgentThinkingCard
+                        stage="logistics"
+                        isError
+                        errorMessage={error ?? undefined}
+                        onRetry={onRetry}
+                        destination={input.destination}
+                    />
+                </motion.div>
+            ) : result ? (
         <motion.div
-            initial={prefersReduced ? {} : { opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+            key="loaded"
+            variants={stageContentVariants}
+            initial={prefersReduced ? false : "initial"}
+            animate="animate"
+            exit={prefersReduced ? undefined : "exit"}
+            transition={stageContentTransition}
             className="space-y-5"
         >
             {/* Header */}
@@ -261,5 +278,7 @@ export function LogisticsStage({
                 </AnimatePresence>
             </div>
         </motion.div>
+            ) : null}
+        </AnimatePresence>
     );
 }

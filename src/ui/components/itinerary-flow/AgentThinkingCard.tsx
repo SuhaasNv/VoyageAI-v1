@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion, AnimatePresence } from "framer-motion";
 import { RefreshCw } from "lucide-react";
 import { AGENT_REGISTRY, agentColorClasses } from "./agentRegistry";
 import type { FlowStage } from "./types";
@@ -12,7 +12,22 @@ interface AgentThinkingCardProps {
     errorMessage?: string;
     onRetry?: () => void;
     skeleton?: React.ReactNode;
+    /**
+     * Destination name interpolated into any `{destination}` tokens inside
+     * the agent's rotating loading messages. Falls back to "your trip" when
+     * not provided so taglines remain grammatical.
+     */
+    destination?: string;
 }
+
+/** Replaces {destination} token with the actual destination name. */
+function interpolateMessage(msg: string, destination: string | undefined): string {
+    const fallback = destination?.trim() || "your trip";
+    return msg.replace(/\{destination\}/g, fallback);
+}
+
+/** How long each rotating tagline stays on screen before fading to the next. */
+const MESSAGE_ROTATION_MS = 2800;
 
 export function AgentThinkingCard({
     stage,
@@ -20,6 +35,7 @@ export function AgentThinkingCard({
     errorMessage,
     onRetry,
     skeleton,
+    destination,
 }: AgentThinkingCardProps) {
     const agent = AGENT_REGISTRY[stage];
     const colors = agentColorClasses(agent.color);
@@ -27,11 +43,13 @@ export function AgentThinkingCard({
 
     const [visibleLogs, setVisibleLogs] = useState<string[]>([]);
     const [logIndex, setLogIndex] = useState(0);
+    const [messageIndex, setMessageIndex] = useState(0);
 
     useEffect(() => {
         if (isError) return;
         setVisibleLogs([]);
         setLogIndex(0);
+        setMessageIndex(0);
     }, [stage, isError]);
 
     useEffect(() => {
@@ -43,7 +61,21 @@ export function AgentThinkingCard({
         return () => clearTimeout(timer);
     }, [logIndex, agent.logs, isError, prefersReduced]);
 
+    // Rotate through the agent's tagline messages while loading. Skipped entirely
+    // under reduced-motion so the first message stays pinned.
+    useEffect(() => {
+        if (isError || prefersReduced || agent.messages.length <= 1) return;
+        const interval = setInterval(() => {
+            setMessageIndex((i) => (i + 1) % agent.messages.length);
+        }, MESSAGE_ROTATION_MS);
+        return () => clearInterval(interval);
+    }, [agent.messages, isError, prefersReduced]);
+
     const Icon = agent.icon;
+    const currentMessage = interpolateMessage(
+        agent.messages[messageIndex] ?? agent.messages[0] ?? "",
+        destination,
+    );
 
     return (
         <div className="w-full space-y-6">
@@ -104,11 +136,30 @@ export function AgentThinkingCard({
                             </span>
                         </div>
 
-                        <p className={`text-sm leading-relaxed ${isError ? "text-rose-400" : "text-slate-400"}`}>
-                            {isError
-                                ? "Agent encountered an issue"
-                                : agent.message}
-                        </p>
+                        {isError ? (
+                            <p className="text-sm leading-relaxed text-rose-400">
+                                Agent encountered an issue
+                            </p>
+                        ) : prefersReduced ? (
+                            <p className="text-sm leading-relaxed text-slate-400">
+                                {currentMessage}
+                            </p>
+                        ) : (
+                            <div className="relative min-h-[1.5rem]">
+                                <AnimatePresence mode="wait">
+                                    <motion.p
+                                        key={messageIndex}
+                                        initial={{ opacity: 0, y: 4 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: -4 }}
+                                        transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+                                        className="text-sm leading-relaxed text-slate-400"
+                                    >
+                                        {currentMessage}
+                                    </motion.p>
+                                </AnimatePresence>
+                            </div>
+                        )}
 
                         {isError && errorMessage && (
                             <p className="mt-2 text-xs text-rose-400/70 font-mono break-words bg-rose-500/5 rounded-lg px-3 py-2">

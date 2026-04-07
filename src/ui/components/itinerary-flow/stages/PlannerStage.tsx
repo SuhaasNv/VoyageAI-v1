@@ -5,6 +5,8 @@ import { createPortal } from "react-dom";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { MapPin, Sparkles, ChevronDown, Loader2, ArrowRight, RotateCcw } from "lucide-react";
 import { AgentThinkingCard } from "../AgentThinkingCard";
+import { PlannerSkeleton } from "../skeletons/StageSkeletons";
+import { stageContentVariants, stageContentTransition } from "../transitions";
 import type { StageProps, TripContext } from "../types";
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
@@ -300,40 +302,65 @@ export function PlannerStage({
         setFeedback("");
     }
 
-    // ── Loading state ────────────────────────────────────────────────────────
-    if (isLoading) {
-        return (
-            <AgentThinkingCard
-                stage="planner"
-                onRetry={onRetry}
-                skeleton={
-                    <div className="space-y-3 animate-pulse">
-                        <div className="h-64 bg-white/[0.04] rounded-2xl" />
-                        <div className="h-28 bg-white/[0.04] rounded-2xl" />
-                        {[1,2,3,4].map((i) => <div key={i} className="h-20 bg-white/[0.04] rounded-2xl" />)}
-                    </div>
-                }
-            />
-        );
-    }
-
-    if (error) {
-        return <AgentThinkingCard stage="planner" isError errorMessage={error ?? undefined} onRetry={onRetry} />;
-    }
-
-    if (!localResult) return null;
-
-    // Use the Pexels image fetched at trip creation; fall back to gradient if null or load fails.
-    const heroUrl   = input.imageUrl ?? null;
-    const totalDays = localResult.days.length;
-    const arrivalOptions    = ARRIVAL_ACTIVITIES;
-    const departureOptions  = DEPARTURE_MORNING;
+    // ── Derived (computed regardless of load state so the skeleton can
+    //    approximate the final day-card count before data arrives). ──────────
+    const heroUrl          = input.imageUrl ?? null;
+    const arrivalOptions   = ARRIVAL_ACTIVITIES;
+    const departureOptions = DEPARTURE_MORNING;
+    const totalDays        = localResult?.days.length ?? 0;
+    const estimatedDays    = (() => {
+        if (totalDays > 0) return totalDays;
+        if (!input.startDate || !input.endDate) return 5;
+        const start = new Date(input.startDate);
+        const end = new Date(input.endDate);
+        const diff = end.getTime() - start.getTime();
+        if (isNaN(diff) || diff < 0) return 5;
+        return Math.max(1, Math.round(diff / 86_400_000) + 1);
+    })();
 
     return (
+        <AnimatePresence mode="wait">
+            {isLoading ? (
+                <motion.div
+                    key="loading"
+                    variants={stageContentVariants}
+                    initial={prefersReduced ? false : "initial"}
+                    animate="animate"
+                    exit={prefersReduced ? undefined : "exit"}
+                    transition={stageContentTransition}
+                >
+                    <AgentThinkingCard
+                        stage="planner"
+                        destination={input.destination}
+                        onRetry={onRetry}
+                        skeleton={<PlannerSkeleton days={estimatedDays} />}
+                    />
+                </motion.div>
+            ) : error ? (
+                <motion.div
+                    key="error"
+                    variants={stageContentVariants}
+                    initial={prefersReduced ? false : "initial"}
+                    animate="animate"
+                    exit={prefersReduced ? undefined : "exit"}
+                    transition={stageContentTransition}
+                >
+                    <AgentThinkingCard
+                        stage="planner"
+                        isError
+                        errorMessage={error ?? undefined}
+                        onRetry={onRetry}
+                        destination={input.destination}
+                    />
+                </motion.div>
+            ) : localResult ? (
         <motion.div
-            initial={prefersReduced ? {} : { opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+            key="loaded"
+            variants={stageContentVariants}
+            initial={prefersReduced ? false : "initial"}
+            animate="animate"
+            exit={prefersReduced ? undefined : "exit"}
+            transition={stageContentTransition}
             className="space-y-6"
         >
             {/* ── Hero banner ───────────────────────────────────────────── */}
@@ -654,5 +681,7 @@ export function PlannerStage({
                 </AnimatePresence>
             </div>
         </motion.div>
+            ) : null}
+        </AnimatePresence>
     );
 }

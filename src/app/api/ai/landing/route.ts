@@ -22,6 +22,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuthContext, getClientIp } from "@/lib/api/request";
 import { runWithRequestContext } from "@/lib/requestContext";
 import { checkRateLimit, RateLimitError } from "@/security/rateLimiter";
+import { getRedisClient, hasRedisConfig } from "@/lib/redis";
 import { getLLMClient, executeWithRetry, parseJSONResponse, AIServiceError } from "@/lib/ai/llm";
 import { getDestinationImage } from "@/lib/services/image.service";
 import { serializeTrip } from "@/lib/services/trips";
@@ -54,21 +55,14 @@ function detectIntent(prompt: string): "CREATE_TRIP" | "QUESTION" {
 
 /** Inline rate limiter with landing-specific limits. */
 async function checkLandingRateLimit(key: string): Promise<void> {
-    const hasRedis =
-        !!process.env.UPSTASH_REDIS_REST_URL &&
-        !!process.env.UPSTASH_REDIS_REST_TOKEN;
+    const hasRedis = hasRedisConfig();
 
     if (hasRedis) {
-        const { Redis } = await import("@upstash/redis");
-        const redis = new Redis({
-            url: process.env.UPSTASH_REDIS_REST_URL!,
-            token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-        });
+        const redis = getRedisClient();
+        if (!redis) throw new Error("Landing rate limit requires REDIS_URL");
         const redisKey = `rl:${key}`;
-        const pipeline = redis.pipeline();
-        pipeline.incr(redisKey);
-        pipeline.expire(redisKey, LANDING_RATE_WINDOW_SEC);
-        const [count] = (await pipeline.exec()) as [number, ...unknown[]];
+        const count = await redis.incr(redisKey);
+        await redis.expire(redisKey, LANDING_RATE_WINDOW_SEC);
         if (count > LANDING_RATE_LIMIT) {
             throw new RateLimitError(key, LANDING_RATE_LIMIT, LANDING_RATE_WINDOW_SEC);
         }

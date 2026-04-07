@@ -2,7 +2,7 @@
  * lib/auth/rateLimit.ts
  *
  * Sliding-window rate limiter with three tiers:
- *   1. Upstash Redis  – preferred (production)
+ *   1. Redis          – preferred (production)
  *   2. Prisma / PostgreSQL – fallback when Redis is unconfigured
  *   3. In-memory map  – last resort so the route never crashes (dev / CI)
  *
@@ -13,6 +13,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { logError } from "@/infrastructure/logger";
+import { getRedisClient, hasRedisConfig } from "@/lib/redis";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -33,26 +34,21 @@ export interface RateLimitResult {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tier 1 – Upstash Redis
+// Tier 1 – Redis
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function redisRateLimit(
     key: string,
     opts: RateLimitOptions
 ): Promise<RateLimitResult> {
-    const { Redis } = await import("@upstash/redis");
-    const redis = new Redis({
-        url: process.env.UPSTASH_REDIS_REST_URL!,
-        token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-    });
+    const redis = getRedisClient();
+    if (!redis) throw new Error("Redis client unavailable");
 
     const windowKey = `ratelimit:${key}`;
     const windowSeconds = Math.ceil(opts.windowMs / 1000);
 
-    const pipeline = redis.pipeline();
-    pipeline.incr(windowKey);
-    pipeline.expire(windowKey, windowSeconds);
-    const [count] = (await pipeline.exec()) as [number, number];
+    const count = await redis.incr(windowKey);
+    await redis.expire(windowKey, windowSeconds);
 
     const resetAt = new Date(Date.now() + opts.windowMs);
     const remaining = Math.max(0, opts.limit - count);
@@ -179,19 +175,17 @@ export async function rateLimit(
     key: string,
     opts: RateLimitOptions
 ): Promise<RateLimitResult> {
-    const hasUpstash =
-        !!process.env.UPSTASH_REDIS_REST_URL &&
-        !!process.env.UPSTASH_REDIS_REST_TOKEN;
+    const hasRedis = hasRedisConfig();
 
-    if (hasUpstash) {
+    if (hasRedis) {
         try {
             return await redisRateLimit(key, opts);
         } catch (err) {
             if (isProduction) {
-                logError("[rateLimit] Upstash unavailable in production — failing closed", err);
+                logError("[rateLimit] Redis unavailable in production — failing closed", err);
                 throw err;
             }
-            logError("[rateLimit] Upstash error, falling back to DB", err);
+            logError("[rateLimit] Redis error, falling back to DB", err);
         }
     }
 

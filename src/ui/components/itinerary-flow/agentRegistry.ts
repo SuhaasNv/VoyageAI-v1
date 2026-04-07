@@ -25,8 +25,13 @@ export interface AgentConfig {
     color: "indigo" | "teal" | "amber" | "green" | "purple";
     /** CSS rgba for box-shadow glow effects. */
     glow: string;
-    /** First-person loading message shown in AgentThinkingCard. */
-    message: string;
+    /**
+     * Rotating first-person loading taglines shown in AgentThinkingCard.
+     * AgentThinkingCard cycles through these with a fade (~2.8s per line)
+     * while the backend request is in flight. Supports a `{destination}`
+     * template token which is interpolated from FlowInput.destination.
+     */
+    messages: string[];
     /** 6–8 typewriter log lines that appear during loading. */
     logs: string[];
     /** Data sources this agent used — shown in ExplainabilityPanel. */
@@ -43,7 +48,13 @@ export const AGENT_REGISTRY: Record<Exclude<FlowStage, "saved">, AgentConfig> = 
         icon: Brain,
         color: "indigo",
         glow: "rgba(99,102,241,0.35)",
-        message: "Analyzing your travel intent and building a day-by-day blueprint...",
+        messages: [
+            "Analyzing your travel intent and building a day-by-day blueprint...",
+            "Mapping your duration into a balanced day count...",
+            "Assigning themes so each day has its own character...",
+            "Calibrating pace to match your travel style...",
+            "Shaping a rhythm for {destination} that won't feel rushed...",
+        ],
         logs: [
             "Parsing destination and date range...",
             "Inferring travel style from your preferences...",
@@ -68,7 +79,13 @@ export const AGENT_REGISTRY: Record<Exclude<FlowStage, "saved">, AgentConfig> = 
         icon: Globe,
         color: "teal",
         glow: "rgba(20,184,166,0.35)",
-        message: "Scouring the web for the best experiences in your destination...",
+        messages: [
+            "Scouring the web for the best experiences in {destination}...",
+            "Cross-referencing reviews across multiple sources...",
+            "Matching activities to each day's theme...",
+            "Hunting for hotels near the right neighbourhoods...",
+            "Filtering out tourist traps and duplicate listings...",
+        ],
         logs: [
             "Querying Bright Data for local attractions...",
             "Searching hotel options near key areas...",
@@ -94,7 +111,13 @@ export const AGENT_REGISTRY: Record<Exclude<FlowStage, "saved">, AgentConfig> = 
         icon: Route,
         color: "amber",
         glow: "rgba(245,158,11,0.35)",
-        message: "Calculating the most efficient path through your activities...",
+        messages: [
+            "Calculating the most efficient path through your activities...",
+            "Clustering nearby stops so you're not zig-zagging across {destination}...",
+            "Balancing morning, afternoon and evening slots...",
+            "Picking the hotel that minimises daily travel time...",
+            "Scoring route efficiency against alternatives...",
+        ],
         logs: [
             "Grouping activities by geography...",
             "Assigning morning / afternoon / evening slots...",
@@ -118,7 +141,13 @@ export const AGENT_REGISTRY: Record<Exclude<FlowStage, "saved">, AgentConfig> = 
         icon: Wallet,
         color: "green",
         glow: "rgba(16,185,129,0.35)",
-        message: "Tallying every cost so there are no surprises on the road...",
+        messages: [
+            "Tallying every cost so there are no surprises on the road...",
+            "Pulling local pricing data for {destination}...",
+            "Estimating per-day activity and food budgets...",
+            "Comparing the total against your target budget...",
+            "Flagging any days that need trimming...",
+        ],
         logs: [
             "Calculating hotel nightly rate...",
             "Estimating activity costs per day...",
@@ -142,7 +171,13 @@ export const AGENT_REGISTRY: Record<Exclude<FlowStage, "saved">, AgentConfig> = 
         icon: Shield,
         color: "purple",
         glow: "rgba(168,85,247,0.35)",
-        message: "Assessing risk signals and preparing your safety briefing...",
+        messages: [
+            "Assessing risk signals and preparing your safety briefing...",
+            "Scanning for overpacked or fatiguing days...",
+            "Applying weather and seasonality heuristics for {destination}...",
+            "Running deterministic safety rules across every day...",
+            "Assembling your final trip score and briefing...",
+        ],
         logs: [
             "Scanning for overpacked days...",
             "Checking travel fatigue patterns...",

@@ -1,11 +1,13 @@
 "use client";
 
-import { motion, useReducedMotion } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
     Shield, AlertTriangle, Lightbulb, Clock, MapPin, Star,
     DollarSign, Sparkles, RotateCcw, Loader2,
 } from "lucide-react";
 import { AgentThinkingCard } from "../AgentThinkingCard";
+import { SafetySkeleton } from "../skeletons/StageSkeletons";
+import { stageContentVariants, stageContentTransition } from "../transitions";
 import type { StageProps, SafeTripContext } from "../types";
 
 interface SafetyStageProps extends StageProps<SafeTripContext> {
@@ -98,35 +100,17 @@ export function SafetyStage({
 }: SafetyStageProps) {
     const prefersReduced = useReducedMotion();
 
-    if (isLoading) {
-        return (
-            <AgentThinkingCard
-                stage="safety"
-                onRetry={onRetry}
-                skeleton={
-                    <div className="space-y-3 animate-pulse">
-                        <div className="h-14 bg-white/[0.04] rounded-2xl" />
-                        {[1, 2, 3].map((i) => (
-                            <div key={i} className="h-32 bg-white/[0.04] rounded-2xl" />
-                        ))}
-                        <div className="space-y-2">
-                            {[1, 2, 3, 4, 5].map((i) => (
-                                <div key={i} className="h-3 bg-white/[0.04] rounded-full" />
-                            ))}
-                        </div>
-                    </div>
-                }
-            />
-        );
-    }
-    if (error) return <AgentThinkingCard stage="safety" isError errorMessage={error ?? undefined} onRetry={onRetry} />;
-    if (!result) return null;
-
-    const { safety, days, destination, durationDays, selectedHotel, budget, preferences } = result;
-    const risk = RISK_STYLE[safety.riskLevel];
-    const totalCost = budget.totalEstimatedCost;
+    const safety = result?.safety;
+    const days = result?.days ?? [];
+    const destination = result?.destination ?? "";
+    const durationDays = result?.durationDays ?? 0;
+    const selectedHotel = result?.selectedHotel;
+    const budget = result?.budget;
+    const preferences = result?.preferences;
+    const risk = safety ? RISK_STYLE[safety.riskLevel] : RISK_STYLE.low;
+    const totalCost = budget?.totalEstimatedCost ?? 0;
     const userBudget = preferences?.budget;
-    const isOver = budget.isOverBudget;
+    const isOver = budget?.isOverBudget ?? false;
 
     const actTypes = days.flatMap((d) => d.activities.map((a) => a.type));
     const attractionPct = (actTypes.filter((t) => t === "attraction").length / Math.max(actTypes.length, 1)) * 100;
@@ -145,10 +129,48 @@ export function SafetyStage({
     const insight = `Your trip is ${Math.round(topCategory.score)}% ${topCategory.label.toLowerCase()}-focused — consider balancing with more variety.`;
 
     return (
+        <AnimatePresence mode="wait">
+            {isLoading ? (
+                <motion.div
+                    key="loading"
+                    variants={stageContentVariants}
+                    initial={prefersReduced ? false : "initial"}
+                    animate="animate"
+                    exit={prefersReduced ? undefined : "exit"}
+                    transition={stageContentTransition}
+                >
+                    <AgentThinkingCard
+                        stage="safety"
+                        destination={input.destination}
+                        onRetry={onRetry}
+                        skeleton={<SafetySkeleton days={result?.durationDays} />}
+                    />
+                </motion.div>
+            ) : error ? (
+                <motion.div
+                    key="error"
+                    variants={stageContentVariants}
+                    initial={prefersReduced ? false : "initial"}
+                    animate="animate"
+                    exit={prefersReduced ? undefined : "exit"}
+                    transition={stageContentTransition}
+                >
+                    <AgentThinkingCard
+                        stage="safety"
+                        isError
+                        errorMessage={error ?? undefined}
+                        onRetry={onRetry}
+                        destination={input.destination}
+                    />
+                </motion.div>
+            ) : result && safety && budget ? (
         <motion.div
-            initial={prefersReduced ? {} : { opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+            key="loaded"
+            variants={stageContentVariants}
+            initial={prefersReduced ? false : "initial"}
+            animate="animate"
+            exit={prefersReduced ? undefined : "exit"}
+            transition={stageContentTransition}
             className="space-y-6 pb-28"
         >
             {/* Header */}
@@ -360,5 +382,7 @@ export function SafetyStage({
                 </p>
             </div>
         </motion.div>
+            ) : null}
+        </AnimatePresence>
     );
 }

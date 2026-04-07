@@ -20,8 +20,6 @@ const EnvSchema = z
         OPENAI_API_KEY: z.string().optional(),
         GEMINI_API_KEY: z.string().optional(),
         GEMINI_MODEL: z.string().optional(),
-        UPSTASH_REDIS_REST_URL: z.string().optional(),
-        UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
         GOOGLE_CLIENT_ID: z.string().optional(),
         GOOGLE_CLIENT_SECRET: z.string().optional(),
         NEXT_PUBLIC_APP_URL: z.string().optional(),
@@ -48,7 +46,7 @@ const EnvSchema = z
         if (data.LLM_PROVIDER === "gemini" && !(data.GEMINI_API_KEY?.trim())) {
             ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["GEMINI_API_KEY"], message: "GEMINI_API_KEY is required when LLM_PROVIDER is gemini" });
         }
-        // Upstash Redis is optional — caching is skipped gracefully when absent
+        // Redis is optional — caching is skipped gracefully when absent
         if (!data.GOOGLE_CLIENT_ID?.trim()) {
             ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["GOOGLE_CLIENT_ID"], message: "GOOGLE_CLIENT_ID is required in production" });
         }
@@ -95,8 +93,6 @@ function getEnvInput() {
         OPENAI_API_KEY: process.env.OPENAI_API_KEY,
         GEMINI_API_KEY: process.env.GEMINI_API_KEY,
         GEMINI_MODEL: process.env.GEMINI_MODEL,
-        UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,
-        UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN,
         GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
         GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
         NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,

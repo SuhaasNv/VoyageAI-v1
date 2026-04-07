@@ -5,6 +5,7 @@
  */
 
 import { logInfo, logError } from "@/infrastructure/logger";
+import { getRedisClient, hasRedisConfig } from "@/lib/redis";
 
 if (typeof window !== "undefined") {
     throw new Error("[image.service] Must not run in browser — PEXELS_API_KEY would be exposed");
@@ -56,22 +57,15 @@ function normalizeDestination(destination: string): string {
 }
 
 function hasRedis(): boolean {
-    return !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN);
-}
-
-async function getRedis() {
-    const { Redis } = await import("@upstash/redis");
-    return new Redis({
-        url: process.env.UPSTASH_REDIS_REST_URL!,
-        token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-    });
+    return hasRedisConfig();
 }
 
 async function getCached(key: string): Promise<string | null | "MISS"> {
     if (!hasRedis()) return "MISS";
     try {
-        const redis = await getRedis();
-        const val = await redis.get<string>(key);
+        const redis = getRedisClient();
+        if (!redis) return "MISS";
+        const val = await redis.get(key);
         if (val === NULL_SENTINEL) return null;
         if (val && typeof val === "string") return val;
         return "MISS";
@@ -83,7 +77,8 @@ async function getCached(key: string): Promise<string | null | "MISS"> {
 async function setCached(key: string, value: string | null, ttlSec: number): Promise<void> {
     if (!hasRedis()) return;
     try {
-        const redis = await getRedis();
+        const redis = getRedisClient();
+        if (!redis) return;
         await redis.setex(key, ttlSec, value ?? NULL_SENTINEL);
     } catch {
         // non-fatal

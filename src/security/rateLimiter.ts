@@ -3,18 +3,18 @@
  *
  * Rate limiter for VoyageAI AI endpoints.
  *
- * Production: Upstash Redis required. No in-memory fallback.
+ * Production: Redis required. No in-memory fallback.
  * Development: Falls back to in-process Map when Redis is absent or unavailable.
  *
  * Configuration (environment variables)
  * --------------------------------------
- *   UPSTASH_REDIS_REST_URL    – Upstash Redis REST endpoint URL (required in production)
- *   UPSTASH_REDIS_REST_TOKEN  – Upstash Redis REST auth token (required in production)
+ *   REDIS_URL                 – Railway Redis connection URL (required in production)
  *   RATE_LIMIT_MAX            – Max requests per window (default: 30)
  *   RATE_LIMIT_WINDOW_SEC     – Window size in seconds   (default: 60)
  */
 
 import { logInfo, logError } from "@/infrastructure/logger";
+import { getRedisClient, hasRedisConfig } from "@/lib/redis";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Config
@@ -40,24 +40,18 @@ export class RateLimitError extends Error {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Redis backend  (Upstash)
+// Redis backend
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function redisCheckRateLimit(key: string): Promise<void> {
-    const { Redis } = await import("@upstash/redis");
-
-    const redis = new Redis({
-        url: process.env.UPSTASH_REDIS_REST_URL!,
-        token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-    });
+    const redis = getRedisClient();
+    if (!redis) throw new Error("Redis client unavailable");
 
     const redisKey = `rl:${key}`;
 
     // INCR returns the new count. Only set the TTL when count === 1 (first request
     // in this window) so we use a fixed window rather than a sliding one.
-    const pipeline = redis.pipeline();
-    pipeline.incr(redisKey);
-    const [count] = (await pipeline.exec()) as [number, ...unknown[]];
+    const count = await redis.incr(redisKey);
 
     if (count === 1) {
         // Best-effort: if this fails the window never expires, but the counter still works.
@@ -114,15 +108,11 @@ const isProduction = process.env.NODE_ENV === "production";
  * @throws {Error} in production if Redis is absent or unavailable
  */
 export async function checkRateLimit(key: string): Promise<void> {
-    const hasRedis =
-        !!process.env.UPSTASH_REDIS_REST_URL &&
-        !!process.env.UPSTASH_REDIS_REST_TOKEN;
+    const hasRedis = hasRedisConfig();
 
     if (isProduction) {
         if (!hasRedis) {
-            throw new Error(
-                "Rate limiting requires UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN in production"
-            );
+            throw new Error("Rate limiting requires REDIS_URL in production");
         }
         try {
             await redisCheckRateLimit(key);

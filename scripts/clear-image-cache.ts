@@ -11,15 +11,14 @@ config({ path: resolve(root, ".env") });
 config({ path: resolve(root, ".env.local") });
 
 async function main() {
-    const url = process.env.UPSTASH_REDIS_REST_URL;
-    const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-    if (!url || !token) {
-        console.error("UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN required");
+    const redisUrl = process.env.REDIS_URL;
+    if (!redisUrl) {
+        console.error("REDIS_URL is required");
         process.exit(1);
     }
 
-    const { Redis } = await import("@upstash/redis");
-    const redis = new Redis({ url, token });
+    const Redis = (await import("ioredis")).default;
+    const redis = new Redis(redisUrl);
 
     const keys = await redis.keys("destination-image:*");
     if (keys.length === 0) {
@@ -31,6 +30,7 @@ async function main() {
         console.log("Deleted:", key);
     }
     console.log(`Cleared ${keys.length} key(s).`);
+    redis.disconnect();
 }
 
 main().catch((err) => {

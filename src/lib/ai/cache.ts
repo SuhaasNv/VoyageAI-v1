@@ -5,6 +5,7 @@
  */
 
 import { createHash } from "crypto";
+import { getRedisClient, hasRedisConfig } from "@/lib/redis";
 
 const PREFIX = "ai:cache";
 const TTL_ITINERARY = 600;   // 10 min
@@ -16,23 +17,12 @@ function hash(input: string): string {
     return createHash("sha256").update(input).digest("hex").slice(0, 32);
 }
 
-async function getRedis() {
-    const { Redis } = await import("@upstash/redis");
-    return new Redis({
-        url: process.env.UPSTASH_REDIS_REST_URL!,
-        token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-    });
-}
-
-function hasRedis(): boolean {
-    return !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN);
-}
-
 async function getCached<T>(key: string): Promise<T | null> {
-    if (!hasRedis()) return null;
+    if (!hasRedisConfig()) return null;
     try {
-        const redis = await getRedis();
-        const raw = await redis.get<string>(key);
+        const redis = getRedisClient();
+        if (!redis) return null;
+        const raw = await redis.get(key);
         return raw ? (JSON.parse(raw) as T) : null;
     } catch {
         return null;
@@ -40,9 +30,10 @@ async function getCached<T>(key: string): Promise<T | null> {
 }
 
 async function setCached(key: string, value: unknown, ttlSec: number): Promise<void> {
-    if (!hasRedis()) return;
+    if (!hasRedisConfig()) return;
     try {
-        const redis = await getRedis();
+        const redis = getRedisClient();
+        if (!redis) return;
         await redis.setex(key, ttlSec, JSON.stringify(value));
     } catch {
         // Cache write failure is non-fatal

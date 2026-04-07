@@ -6,19 +6,18 @@
  * so recent context is always preserved without an extra LLM call.
  *
  * Storage strategy:
- *   Production (UPSTASH_REDIS_REST_URL set): Upstash Redis via REST API.
+ *   Production (REDIS_URL set): Redis.
  *     Each session is a JSON blob stored with a 30-minute EX TTL.
  *     This is safe across serverless cold starts and multiple instances.
  *
  *   Development / no Redis: In-process Map with lazy TTL pruning.
  *     Sessions are lost on cold starts (acceptable for local dev).
  *
- * No external SDK required for Redis — uses the Upstash REST HTTP API
- * (already a dependency via @upstash/redis in package.json).
+ * Redis access uses a shared server-side client configured via REDIS_URL.
  */
 
-import { Redis } from "@upstash/redis";
 import { logError } from "@/infrastructure/logger";
+import { getRedisClient } from "@/lib/redis";
 
 type Role = "user" | "assistant";
 
@@ -49,25 +48,6 @@ const PRUNE_EVERY = 30;                    // in-memory fallback: prune every N 
 const MAX_CONTEXT_CHARS = 2_000;
 
 // ─── Redis client (optional) ──────────────────────────────────────────────────
-
-function tryCreateRedis(): Redis | null {
-    const url = process.env.UPSTASH_REDIS_REST_URL;
-    const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-    if (!url || !token) return null;
-    try {
-        return new Redis({ url, token });
-    } catch {
-        return null;
-    }
-}
-
-// Lazily initialized so the module can load without Redis in test environments.
-let _redis: Redis | null | undefined = undefined;
-
-function getRedis(): Redis | null {
-    if (_redis === undefined) _redis = tryCreateRedis();
-    return _redis;
-}
 
 // ─── In-memory fallback store ─────────────────────────────────────────────────
 
@@ -110,19 +90,24 @@ function applyCapAndCompress(session: Session): Session {
 
 // ─── Redis-backed read/write ──────────────────────────────────────────────────
 
-async function redisGet(redis: Redis, sessionId: string): Promise<Session | null> {
+async function redisGet(sessionId: string): Promise<Session | null> {
     try {
-        const raw = await redis.get<Session>(`mem:${sessionId}`);
-        return raw ?? null;
+        const redis = getRedisClient();
+        if (!redis) return null;
+        const raw = await redis.get(`mem:${sessionId}`);
+        if (!raw) return null;
+        return JSON.parse(raw) as Session;
     } catch (err) {
         logError("[memory] Redis GET failed, using in-memory fallback", err);
         return null;
     }
 }
 
-async function redisSet(redis: Redis, sessionId: string, session: Session): Promise<void> {
+async function redisSet(sessionId: string, session: Session): Promise<void> {
     try {
-        await redis.set(`mem:${sessionId}`, session, { ex: SESSION_TTL_SEC });
+        const redis = getRedisClient();
+        if (!redis) return;
+        await redis.set(`mem:${sessionId}`, JSON.stringify(session), "EX", SESSION_TTL_SEC);
     } catch (err) {
         logError("[memory] Redis SET failed, falling back to in-memory store", err);
         // Persist to in-memory store so the session is not lost for this instance.
@@ -139,13 +124,13 @@ async function redisSet(redis: Redis, sessionId: string, session: Session): Prom
  * compressed into the session preamble so recent context is always preserved.
  */
 export async function updateMemory(sessionId: string, role: Role, content: string): Promise<void> {
-    const redis = getRedis();
+    const redis = getRedisClient();
     const now = Date.now();
 
     let session: Session;
 
     if (redis) {
-        session = (await redisGet(redis, sessionId)) ?? { messages: [], lastTouchedMs: now };
+        session = (await redisGet(sessionId)) ?? { messages: [], lastTouchedMs: now };
     } else {
         if (++writeCount % PRUNE_EVERY === 0) pruneExpiredSessions();
         session = memoryStore.get(sessionId) ?? { messages: [], lastTouchedMs: now };
@@ -156,7 +141,7 @@ export async function updateMemory(sessionId: string, role: Role, content: strin
     applyCapAndCompress(session);
 
     if (redis) {
-        await redisSet(redis, sessionId, session);
+        await redisSet(sessionId, session);
     } else {
         memoryStore.set(sessionId, session);
     }
@@ -167,11 +152,11 @@ export async function updateMemory(sessionId: string, role: Role, content: strin
  * Returns an empty string when the session has no prior history.
  */
 export async function buildMemoryContext(sessionId: string): Promise<string> {
-    const redis = getRedis();
+    const redis = getRedisClient();
     let session: Session | null = null;
 
     if (redis) {
-        session = await redisGet(redis, sessionId);
+        session = await redisGet(sessionId);
     } else {
         session = memoryStore.get(sessionId) ?? null;
     }
@@ -210,7 +195,7 @@ export function trimToTokenLimit(text: string, maxChars: number): string {
 
 /** Remove a specific session from both Redis and the in-memory fallback. */
 export async function clearMemory(sessionId: string): Promise<void> {
-    const redis = getRedis();
+    const redis = getRedisClient();
     if (redis) {
         try {
             await redis.del(`mem:${sessionId}`);

@@ -14,6 +14,7 @@
  */
 
 import { logError } from "@/infrastructure/logger";
+import { getRedisClient, hasRedisConfig } from "@/lib/redis";
 import { z } from "zod";
 import { whereAiCallFailedSince } from "@/lib/metrics/aiUsageLog";
 
@@ -174,18 +175,17 @@ async function verifyMonitoring(): Promise<ActionResult> {
 }
 
 async function clearCache(): Promise<ActionResult> {
-    const url   = process.env.UPSTASH_REDIS_REST_URL;
-    const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-
-    if (!url || !token) {
-        return { success: false, message: "Redis not configured — UPSTASH_REDIS_REST_URL / TOKEN missing" };
+    if (!hasRedisConfig()) {
+        return { success: false, message: "Redis not configured — REDIS_URL missing" };
     }
 
-    const { Redis } = await import("@upstash/redis");
-    const redis = new Redis({ url, token });
+    const redis = getRedisClient();
+    if (!redis) {
+        return { success: false, message: "Redis not configured — REDIS_URL missing" };
+    }
     const keys  = await redis.keys("destination-image:*");
     if (keys.length > 0) {
-        await redis.del(...(keys as [string, ...string[]]));
+        await redis.del(...keys);
     }
 
     return {
