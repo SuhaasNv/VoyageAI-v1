@@ -28,7 +28,9 @@
       "Bash(grep -r unknown[ /Users/suhaasnv/Documents/Desktop ALT/portfolioprojects/voyageai_1/src --include=*.ts --include=*.tsx)",
       "Bash(grep -r \"sessionStorage\\\\|localStorage\" /Users/suhaasnv/Documents/Desktop ALT/portfolioprojects/voyageai_1/src --include=*.ts --include=*.tsx)",
       "Bash(grep -r \"setInterval\\\\|setTimeout\" /Users/suhaasnv/Documents/Desktop ALT/portfolioprojects/voyageai_1/src --include=*.ts --include=*.tsx)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(grep -l \"GET\\\\|POST\" src/app/api/ai/*.ts)",
+      "Bash(xargs -I {} basename {})"
     ]
   }
 }

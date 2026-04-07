@@ -18,6 +18,7 @@ import { logError } from "@/infrastructure/logger";
 import { runWithRequestContext } from "@/lib/requestContext";
 import { checkRateLimit } from "@/security/rateLimiter";
 import { unauthorizedResponse } from "@/lib/api/response";
+import { packingCacheKey, getPackingCached, setPackingCached } from "@/lib/ai/cache";
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
     return runWithRequestContext(req, async () => {
@@ -29,7 +30,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     try {
         await checkRateLimit(`ai:${auth.user.sub}:packing`);
+
+        const { destination, startDate, endDate, climate, activities, travelDNA } = validation.data;
+        const cacheKey = packingCacheKey({ destination, startDate, endDate, climate, activities, travelDNA });
+        const cached = await getPackingCached(cacheKey);
+        if (cached) {
+            return NextResponse.json({ success: true, data: cached }, { status: 200 });
+        }
+
         const result = await generatePackingList(validation.data);
+        await setPackingCached(cacheKey, result);
         return NextResponse.json({ success: true, data: result }, { status: 200 });
     } catch (err) {
         logError("[API] Packing list generation error", err);

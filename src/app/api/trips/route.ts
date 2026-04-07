@@ -22,6 +22,29 @@ import {
     getDestinationImage,
     getDestinationImageCachedOnly,
 } from "@/lib/services/image.service";
+import { getRedisClient, hasRedisConfig } from "@/lib/redis";
+
+const TTL_ACTIVITY_GLOBAL_SEC = 30 * 24 * 60 * 60;  // 30d
+const TTL_ACTIVITY_USER_SEC  = 90 * 24 * 60 * 60;  // 90d
+
+/** Fire-and-forget: record trip creation in Redis Sorted Sets for admin insights. */
+function recordTripActivity(userId: string, tripId: string, destination: string): void {
+    if (!hasRedisConfig()) return;
+    const redis = getRedisClient();
+    if (!redis) return;
+    const score = Date.now();
+    const globalKey = "activity:trips:global";
+    const userKey   = `activity:user:${userId}:trips`;
+    // Write both sets, set/refresh TTL, trim global to last 10k entries
+    void redis.zadd(globalKey, score, `${userId}:${destination}`)
+        .then(() => redis.expire(globalKey, TTL_ACTIVITY_GLOBAL_SEC))
+        .then(() => redis.zremrangebyrank(globalKey, 0, -10001))
+        .catch(() => {});
+    void redis.zadd(userKey, score, tripId)
+        .then(() => redis.expire(userKey, TTL_ACTIVITY_USER_SEC))
+        .then(() => redis.zremrangebyrank(userKey, 0, -1001))  // cap per-user at 1000
+        .catch(() => {});
+}
 
 const TripStyleEnum = z.enum(["relaxed", "creative", "exciting", "luxury", "budget"]);
 
@@ -78,6 +101,7 @@ export async function POST(req: NextRequest) {
                 },
             });
 
+            recordTripActivity(auth.user.sub, trip.id, destination);
             return successResponse<TripDTO>(serializeTrip(trip), 201);
         } catch (err) {
             logError("[POST /api/trips] DB error", err);

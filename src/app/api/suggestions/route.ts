@@ -23,6 +23,10 @@ import {
     getDestinationsCached,
     setDestinationsCached,
     STALE_DESTINATIONS_MS,
+    acquireRefreshMutex,
+    travelDNACacheKey,
+    getTravelDNACached,
+    setTravelDNACached,
 } from "@/lib/ai/cache";
 import { generateSuggestionsForTrip } from "@/tools/suggestionTool";
 import { rankSuggestions } from "@/lib/ai/travelDNARules";
@@ -41,12 +45,17 @@ export async function GET(req: NextRequest) {
         try {
             await checkRateLimit(`ai:${auth.user.sub}:suggestions`);
 
-            // Fetch Travel DNA once — used for both trip-level ranking and destination scoring.
-            const preference = await prisma.travelPreference.findUnique({
-                where: { userId: auth.user.sub },
-                select: { data: true },
-            });
-            const dnaData = (preference?.data ?? null) as Record<string, unknown> | null;
+            // Fetch Travel DNA — Redis-cached to avoid DB round-trip on every AI call.
+            const dnaKey = travelDNACacheKey(auth.user.sub);
+            let dnaData = await getTravelDNACached(dnaKey);
+            if (dnaData === null) {
+                const preference = await prisma.travelPreference.findUnique({
+                    where: { userId: auth.user.sub },
+                    select: { data: true },
+                });
+                dnaData = (preference?.data ?? null) as Record<string, unknown> | null;
+                if (dnaData !== null) await setTravelDNACached(dnaKey, dnaData);
+            }
 
             const now = new Date();
             const trips = await prisma.trip.findMany({
@@ -106,10 +115,13 @@ export async function GET(req: NextRequest) {
                 console.log("[REDIS] suggestions cache hit");
                 destinations = destCached.data as DestinationSuggestion[];
 
-                // Stale-while-revalidate: refresh silently if older than 5h
+                // Stale-while-revalidate: refresh silently if older than 5h.
+                // Mutex prevents concurrent requests from all firing a refresh.
                 const age = Date.now() - destCached.cachedAt;
                 if (age > STALE_DESTINATIONS_MS) {
                     void (async () => {
+                        const acquired = await acquireRefreshMutex(auth.user.sub);
+                        if (!acquired) return; // Another request is already refreshing
                         try {
                             const fresh = await generateSuggestions(allTrips, dnaData, 5);
                             await setDestinationsCached(destKey, fresh);

@@ -13,6 +13,7 @@
  */
 
 import { logError } from "@/infrastructure/logger";
+import { brightDataCacheKey, getBrightDataCached, setBrightDataCached } from "@/lib/ai/cache";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -48,6 +49,13 @@ async function queryBrightData(query: string): Promise<string> {
         return "";
     }
 
+    // ── Redis cache check ─────────────────────────────────────────────────────
+    const cacheKey = brightDataCacheKey(query);
+    const cached = await getBrightDataCached(cacheKey);
+    if (cached !== null) {
+        return cached;
+    }
+
     try {
         const response = await fetch(BRIGHT_DATA_API_URL, {
             method: "POST",
@@ -79,7 +87,10 @@ async function queryBrightData(query: string): Promise<string> {
             .filter(Boolean)
             .join("\n");
 
-        return snippets.slice(0, MAX_SNIPPET_CHARS);
+        const result = snippets.slice(0, MAX_SNIPPET_CHARS);
+        // Only cache non-empty results — don't persist API failures for 6h
+        if (result) await setBrightDataCached(cacheKey, result);
+        return result;
     } catch (err) {
         logError("[BrightData] fetch failed", { query, err });
         return "";

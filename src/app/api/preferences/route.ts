@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuthContext } from "@/lib/api/request";
 import { successResponse, errorResponse } from "@/lib/api/response";
 import { runWithRequestContext } from "@/lib/requestContext";
+import { invalidateTravelDNACache } from "@/lib/ai/cache";
 
 export async function GET(req: NextRequest) {
     return runWithRequestContext(req, async () => {
@@ -53,6 +54,9 @@ export async function POST(req: NextRequest) {
                     data,
                 },
             });
+
+            // Invalidate DNA cache so next AI call picks up the fresh preferences.
+            void invalidateTravelDNACache(auth.user.sub);
 
             return successResponse({ preference });
         } catch (err) {

@@ -8,10 +8,16 @@ import { createHash } from "crypto";
 import { getRedisClient, hasRedisConfig } from "@/lib/redis";
 
 const PREFIX = "ai:cache";
-const TTL_ITINERARY = 600;   // 10 min
-const TTL_REOPTIMIZE = 600;  // 10 min
-const TTL_CHAT = 300;        // 5 min
+const TTL_ITINERARY = 600;             // 10 min
+const TTL_REOPTIMIZE = 600;            // 10 min
+const TTL_CHAT = 300;                  // 5 min
 const TTL_SUGGESTIONS = 6 * 60 * 60;  // 6h
+const TTL_PACKING = 6 * 60 * 60;      // 6h
+const TTL_SIMULATION = 10 * 60;        // 10 min
+const TTL_COMPARE = 60 * 60;           // 1h
+const TTL_BRIGHT_DATA = 6 * 60 * 60;  // 6h
+const TTL_TRAVEL_DNA = 60 * 60;        // 1h
+const TTL_REFRESH_MUTEX = 60;          // 60s — stale-while-revalidate lock
 
 function hash(input: string): string {
     return createHash("sha256").update(input).digest("hex").slice(0, 32);
@@ -177,4 +183,155 @@ export async function getDestinationsCached(key: string): Promise<DestinationsCa
 export async function setDestinationsCached(key: string, data: unknown[]): Promise<void> {
     const entry: DestinationsCacheEntry = { data, cachedAt: Date.now() };
     await setCached(key, entry, TTL_DESTINATIONS);
+}
+
+// ─── Stale-while-revalidate mutex ────────────────────────────────────────────
+// Prevents multiple concurrent background refreshes (thundering herd).
+
+export async function acquireRefreshMutex(userId: string): Promise<boolean> {
+    if (!hasRedisConfig()) return true; // No Redis — always allow
+    try {
+        const redis = getRedisClient();
+        if (!redis) return true;
+        const result = await redis.set(
+            `dest:refresh:lock:${userId}`,
+            "1",
+            "EX",
+            TTL_REFRESH_MUTEX,
+            "NX"
+        );
+        return result === "OK"; // true = acquired, false = already locked
+    } catch {
+        return true; // Fail open — allow refresh on Redis error
+    }
+}
+
+// ─── Packing list ─────────────────────────────────────────────────────────────
+
+export function packingCacheKey(request: {
+    destination: string;
+    startDate: string;
+    endDate: string;
+    climate: string;
+    activities?: string[];
+    travelDNA?: unknown;
+}): string {
+    const payload = JSON.stringify({
+        d: request.destination,
+        s: request.startDate,
+        e: request.endDate,
+        c: request.climate,
+        act: [...(request.activities ?? [])].sort(),
+        dna: request.travelDNA ?? null,
+    });
+    return `${PREFIX}:packing:${hash(payload)}`;
+}
+
+export async function getPackingCached(key: string): Promise<unknown | null> {
+    return getCached(key);
+}
+
+export async function setPackingCached(key: string, value: unknown): Promise<void> {
+    await setCached(key, value, TTL_PACKING);
+}
+
+// ─── Simulation ───────────────────────────────────────────────────────────────
+
+export function simulationCacheKey(request: {
+    tripId?: string;
+    itinerary: unknown;
+    scenarios: string[];
+    simulationDepth?: string;
+}): string {
+    const payload = JSON.stringify({
+        t: request.tripId ?? "",
+        i: request.itinerary,
+        s: [...request.scenarios].sort(),
+        d: request.simulationDepth ?? "detailed",
+    });
+    return `${PREFIX}:simulation:${hash(payload)}`;
+}
+
+export async function getSimulationCached(key: string): Promise<unknown | null> {
+    return getCached(key);
+}
+
+export async function setSimulationCached(key: string, value: unknown): Promise<void> {
+    await setCached(key, value, TTL_SIMULATION);
+}
+
+// ─── Compare ──────────────────────────────────────────────────────────────────
+
+export function compareCacheKey(request: {
+    destinationA: string;
+    destinationB: string;
+    startDate: string;
+    endDate: string;
+    budget: number;
+    currency?: string;
+}): string {
+    // Normalise dest order so A-vs-B == B-vs-A
+    const [d1, d2] = [request.destinationA, request.destinationB].sort();
+    const payload = JSON.stringify({
+        a: d1,
+        b: d2,
+        s: request.startDate,
+        e: request.endDate,
+        bgt: request.budget,
+        cur: request.currency ?? "USD",
+    });
+    return `${PREFIX}:compare:${hash(payload)}`;
+}
+
+export async function getCompareCached(key: string): Promise<unknown | null> {
+    return getCached(key);
+}
+
+export async function setCompareCached(key: string, value: unknown): Promise<void> {
+    await setCached(key, value, TTL_COMPARE);
+}
+
+// ─── Bright Data SERP ─────────────────────────────────────────────────────────
+
+export function brightDataCacheKey(query: string): string {
+    return `brightdata:${hash(query.toLowerCase().trim())}`;
+}
+
+export async function getBrightDataCached(key: string): Promise<string | null> {
+    return getCached<string>(key);
+}
+
+export async function setBrightDataCached(key: string, value: string): Promise<void> {
+    await setCached(key, value, TTL_BRIGHT_DATA);
+}
+
+// ─── Travel DNA preference ────────────────────────────────────────────────────
+
+export function travelDNACacheKey(userId: string): string {
+    return `user:dna:${userId}`;
+}
+
+export async function getTravelDNACached(
+    key: string
+): Promise<Record<string, unknown> | null> {
+    return getCached<Record<string, unknown>>(key);
+}
+
+export async function setTravelDNACached(
+    key: string,
+    value: Record<string, unknown> | null
+): Promise<void> {
+    if (value === null) return;
+    await setCached(key, value, TTL_TRAVEL_DNA);
+}
+
+export async function invalidateTravelDNACache(userId: string): Promise<void> {
+    if (!hasRedisConfig()) return;
+    try {
+        const redis = getRedisClient();
+        if (!redis) return;
+        await redis.del(travelDNACacheKey(userId));
+    } catch {
+        // Non-fatal
+    }
 }

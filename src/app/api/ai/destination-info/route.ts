@@ -13,6 +13,7 @@ import {
     getDestinationInfoCached,
     setDestinationInfoCached,
 } from "@/lib/ai/cache";
+import { getRedisClient, hasRedisConfig } from "@/lib/redis";
 
 export const runtime = "nodejs";
 
@@ -41,6 +42,13 @@ export async function GET(req: NextRequest) {
 
         try {
             await checkRateLimit(`ai:${auth.user.sub}:destination-info`);
+
+            // ── HyperLogLog: track unique users per destination ───────────────
+            if (hasRedisConfig()) {
+                const redis = getRedisClient();
+                const slug = name.toLowerCase().replace(/\s+/g, "-");
+                void redis?.pfadd(`hll:dest:views:${slug}`, auth.user.sub);
+            }
 
             // ── Redis cache check ─────────────────────────────────────────────
             const cacheKey = destinationInfoCacheKey(name);

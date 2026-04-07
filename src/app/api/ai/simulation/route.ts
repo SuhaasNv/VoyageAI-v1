@@ -18,6 +18,7 @@ import { logError } from "@/infrastructure/logger";
 import { runWithRequestContext } from "@/lib/requestContext";
 import { checkRateLimit } from "@/security/rateLimiter";
 import { unauthorizedResponse } from "@/lib/api/response";
+import { simulationCacheKey, getSimulationCached, setSimulationCached } from "@/lib/ai/cache";
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
     return runWithRequestContext(req, async () => {
@@ -29,7 +30,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     try {
         await checkRateLimit(`ai:${auth.user.sub}:simulation`);
+
+        const { tripId, itinerary, scenarios, simulationDepth } = validation.data;
+        const cacheKey = simulationCacheKey({ tripId, itinerary, scenarios, simulationDepth });
+        const cached = await getSimulationCached(cacheKey);
+        if (cached) {
+            return NextResponse.json({ success: true, data: cached }, { status: 200 });
+        }
+
         const result = await simulateTrip(validation.data);
+        await setSimulationCached(cacheKey, result);
         return NextResponse.json({ success: true, data: result }, { status: 200 });
     } catch (err) {
         logError("[API] Simulation error", err);

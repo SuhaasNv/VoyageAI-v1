@@ -18,6 +18,7 @@ import { runWithRequestContext } from "@/lib/requestContext";
 import { checkRateLimit } from "@/security/rateLimiter";
 import { unauthorizedResponse } from "@/lib/api/response";
 import { sanitizeUserInput } from "@/security/safety";
+import { compareCacheKey, getCompareCached, setCompareCached } from "@/lib/ai/cache";
 
 const CompareSchema = z.object({
     destinationA: z.string().min(2).max(100),
@@ -42,11 +43,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             // Separate rate-limit bucket so compare doesn't eat the itinerary quota.
             await checkRateLimit(`ai:${auth.user.sub}:compare`);
 
+            const cacheKey = compareCacheKey({
+                destinationA,
+                destinationB,
+                startDate: rest.startDate,
+                endDate: rest.endDate,
+                budget: rest.budget,
+                currency: rest.currency,
+            });
+            const cached = await getCompareCached(cacheKey);
+            if (cached) {
+                return NextResponse.json({ success: true, data: cached }, { status: 200 });
+            }
+
             const result = await compareTrips(
                 sanitizeUserInput(destinationA),
                 sanitizeUserInput(destinationB),
                 rest,
             );
+            await setCompareCached(cacheKey, result);
 
             return NextResponse.json({ success: true, data: result }, { status: 200 });
         } catch (err) {
