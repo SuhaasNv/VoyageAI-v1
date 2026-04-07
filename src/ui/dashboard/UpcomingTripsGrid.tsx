@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { MapPin, ChevronRight, Star, MoreVertical, Pencil, Trash2, Plane, Plus, ImageIcon } from "lucide-react";
+import { MapPin, ChevronRight, Star, MoreVertical, Pencil, Trash2, Plane, Plus, ImageIcon, ArrowRight } from "lucide-react";
+import { motion } from "framer-motion";
 import Link from "next/link";
 import Image from "next/image";
 import { updateTrip, type Trip } from "@/lib/api";
@@ -140,6 +141,89 @@ function TripCard({
     );
 }
 
+const SUGGESTIONS = [
+    { label: "Tokyo", flag: "🇯🇵" },
+    { label: "Paris", flag: "🇫🇷" },
+    { label: "Bali", flag: "🇮🇩" },
+];
+
+function PlanNewTripPanel({ onNewTripClick }: { onNewTripClick?: () => void }) {
+    const [destination, setDestination] = useState("");
+
+    function handleSubmit() {
+        onNewTripClick?.();
+    }
+
+    return (
+        <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            whileHover={{ y: -2 }}
+            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+            className="group relative overflow-hidden rounded-[1.5rem] bg-gradient-to-br from-[#0B0F14] to-[#111827] border border-white/[0.07] p-6 flex flex-col gap-5 hover:border-[#10B981]/25 hover:shadow-[0_8px_40px_rgba(16,185,129,0.09)] transition-[border-color,box-shadow] duration-300 cursor-default"
+        >
+            {/* Ambient glow — brightens on hover */}
+            <div className="absolute inset-0 bg-gradient-to-br from-[#10B981]/[0.04] via-transparent to-indigo-500/[0.04] pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-br from-[#10B981]/[0.06] via-transparent to-indigo-500/[0.06] opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+            {/* Corner orb */}
+            <div className="absolute -top-10 -right-10 w-36 h-36 rounded-full bg-[#10B981]/[0.07] blur-2xl pointer-events-none" />
+
+            {/* Header */}
+            <div className="relative z-10">
+                <div className="flex items-center gap-2 mb-2.5">
+                    <div className="w-6 h-6 rounded-lg bg-[#10B981]/15 border border-[#10B981]/20 flex items-center justify-center">
+                        <Plane className="w-3.5 h-3.5 text-[#10B981]" />
+                    </div>
+                    <span className="text-[10px] font-bold tracking-[0.15em] text-[#10B981] uppercase">AI-Powered</span>
+                </div>
+                <h3 className="text-white font-bold text-lg leading-tight">Plan your next adventure</h3>
+                <p className="text-zinc-500 text-xs mt-1 leading-relaxed">Tell us where you want to go — we&apos;ll build everything for you</p>
+            </div>
+
+            {/* Input */}
+            <div className="relative z-10 flex items-center gap-2 bg-white/[0.04] border border-white/[0.08] rounded-xl px-3.5 py-2.5 focus-within:border-[#10B981]/40 focus-within:bg-white/[0.06] focus-within:shadow-[0_0_0_1px_rgba(16,185,129,0.12)] transition-all duration-200">
+                <MapPin className="w-3.5 h-3.5 text-zinc-600 shrink-0" />
+                <input
+                    type="text"
+                    placeholder="Where do you want to go?"
+                    className="bg-transparent text-sm text-white placeholder:text-zinc-600 outline-none flex-1 min-w-0"
+                    value={destination}
+                    onChange={(e) => setDestination(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }}
+                />
+                <button
+                    type="button"
+                    onClick={handleSubmit}
+                    className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${
+                        destination
+                            ? "bg-[#10B981] text-white shadow-[0_0_16px_rgba(16,185,129,0.4)]"
+                            : "bg-white/[0.06] text-zinc-500 hover:bg-white/[0.09] hover:text-white"
+                    }`}
+                >
+                    {destination ? "Go" : "Start"}
+                    <ArrowRight className="w-3 h-3" />
+                </button>
+            </div>
+
+            {/* Quick suggestions */}
+            <div className="relative z-10 flex items-center gap-2 flex-wrap">
+                <span className="text-zinc-600 text-[11px] font-medium">Popular:</span>
+                {SUGGESTIONS.map(({ label, flag }) => (
+                    <button
+                        key={label}
+                        type="button"
+                        onClick={() => { setDestination(label); onNewTripClick?.(); }}
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.03] border border-white/[0.07] text-[11px] text-zinc-400 hover:text-white hover:border-[#10B981]/30 hover:bg-[#10B981]/[0.08] transition-all duration-200 font-medium"
+                    >
+                        <span>{flag}</span>
+                        <span>{label}</span>
+                    </button>
+                ))}
+            </div>
+        </motion.div>
+    );
+}
+
 export function UpcomingTripsGrid({ trips, isLoading, onTripsChange, onNewTripClick, isSearching }: UpcomingTripsGridProps) {
     const [menuTripId, setMenuTripId] = useState<string | null>(null);
     const [editTrip, setEditTrip] = useState<Trip | null>(null);
@@ -257,15 +341,7 @@ export function UpcomingTripsGrid({ trips, isLoading, onTripsChange, onNewTripCl
                             />
                         ))}
 
-                        <button
-                            onClick={onNewTripClick}
-                            className="flex flex-col items-center justify-center gap-3 bg-white/[0.01] border border-dashed border-white/10 rounded-[1.5rem] transition-all duration-200 ease-out text-zinc-500 hover:text-white hover:bg-white/[0.03] hover:border-[#10B981]/30 group"
-                        >
-                            <div className="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center group-hover:bg-[#10B981]/10 group-hover:border-[#10B981]/30 transition-all duration-200">
-                                <span className="text-xl font-light group-hover:text-[#10B981] transition-colors">+</span>
-                            </div>
-                            <span className="text-xs font-semibold uppercase tracking-wider">Plan New Trip</span>
-                        </button>
+                        <PlanNewTripPanel onNewTripClick={onNewTripClick} />
                     </>
                 )}
             </div>
