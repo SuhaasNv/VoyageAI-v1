@@ -279,6 +279,9 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
         setIsSaving(true);
         try {
             await callApi("save", { tripId, safetyResult: state.safetyResult });
+            // Mark the session as completed — this synchronously clears localStorage
+            // via the useFlowState effect, so the resume banner never appears after save.
+            dispatch({ type: "SAVED" });
             // Confetti burst
             if (!prefersReduced) {
                 confetti({ particleCount: 80, spread: 70, origin: { x: 0.2, y: 0.8 }, colors: ["#10B981", "#f59e0b", "#ffffff"] });
@@ -291,7 +294,7 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
         } finally {
             setIsSaving(false);
         }
-    }, [state.safetyResult, tripId, onComplete, prefersReduced]);
+    }, [state.safetyResult, tripId, onComplete, prefersReduced, dispatch]);
 
     // Auto-start planner only after CSRF token is confirmed ready
     useEffect(() => {

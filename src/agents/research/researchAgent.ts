@@ -23,7 +23,9 @@ import {
     searchAttractions,
     searchHotels,
     searchRestaurants,
+    type BrightDataResultPayload,
 } from "../../tools/brightDataTool";
+import { isBrightDataDisabled } from "../../tools/brightDataHealthCheck";
 import {
     RESEARCH_SYSTEM_PROMPT,
     RESEARCH_SCHEMA_INSTRUCTION,
@@ -247,23 +249,57 @@ export class ResearchAgent {
         const budget = budgetHint(context.preferences, context.durationDays);
         const themes = context.days.map((d) => d.theme).join(", ");
 
-        const [attractionsRaw, hotelsRaw, restaurantsRaw] = await Promise.all([
-            searchAttractions(context.destination, themes),
-            searchHotels(context.destination, budget),
-            searchRestaurants(context.destination),
-        ]);
+        let attractions: BrightDataResultPayload | null = null;
+        let hotels: BrightDataResultPayload | null = null;
+        let restaurants: BrightDataResultPayload | null = null;
+        let dataSource: "brightdata" | "unverified" = "brightdata";
 
-        const hasGrounding = attractionsRaw || hotelsRaw || restaurantsRaw;
+        if (isBrightDataDisabled()) {
+            // Bright Data is known-misconfigured (404 on startup probe) — skip calls entirely.
+            logError("brightdata.integration_disabled", {
+                destination: context.destination,
+                message: "Skipping Bright Data calls — BRIGHTDATA_DISABLED flag is set. Operating in LLM-only mode.",
+            });
+            dataSource = "unverified";
+        } else {
+            const [attractionsRes, hotelsRes, restaurantsRes] = await Promise.allSettled([
+                searchAttractions(context.destination, context.durationDays, themes, context.preferences?.pace),
+                searchHotels(context.destination, budget),
+                searchRestaurants(context.destination),
+            ]);
+
+            const getRes = (r: PromiseSettledResult<BrightDataResultPayload>) => r.status === "fulfilled" ? r.value : null;
+            attractions = getRes(attractionsRes);
+            hotels = getRes(hotelsRes);
+            restaurants = getRes(restaurantsRes);
+
+            // If every search came back as failed/misconfigured, treat this request as LLM-only.
+            const allFailed = [attractions, hotels, restaurants].every(
+                (r) => !r || r.status === "failed"
+            );
+            if (allFailed) {
+                dataSource = "unverified";
+                logError("brightdata.all_searches_failed", {
+                    destination: context.destination,
+                    message: "All Bright Data searches returned failed status. Operating in LLM-only mode.",
+                });
+            }
+        }
+
+        const hasGrounding = (attractions?.data?.length || 0) + (hotels?.data?.length || 0) + (restaurants?.data?.length || 0) > 0;
         if (!hasGrounding) {
             logInfo("[ResearchAgent] no Bright Data results — proceeding with LLM-only generation");
         }
-        logStructured({ layer: "agent", agent: "research", step: "input", requestId, data: { groundingAttractions: !!attractionsRaw, groundingHotels: !!hotelsRaw, groundingRestaurants: !!restaurantsRaw } });
+        logStructured({ layer: "agent", agent: "research", step: "input", requestId, data: { groundingAttractions: !!attractions?.data?.length, groundingHotels: !!hotels?.data?.length, groundingRestaurants: !!restaurants?.data?.length, dataSource } });
 
         // ── Step 2: Build grounding context ───────────────────────────────
         const groundingParts: string[] = [];
-        if (attractionsRaw) groundingParts.push(`## Attractions & Experiences\n${attractionsRaw}`);
-        if (hotelsRaw) groundingParts.push(`## Hotels & Accommodation\n${hotelsRaw}`);
-        if (restaurantsRaw) groundingParts.push(`## Restaurants & Dining\n${restaurantsRaw}`);
+        
+        const formatEntities = (entities: BrightDataResultPayload["data"]) => entities.map((e) => `- ${e.name}${e.rating ? ` (Rating: ${e.rating})` : ''}: ${e.snippet} [Source: ${e.source}]`).join("\n");
+
+        if (attractions?.data?.length) groundingParts.push(`## Attractions & Experiences\n${formatEntities(attractions.data)}`);
+        if (hotels?.data?.length) groundingParts.push(`## Hotels & Accommodation\n${formatEntities(hotels.data)}`);
+        if (restaurants?.data?.length) groundingParts.push(`## Restaurants & Dining\n${formatEntities(restaurants.data)}`);
         const groundingContext = groundingParts.join("\n\n");
 
         // ── Step 3: Build LLM prompt ───────────────────────────────────────
@@ -330,7 +366,7 @@ Instructions:
             const raw = parseJSONResponse<unknown>(llmResponse.content);
             const sanitized = validateAndSanitize(raw, context);
             const result = mergeIntoContext(context, sanitized);
-            logStructured({ layer: "agent", agent: "research", step: "output", requestId, data: { days: result.days.length, hotels: result.hotels.length, totalActivities: result.days.reduce((s, d) => s + d.activities.length, 0) } });
+            logStructured({ layer: "agent", agent: "research", step: "output", requestId, data: { days: result.days.length, hotels: result.hotels.length, totalActivities: result.days.reduce((s, d) => s + d.activities.length, 0), dataSource } });
             return result;
         };
 

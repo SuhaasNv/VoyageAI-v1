@@ -13,7 +13,7 @@ interface UpcomingTripsGridProps {
     trips: Trip[];
     isLoading?: boolean;
     onTripsChange?: (trips: Trip[]) => void;
-    onNewTripClick?: () => void;
+    onNewTripClick?: (destination?: string) => void;
     onTicketUploadClick?: () => void;
     isSearching?: boolean;
 }
@@ -148,11 +148,11 @@ const SUGGESTIONS = [
     { label: "Bali", flag: "🇮🇩" },
 ];
 
-function PlanNewTripPanel({ onNewTripClick, onTicketUploadClick }: { onNewTripClick?: () => void; onTicketUploadClick?: () => void }) {
+function PlanNewTripPanel({ onNewTripClick, onTicketUploadClick }: { onNewTripClick?: (dest?: string) => void; onTicketUploadClick?: () => void }) {
     const [destination, setDestination] = useState("");
 
     function handleSubmit() {
-        onNewTripClick?.();
+        onNewTripClick?.(destination);
     }
 
     return (
@@ -213,7 +213,7 @@ function PlanNewTripPanel({ onNewTripClick, onTicketUploadClick }: { onNewTripCl
                     <button
                         key={label}
                         type="button"
-                        onClick={() => { setDestination(label); onNewTripClick?.(); }}
+                        onClick={() => { setDestination(label); onNewTripClick?.(label); }}
                         className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/[0.03] border border-white/[0.07] text-[11px] text-zinc-400 hover:text-white hover:border-[#10B981]/30 hover:bg-[#10B981]/[0.08] transition-all duration-200 font-medium"
                     >
                         <span>{flag}</span>
@@ -293,9 +293,12 @@ export function UpcomingTripsGrid({ trips, isLoading, onTripsChange, onNewTripCl
                     <p className="text-xs text-zinc-500 font-medium">Your upcoming scheduled travels</p>
                 </div>
                 {!isSearching && (
-                    <button className="text-xs font-semibold text-zinc-400 hover:text-white transition-colors flex items-center gap-1 bg-white/[0.02] border border-white/10 px-3 py-1.5 rounded-full hover:bg-white/5">
+                    <Link
+                        href="/dashboard/trips"
+                        className="text-xs font-semibold text-zinc-400 hover:text-white transition-colors flex items-center gap-1 bg-white/[0.02] border border-white/10 px-3 py-1.5 rounded-full hover:bg-white/5"
+                    >
                         View all <ChevronRight className="w-3 h-3" />
-                    </button>
+                    </Link>
                 )}
             </div>
 
@@ -328,7 +331,7 @@ export function UpcomingTripsGrid({ trips, isLoading, onTripsChange, onNewTripCl
                             </div>
                             {!isSearching && (
                                 <button
-                                    onClick={onNewTripClick}
+                                    onClick={() => onNewTripClick?.()}
                                     className="flex items-center gap-2 px-6 py-3 rounded-xl bg-[#10B981] hover:bg-[#10B981]/90 text-white text-sm font-semibold transition-all shadow-[0_0_24px_rgba(16,185,129,0.3)] hover:shadow-[0_0_32px_rgba(16,185,129,0.4)]"
                                 >
                                     <Plus className="w-4 h-4" />

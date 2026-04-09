@@ -23,6 +23,7 @@ export default function DashboardPage() {
     const router = useRouter();
     const { trips, isLoading, setTrips } = useTrips();
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [initialDestination, setInitialDestination] = useState("");
     const [showTicketWizard, setShowTicketWizard] = useState(false);
     const [showOnboardingModal, setShowOnboardingModal] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
@@ -126,7 +127,10 @@ export default function DashboardPage() {
                     trips={filteredTrips}
                     isLoading={isLoading}
                     onTripsChange={setTrips}
-                    onNewTripClick={() => setIsModalOpen(true)}
+                    onNewTripClick={(dest) => {
+                        setInitialDestination(dest || "");
+                        setIsModalOpen(true);
+                    }}
                     onTicketUploadClick={() => setShowTicketWizard(true)}
                     isSearching={debouncedQuery.trim().length > 0}
                 />
@@ -152,9 +156,14 @@ export default function DashboardPage() {
             {isModalOpen && (
                 <CreateTripModal
                     isOpen={isModalOpen}
-                    onClose={() => setIsModalOpen(false)}
+                    initialDestination={initialDestination}
+                    onClose={() => {
+                        setIsModalOpen(false);
+                        setInitialDestination("");
+                    }}
                     onFlowStart={(tripId, input) => {
                         setIsModalOpen(false);
+                        setInitialDestination("");
                         setFlowSession({ tripId, input });
                     }}
                 />

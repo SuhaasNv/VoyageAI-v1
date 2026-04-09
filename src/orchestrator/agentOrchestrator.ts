@@ -112,8 +112,12 @@ function maxActivitiesInDay(ctx: { days?: Array<{ activities?: unknown[] }> }): 
     return m;
 }
 
-function isTooDense(ctx: { days?: Array<{ activities?: unknown[] }> }): boolean {
-    return (ctx.days ?? []).some((d) => (d.activities?.length ?? 0) > MAX_ACTIVITIES_BEFORE_DENSE);
+function isTooDense(ctx: { days?: Array<{ activities?: unknown[] }>; preferences?: { pace?: string } }): boolean {
+    // Fast-pace trips legitimately have 5 activities/day — only flag above that.
+    const cap = ctx.preferences?.pace?.toLowerCase().includes("fast")
+        ? MAX_ACTIVITIES_BEFORE_DENSE + 1
+        : MAX_ACTIVITIES_BEFORE_DENSE;
+    return (ctx.days ?? []).some((d) => (d.activities?.length ?? 0) > cap);
 }
 
 function hasBudgetIssues(ctx: { budget?: { isOverBudget?: boolean } }): boolean {

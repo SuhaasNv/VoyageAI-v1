@@ -15,7 +15,9 @@ const TTL_SUGGESTIONS = 6 * 60 * 60;  // 6h
 const TTL_PACKING = 6 * 60 * 60;      // 6h
 const TTL_SIMULATION = 10 * 60;        // 10 min
 const TTL_COMPARE = 60 * 60;           // 1h
-const TTL_BRIGHT_DATA = 6 * 60 * 60;  // 6h
+const TTL_BRIGHT_DATA = 24 * 60 * 60;       // 24h
+const TTL_BRIGHT_DATA_EMPTY = 60 * 60;      // 1h — short TTL for empty/no-result destinations
+const TTL_BRIGHT_DATA_MISCONFIGURED = 10 * 60; // 10 min — short TTL for permanent API failures (404/misconfigured)
 const TTL_TRAVEL_DNA = 60 * 60;        // 1h
 const TTL_REFRESH_MUTEX = 60;          // 60s — stale-while-revalidate lock
 
@@ -293,16 +295,80 @@ export async function setCompareCached(key: string, value: unknown): Promise<voi
 
 // ─── Bright Data SERP ─────────────────────────────────────────────────────────
 
-export function brightDataCacheKey(query: string): string {
-    return `brightdata:${hash(query.toLowerCase().trim())}`;
+export interface BrightDataCachePayload {
+    data: unknown;
+    cachedAt: number;
+    /** Present only when the entry represents a permanent API failure. */
+    status?: "success" | "failed" | "empty" | "timeout";
+    /** Machine-readable failure reason for observability. */
+    reason?: "misconfigured_api" | string;
 }
 
-export async function getBrightDataCached(key: string): Promise<string | null> {
-    return getCached<string>(key);
+export function mapDestinationKey(destination: string): string {
+    return destination.toLowerCase().trim().replace(/,\s*\w+$/, "");
 }
 
-export async function setBrightDataCached(key: string, value: string): Promise<void> {
-    await setCached(key, value, TTL_BRIGHT_DATA);
+export function brightDataCacheKey(type: string, destination: string, query: string): string {
+    return `brightdata:${mapDestinationKey(destination)}:${type}:${hash(query)}`;
+}
+
+export async function getBrightDataCached(key: string): Promise<BrightDataCachePayload | null> {
+    return getCached<BrightDataCachePayload>(key);
+}
+
+export async function setBrightDataCached(key: string, value: unknown, ttlSec?: number): Promise<void> {
+    const payload: BrightDataCachePayload = { data: value, cachedAt: Date.now() };
+    await setCached(key, payload, ttlSec ?? TTL_BRIGHT_DATA);
+}
+
+/** Convenience: write an empty-result payload with the short (1h) TTL. */
+export function getBrightDataEmptyTTL(): number {
+    return TTL_BRIGHT_DATA_EMPTY;
+}
+
+/**
+ * Write a "misconfigured_api" sentinel with a short (10 min) TTL.
+ * Called when Bright Data returns HTTP 404 or signals a hard endpoint mismatch.
+ * Prevents repeated useless calls for the same key during the cooldown window.
+ */
+export async function setBrightDataMisconfiguredCached(key: string): Promise<void> {
+    if (!hasRedisConfig()) return;
+    try {
+        const redis = getRedisClient();
+        if (!redis) return;
+        const payload: BrightDataCachePayload = {
+            data: [],
+            cachedAt: Date.now(),
+            status: "failed",
+            reason: "misconfigured_api",
+        };
+        await redis.setex(key, TTL_BRIGHT_DATA_MISCONFIGURED, JSON.stringify(payload));
+    } catch {
+        // Cache write failure is non-fatal
+    }
+}
+
+export async function acquireBrightDataLock(key: string): Promise<boolean> {
+    if (!hasRedisConfig()) return true; // Fail open
+    try {
+        const redis = getRedisClient();
+        if (!redis) return true;
+        const result = await redis.set(`lock:${key}`, "1", "EX", 10, "NX");
+        return result === "OK";
+    } catch {
+        return true; // Fail open
+    }
+}
+
+export async function releaseBrightDataLock(key: string): Promise<void> {
+    if (!hasRedisConfig()) return;
+    try {
+        const redis = getRedisClient();
+        if (!redis) return;
+        await redis.del(`lock:${key}`);
+    } catch {
+        // Non-fatal
+    }
 }
 
 // ─── Travel DNA preference ────────────────────────────────────────────────────

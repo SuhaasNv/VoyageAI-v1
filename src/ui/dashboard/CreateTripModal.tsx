@@ -19,12 +19,24 @@ interface CreateTripModalProps {
     onClose: () => void;
     /** When provided, launches the flow instead of redirecting directly. */
     onFlowStart?: (tripId: string, input: FlowInput) => void;
+    initialDestination?: string;
 }
 
-export function CreateTripModal({ isOpen, onClose, onFlowStart }: CreateTripModalProps) {
-    const [destination, setDestination] = useState("");
-    const [startDate, setStartDate] = useState("");
-    const [endDate, setEndDate] = useState("");
+export function CreateTripModal({ isOpen, onClose, onFlowStart, initialDestination = "" }: CreateTripModalProps) {
+    const defaultDates = () => {
+        const start = new Date();
+        start.setDate(start.getDate() + 1); // tomorrow
+        const end = new Date();
+        end.setDate(end.getDate() + 8); // 1 week later
+        return {
+            start: start.toISOString().split("T")[0],
+            end: end.toISOString().split("T")[0],
+        };
+    };
+
+    const [destination, setDestination] = useState(initialDestination);
+    const [startDate, setStartDate] = useState(defaultDates().start);
+    const [endDate, setEndDate] = useState(defaultDates().end);
     const [selectedVibes, setSelectedVibes] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);

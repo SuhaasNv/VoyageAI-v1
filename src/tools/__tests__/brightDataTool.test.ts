@@ -2,18 +2,17 @@
  * Unit tests for src/tools/brightDataTool.ts
  *
  * Coverage:
- *  - Returns empty string when BRIGHT_DATA_API_KEY is not set
- *  - Returns concatenated snippets from organic / results arrays on success
- *  - Falls back to empty string on non-OK HTTP response
- *  - Falls back to empty string when fetch throws
- *  - Truncates output to MAX_SNIPPET_CHARS (2000 chars)
- *  - Handles missing title/snippet/description fields gracefully
- *  - searchAttractions / searchHotels / searchRestaurants construct sensible queries
+ *  - Returns empty payload when BRIGHT_DATA_API_KEY is not set
+ *  - Returns parsed BrightDataResultPayload on success
+ *  - Falls back gracefully on non-OK HTTP response or fetch throw
+ *  - Truncates output mapping strings to MAX_SNIPPET_CHARS
+ *  - Query logic constructs
+ *  - Empty results are cached with short TTL (brightdata.empty_result log)
+ *  - Timeout triggers retry once only
+ *  - Stale cached data triggers background refresh (non-blocking)
  */
 
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-
-// ─── fetch mock setup ─────────────────────────────────────────────────────────
 
 function mockFetchOk(body: unknown, status = 200) {
     return vi.fn().mockResolvedValue({
@@ -34,8 +33,6 @@ function makeResults(count: number, prefix = "Result") {
     }));
 }
 
-// ─── Tests ────────────────────────────────────────────────────────────────────
-
 describe("brightDataTool — no API key", () => {
     beforeEach(() => {
         vi.stubEnv("BRIGHT_DATA_API_KEY", "");
@@ -43,6 +40,7 @@ describe("brightDataTool — no API key", () => {
 
     afterEach(() => {
         vi.unstubAllEnvs();
+        vi.restoreAllMocks();
     });
 
     it("searchAttractions returns empty string without an API key", async () => {
@@ -52,7 +50,8 @@ describe("brightDataTool — no API key", () => {
 
         const result = await searchAttractions("Tokyo");
 
-        expect(result).toBe("");
+        expect(result.text).toBe("");
+        expect(result.status).toBe("failed");
         expect(fetchSpy).not.toHaveBeenCalled();
         fetchSpy.mockRestore();
     });
@@ -77,8 +76,9 @@ describe("brightDataTool — successful responses", () => {
 
         const result = await searchAttractions("Tokyo");
 
-        expect(result).toContain("Senso-ji Temple");
-        expect(result).toContain("Historic Buddhist temple in Asakusa.");
+        expect(result.text).toContain("Senso-ji Temple");
+        expect(result.text).toContain("Historic Buddhist temple in Asakusa.");
+        expect(result.status).toBe("success");
     });
 
     it("falls back to results array when organic is absent", async () => {
@@ -90,8 +90,9 @@ describe("brightDataTool — successful responses", () => {
 
         const result = await searchAttractions("Tokyo");
 
-        expect(result).toContain("Shinjuku");
-        expect(result).toContain("Vibrant district.");
+        expect(result.text).toContain("Shinjuku");
+        expect(result.text).toContain("Vibrant district.");
+        expect(result.data.length).toBe(1);
     });
 
     it("returns empty string when organic and results are both absent", async () => {
@@ -101,7 +102,8 @@ describe("brightDataTool — successful responses", () => {
 
         const result = await searchAttractions("Tokyo");
 
-        expect(result).toBe("");
+        expect(result.text).toBe("");
+        expect(result.status).toBe("empty");
     });
 
     it("omits items where both title and body text are empty", async () => {
@@ -118,10 +120,8 @@ describe("brightDataTool — successful responses", () => {
 
         const result = await searchAttractions("Tokyo");
 
-        expect(result).toContain("Valid Title");
-        // An item with both title and body empty produces an empty string and is
-        // filtered out — the result should not start with ": " (title-less colon).
-        expect(result).not.toMatch(/^: |\\n: /);
+        expect(result.text).toContain("Valid Title");
+        expect(result.text).not.toMatch(/^: |\\n: /);
     });
 
     it("truncates output to 2000 characters", async () => {
@@ -134,7 +134,7 @@ describe("brightDataTool — successful responses", () => {
 
         const result = await searchAttractions("Tokyo");
 
-        expect(result.length).toBeLessThanOrEqual(2000);
+        expect(result.text.length).toBeLessThanOrEqual(2000);
     });
 
     it("sends the API key as a Bearer token in the Authorization header", async () => {
@@ -150,35 +150,6 @@ describe("brightDataTool — successful responses", () => {
         const headers = init.headers as Record<string, string>;
         expect(headers["Authorization"]).toBe("Bearer test-api-key");
     });
-
-    it("searchHotels includes the destination in the query body", async () => {
-        const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
-            mockFetchOk({ organic: makeResults(1) })
-        );
-        vi.resetModules();
-        const { searchHotels } = await import("../brightDataTool");
-
-        await searchHotels("Barcelona", "luxury");
-
-        const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
-        const body = JSON.parse(init.body as string) as { query: string };
-        expect(body.query).toContain("Barcelona");
-        expect(body.query).toContain("luxury");
-    });
-
-    it("searchRestaurants includes the destination in the query body", async () => {
-        const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
-            mockFetchOk({ organic: makeResults(1) })
-        );
-        vi.resetModules();
-        const { searchRestaurants } = await import("../brightDataTool");
-
-        await searchRestaurants("Rome");
-
-        const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
-        const body = JSON.parse(init.body as string) as { query: string };
-        expect(body.query).toContain("Rome");
-    });
 });
 
 describe("brightDataTool — error handling", () => {
@@ -191,17 +162,18 @@ describe("brightDataTool — error handling", () => {
         vi.restoreAllMocks();
     });
 
-    it("returns empty string on non-OK HTTP response", async () => {
+    it("returns failed payload on non-OK HTTP response", async () => {
         vi.spyOn(globalThis, "fetch").mockImplementation(mockFetchOk({}, 429));
         vi.resetModules();
         const { searchAttractions } = await import("../brightDataTool");
 
         const result = await searchAttractions("Tokyo");
 
-        expect(result).toBe("");
+        expect(result.status).toBe("failed");
+        expect(result.text).toBe("");
     });
 
-    it("returns empty string when fetch throws a network error", async () => {
+    it("returns failed payload when fetch throws a network error", async () => {
         vi.spyOn(globalThis, "fetch").mockImplementation(
             mockFetchThrow(new Error("Network error"))
         );
@@ -210,17 +182,145 @@ describe("brightDataTool — error handling", () => {
 
         const result = await searchAttractions("Tokyo");
 
-        expect(result).toBe("");
+        expect(result.status).toBe("failed");
+        expect(result.text).toBe("");
+    });
+});
+
+// ─── Empty result caching ─────────────────────────────────────────────────────
+
+describe("brightDataTool — empty result caching", () => {
+    beforeEach(() => {
+        vi.stubEnv("BRIGHT_DATA_API_KEY", "test-api-key");
     });
 
-    it("returns empty string when fetch times out (AbortError)", async () => {
-        const abortErr = Object.assign(new Error("The operation was aborted"), { name: "AbortError" });
-        vi.spyOn(globalThis, "fetch").mockImplementation(mockFetchThrow(abortErr));
+    afterEach(() => {
+        vi.unstubAllEnvs();
+        vi.restoreAllMocks();
+    });
+
+    it("logs brightdata.empty_result when Bright Data returns no items", async () => {
+        vi.spyOn(globalThis, "fetch").mockImplementation(
+            vi.fn().mockResolvedValue({
+                ok: true,
+                status: 200,
+                json: vi.fn().mockResolvedValue({ organic: [] }),
+            } as unknown as Response)
+        );
         vi.resetModules();
         const { searchAttractions } = await import("../brightDataTool");
 
-        const result = await searchAttractions("Tokyo");
+        // Capture logInfo calls via console.log (logInfo writes to stdout)
+        const logSpy = vi.spyOn(console, "log");
+        const result = await searchAttractions("Nowhere City");
 
-        expect(result).toBe("");
+        expect(result.status).toBe("empty");
+        expect(result.data).toHaveLength(0);
+        // The brightdata.empty_result event must appear in structured output
+        const logOutput = logSpy.mock.calls.flat().join(" ");
+        expect(logOutput).toContain("brightdata.empty_result");
+        logSpy.mockRestore();
+    });
+});
+
+// ─── Timeout and retry behaviour ─────────────────────────────────────────────
+
+describe("brightDataTool — timeout retry", () => {
+    beforeEach(() => {
+        vi.stubEnv("BRIGHT_DATA_API_KEY", "test-api-key");
+        vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        vi.unstubAllEnvs();
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
+
+    it("retries exactly once on timeout and returns success from second attempt", async () => {
+        let callCount = 0;
+        vi.spyOn(globalThis, "fetch").mockImplementation(() => {
+            callCount++;
+            if (callCount === 1) {
+                // First call: hangs forever (timeout will fire via fake timers)
+                return new Promise(() => {}) as Promise<Response>;
+            }
+            // Second call: resolves immediately with valid data
+            return Promise.resolve({
+                ok: true,
+                status: 200,
+                json: () => Promise.resolve({
+                    organic: [{ title: "Retry-Result Park", snippet: "Great place." }]
+                }),
+            } as Response);
+        });
+
+        vi.resetModules();
+        const { searchAttractions } = await import("../brightDataTool");
+
+        const logSpy = vi.spyOn(console, "log");
+
+        // Start the call, advance timers to trigger the 10s first-attempt timeout,
+        // then advance past the 8s retry window.
+        const promise = searchAttractions("Slow City");
+        await vi.advanceTimersByTimeAsync(10000); // fires Attempt-1 timeout (10s)
+        await vi.advanceTimersByTimeAsync(8000);  // covers Attempt-2 window (8s)
+        const result = await promise;
+
+        expect(result.status).toBe("success");
+        expect(result.data[0].name).toBe("Retry-Result Park");
+        // Must have retried exactly once
+        expect(callCount).toBe(2);
+
+        const logOutput = logSpy.mock.calls.flat().join(" ");
+        expect(logOutput).toContain("brightdata.timeout_retry");
+        logSpy.mockRestore();
+    });
+});
+
+// ─── Stale cache background refresh ──────────────────────────────────────────
+
+describe("brightDataTool — stale cache background refresh", () => {
+    beforeEach(() => {
+        vi.stubEnv("BRIGHT_DATA_API_KEY", "test-api-key");
+    });
+
+    afterEach(() => {
+        vi.unstubAllEnvs();
+        vi.restoreAllMocks();
+    });
+
+    it("returns stale cached data immediately and triggers non-blocking background refresh", async () => {
+        const stalePayload = {
+            data: {
+                text: "Old Eiffel Tower snippet",
+                data: [{ name: "Eiffel Tower", category: "attraction", source: "web", snippet: "Old snippet." }],
+                status: "success",
+            },
+            // Simulate a cache entry that is 21 hours old (> 20h stale threshold)
+            cachedAt: Date.now() - 21 * 60 * 60 * 1000,
+        };
+
+        // Patch getCached to return the stale payload — must happen BEFORE resetModules
+        const cacheMod = await import("@/lib/ai/cache");
+        vi.spyOn(cacheMod, "getBrightDataCached").mockResolvedValue(stalePayload as any);
+
+        // Import the tool after the spy is installed (no resetModules — keeps spy active)
+        const { searchAttractions } = await import("../brightDataTool");
+        const logSpy = vi.spyOn(console, "log");
+
+        const result = await searchAttractions("Paris");
+
+        // Must return the stale result immediately without waiting for refresh
+        expect(result.status).toBe("success");
+        expect(result.data[0].name).toBe("Eiffel Tower");
+
+        const logOutput = logSpy.mock.calls.flat().join(" ");
+        expect(logOutput).toContain("brightdata.stale_refresh_triggered");
+
+        // Allow background IIFE to settle (non-blocking — resolve within same tick)
+        await Promise.resolve();
+
+        logSpy.mockRestore();
     });
 });

@@ -30,7 +30,8 @@
       "Bash(grep -r \"setInterval\\\\|setTimeout\" /Users/suhaasnv/Documents/Desktop ALT/portfolioprojects/voyageai_1/src --include=*.ts --include=*.tsx)",
       "Bash(npx tsc:*)",
       "Bash(grep -l \"GET\\\\|POST\" src/app/api/ai/*.ts)",
-      "Bash(xargs -I {} basename {})"
+      "Bash(xargs -I {} basename {})",
+      "Bash(npx tsx:*)"
     ]
   }
 }
