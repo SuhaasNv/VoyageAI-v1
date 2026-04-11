@@ -51,6 +51,14 @@ const ScheduledActivitySchema = z.object({
     description: z.string(),
     estimatedCost: z.number().optional(),
     timeSlot: z.enum(["morning", "afternoon", "evening"]),
+    startTime: z.string().optional(),
+    endTime: z.string().optional(),
+    travelTimeFromPrevMs: z.number().optional(),
+    isMeal: z.boolean().optional(),
+    mealType: z.enum(["lunch", "dinner"]).optional(),
+    priceLevel: z.enum(["$", "$$", "$$$"]).optional(),
+    cuisine: z.string().optional(),
+    shortDescription: z.string().optional(),
     lat: z.number().optional(),
     lng: z.number().optional(),
     geoConfidence: z.enum(["high", "medium", "low"]).optional(),
@@ -97,6 +105,12 @@ const OptimizedDaySchema = z.object({
     activities: z.array(ScheduledActivitySchema),
 });
 
+const FoodCostSummarySchema = z.object({
+    perDay: z.array(z.number()),
+    total: z.number(),
+    avgPerDay: z.number(),
+});
+
 const BudgetPayloadSchema = z.object({
     destination: z.string(),
     startDate: z.string(),
@@ -106,6 +120,30 @@ const BudgetPayloadSchema = z.object({
     days: z.array(OptimizedDaySchema),
     hotels: z.array(HotelSchema),
     selectedHotel: HotelSchema,
+    foodCostSummary: FoodCostSummarySchema.optional(),
+    warnings: z.array(z.string()).optional(),
+});
+
+const CostLineItemSchema = z.object({
+    day: z.number(),
+    category: z.enum(["hotel", "food", "activity", "other"]),
+    name: z.string(),
+    amount: z.number(),
+    meta: z.object({
+        source: z.enum(["estimatedCost", "priceLevel", "logistics", "fallback"]).optional(),
+        mealType: z.enum(["lunch", "dinner"]).optional(),
+    }).optional(),
+});
+
+const CostBreakdownSchema = z.object({
+    perDay: z.array(z.number()),
+    total: z.number(),
+    categories: z.object({
+        hotel: z.number(),
+        food: z.number(),
+        activity: z.number(),
+        other: z.number(),
+    }),
 });
 
 const SafetyPayloadSchema = BudgetPayloadSchema.extend({
@@ -115,6 +153,8 @@ const SafetyPayloadSchema = BudgetPayloadSchema.extend({
         isOverBudget: z.boolean(),
         budgetGap: z.number().optional(),
         suggestions: z.array(z.string()).optional(),
+        ledger: z.array(CostLineItemSchema).optional(),
+        costBreakdown: CostBreakdownSchema.optional(),
     }),
 });
 
