@@ -49,9 +49,9 @@ export function AgentThinkingCard({
         if (isError) return;
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setVisibleLogs([]);
-        // eslint-disable-next-line react-hooks/set-state-in-effect
+         
         setLogIndex(0);
-        // eslint-disable-next-line react-hooks/set-state-in-effect
+         
         setMessageIndex(0);
     }, [stage, isError]);
 

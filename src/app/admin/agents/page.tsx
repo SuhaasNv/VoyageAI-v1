@@ -15,21 +15,8 @@ import { prisma }   from "@/lib/prisma";
 import { requireAdmin } from "@/lib/admin";
 import { isAiUsageLogFailure } from "@/lib/metrics/aiUsageLog";
 import AgentReplayView  from "./_trace";
-
-// ─── Types (shared with _trace.tsx) ──────────────────────────────────────────
-
-export interface PipelineRun {
-    requestId:       string;
-    startedAt:       string;
-    totalDurationMs: number;
-    totalTokens:     number;
-    totalCostUsd:    number;
-    stepCount:       number;
-    hasError:        boolean;
-    failedAgent:     string | null;
-    /** true = has AgentExecutionLog rows (structured); false = legacy AiUsageLog only */
-    hasStructuredLogs: boolean;
-}
+import type { PipelineRun } from "./types";
+export type { PipelineRun } from "./types";
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 

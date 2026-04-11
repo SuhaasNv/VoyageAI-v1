@@ -11,18 +11,8 @@ import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/admin";
 import { isAiUsageLogFailure } from "@/lib/metrics/aiUsageLog";
 import LogsClient from "./_client";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export interface LogEntry {
-    id: string;
-    ts: string;          // ISO
-    layer: "auth" | "ai" | "system";
-    action: string;      // e.g. "LOGIN", "REGISTER", "AI_CALL"
-    email: string | null;
-    requestId: string | null;
-    meta: string;        // JSON snippet
-}
+import type { LogEntry } from "./types";
+export type { LogEntry } from "./types";
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 

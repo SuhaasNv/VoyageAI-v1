@@ -233,9 +233,9 @@ export function ResearchStage({
         if (result) {
             // eslint-disable-next-line react-hooks/set-state-in-effect
             setLocalResult(result);
-            // eslint-disable-next-line react-hooks/set-state-in-effect
+             
             setActiveDay(result.days[0]?.day ?? 1);
-            // eslint-disable-next-line react-hooks/set-state-in-effect
+             
             setSlots(initSlots(result));
         }
     }, [result]);
