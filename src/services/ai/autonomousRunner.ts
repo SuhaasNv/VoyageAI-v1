@@ -113,7 +113,7 @@ export interface AutonomousRunResult {
 
 let _isRunning = false;
 let _lastRunAt: string | null = null;
-let _lastResult: AutonomousRunResult | null = null;
+let _lastResult: AutonomousRunResult | null = null; // eslint-disable-line prefer-const
 
 export function getRunnerStatus() {
     return {

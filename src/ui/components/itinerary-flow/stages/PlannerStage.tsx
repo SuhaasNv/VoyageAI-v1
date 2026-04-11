@@ -90,11 +90,22 @@ function PortalDropdown({
 }) {
     const [open, setOpen]       = useState(false);
     const [mounted, setMounted] = useState(false);
+    const [rect, setRect]       = useState<DOMRect | null>(null);
     const triggerRef            = useRef<HTMLButtonElement>(null);
     // Ref to the dropdown's own scrollable list — scroll inside it must NOT close the menu.
     const menuScrollRef         = useRef<HTMLDivElement>(null);
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => { setMounted(true); }, []);
+
+    // Capture rect when dropdown opens — avoids reading ref during render.
+    useEffect(() => {
+        if (open && triggerRef.current) {
+            setRect(triggerRef.current.getBoundingClientRect());
+        } else {
+            setRect(null);
+        }
+    }, [open]);
 
     useEffect(() => {
         if (!open) return;
@@ -112,7 +123,6 @@ function PortalDropdown({
         setOpen((prev) => !prev);
     }
 
-    const rect = open && triggerRef.current ? triggerRef.current.getBoundingClientRect() : null;
     const current = options.find((o) => o.label === value) ?? options[0];
 
     return (
@@ -227,12 +237,13 @@ export function PlannerStage({
     const [heroError,        setHeroError]         = useState(false);
     const [expandedDay,      setExpandedDay]       = useState<number | null>(null);
 
-    const prevPlannerResultRef = useRef<TripContext | null>(null);
-    if (result !== prevPlannerResultRef.current) {
-        prevPlannerResultRef.current = result;
+    // Sync local copy when parent sends a fresh result (e.g. after re-plan).
+    // Use useEffect to avoid reading/writing refs during render.
+    useEffect(() => {
         if (result) {
             // Normalize all day themes to canonical DAY_THEMES labels so that the
             // dropdown emoji and the background icon emoji always match.
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setLocalResult({
                 ...result,
                 days: result.days.map((d) => ({ ...d, theme: normalizeTheme(d.theme) })),
@@ -256,7 +267,7 @@ export function PlannerStage({
             setArrivalSuffix(ARRIVAL_ACTIVITIES[0].label);
             setDepartureMorning(DEPARTURE_MORNING[0].label);
         }
-    }
+    }, [result]);
 
     // Day themes in localResult are always normalized; compare against normalized
     // originals so LLM wording ("culture & landmarks" vs canonical label) does not

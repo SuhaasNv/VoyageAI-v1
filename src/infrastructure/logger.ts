@@ -74,7 +74,11 @@ export type LogStep =
     | "coord_validated"
     | "geocode_accuracy"
     | "second_pass"
-    | "low_hotel_count";
+    | "low_hotel_count"
+    | "restaurant_enriched"
+    | "restaurants_attached"
+    | "meals_injected"
+    | "food_cost_computed";
 
 export type StructuredLogEntry = {
     layer: "agent" | "orchestrator" | "llm" | "service";

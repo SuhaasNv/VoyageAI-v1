@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { X, Sparkles, Loader2, Star, GripVertical, ArrowLeftRight, LayoutGrid } from "lucide-react";
 import {
@@ -227,16 +227,18 @@ export function ResearchStage({
     const [feedback,         setFeedback]          = useState("");
     const [activeDragId,     setActiveDragId]      = useState<string | null>(null);
 
-    // Sync when parent sends a fresh result (e.g. after re-research)
-    const prevResultRef = useRef<EnrichedTripContext | null>(null);
-    if (result !== prevResultRef.current) {
-        prevResultRef.current = result;
+    // Sync when parent sends a fresh result (e.g. after re-research).
+    // useEffect avoids reading/writing refs during render.
+    useEffect(() => {
         if (result) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setLocalResult(result);
+             
             setActiveDay(result.days[0]?.day ?? 1);
+             
             setSlots(initSlots(result));
         }
-    }
+    }, [result]);
 
     // ─── DnD sensors ─────────────────────────────────────────────────────────
     // Distance constraint: requires 6px movement before drag activates,
