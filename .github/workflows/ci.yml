@@ -25,6 +25,11 @@ on:
         required: false
         default: "false"
         type: boolean
+      skip_tests:
+        description: "Skip all test and validation stages (4–12) and go straight to quality gate and build"
+        required: false
+        default: "false"
+        type: boolean
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -96,6 +101,7 @@ defaults:
 #    force_push           — push to DOCR even on non-main branch
 #    ignore_test_failures — bypass quality gate on test/SAST/validation failure (emergency)
 #    skip_deploy          — run build + scan only; skip push-to-DOCR and DAST
+#    skip_tests           — skip stages 4–12 entirely; go straight to quality gate + build
 #
 #  Recommended (Railway — used by jobs that touch DB/Redis):
 #    DATABASE_URL, DIRECT_URL, REDIS_URL
@@ -338,6 +344,7 @@ jobs:
     name: "4 · Unit Tests"
     needs: build
     runs-on: ubuntu-latest
+    if: github.event.inputs.skip_tests != 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -368,6 +375,7 @@ jobs:
     name: "5 · SAST (CodeQL)"
     needs: lint
     runs-on: ubuntu-latest
+    if: github.event.inputs.skip_tests != 'true'
     permissions:
       actions: read
       contents: read
@@ -403,6 +411,7 @@ jobs:
     name: "6 · SCA (dependencies)"
     needs: build
     runs-on: ubuntu-latest
+    if: github.event.inputs.skip_tests != 'true'
     permissions:
       contents: read
       security-events: write
@@ -459,6 +468,7 @@ jobs:
     name: "7 · Data Validation"
     needs: build
     runs-on: ubuntu-latest
+    if: github.event.inputs.skip_tests != 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -488,6 +498,7 @@ jobs:
     name: "8 · Model Validation"
     needs: build
     runs-on: ubuntu-latest
+    if: github.event.inputs.skip_tests != 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -523,6 +534,7 @@ jobs:
     name: "9 · Prompt Validation"
     needs: model-validation
     runs-on: ubuntu-latest
+    if: github.event.inputs.skip_tests != 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -552,6 +564,7 @@ jobs:
     name: "10 · Prompt Tests"
     needs: [unittest, prompt-validation]
     runs-on: ubuntu-latest
+    if: github.event.inputs.skip_tests != 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -581,6 +594,7 @@ jobs:
     name: "11 · Safety Tests (toxicity, jailbreak)"
     needs: [unittest, prompt-validation]
     runs-on: ubuntu-latest
+    if: github.event.inputs.skip_tests != 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -610,6 +624,7 @@ jobs:
     name: "12 · Evaluation (offline metrics)"
     needs: [prompt-tests, safety-tests]
     runs-on: ubuntu-latest
+    if: github.event.inputs.skip_tests != 'true'
     steps:
       - uses: actions/checkout@v4
 
