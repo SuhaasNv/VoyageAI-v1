@@ -80,14 +80,15 @@ export async function initBrightDataHealthCheck(): Promise<void> {
         }
 
         logInfo("brightdata.startup_healthy", { statusCode: response.status });
-    } catch (err: any) {
-        const isAbort = err?.name === "AbortError";
+    } catch (err: unknown) {
+        const error = err as { name?: string; message?: string } | null;
+        const isAbort = error?.name === "AbortError";
         // Transient errors (network, timeout) — do NOT disable the integration.
         logInfo(
             isAbort
                 ? "brightdata.startup_probe_timeout"
                 : "brightdata.startup_probe_error",
-            { error: String(err?.message ?? err) }
+            { error: String(error?.message ?? err) }
         );
     }
 }

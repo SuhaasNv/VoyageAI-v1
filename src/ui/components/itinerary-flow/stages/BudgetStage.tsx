@@ -52,15 +52,16 @@ function DonutChart({ values, colors, labels, currency }: { values: number[]; co
     const stroke = 24;
     const circumference = 2 * Math.PI * r;
 
-    let offset = 0;
-    const slices = values.map((v, i) => {
-        const pct = v / total;
-        const dash = pct * circumference;
-        const gap = circumference - dash;
-        const slice = { dash, gap, offset, pct, i };
-        offset += dash;
-        return slice;
-    });
+    const slices = values.reduce<Array<{ dash: number; gap: number; offset: number; pct: number; i: number }>>(
+        (acc, v, i) => {
+            const pct = v / total;
+            const dash = pct * circumference;
+            const gap = circumference - dash;
+            const offset = acc.reduce((s, sl) => s + sl.dash, 0);
+            return [...acc, { dash, gap, offset, pct, i }];
+        },
+        [],
+    );
 
     return (
         <div className="flex items-center gap-6">

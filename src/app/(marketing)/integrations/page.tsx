@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { PageHero } from "@/ui/components/marketing/PageHero";
 import { PageContent } from "@/ui/components/marketing/PageContent";
 import { MapPin, Calendar, CreditCard, MessageCircle } from "lucide-react";
@@ -53,9 +54,9 @@ export default function IntegrationsPage() {
                 </div>
                 <p className="mt-10 text-slate-500 text-sm">
                     More integrations are coming soon. Have a suggestion?{" "}
-                    <a href="/#contact" className="text-indigo-400 hover:text-indigo-300 transition-colors">
+                    <Link href="/#contact" className="text-indigo-400 hover:text-indigo-300 transition-colors">
                         Get in touch
-                    </a>
+                    </Link>
                     .
                 </p>
             </PageContent>

@@ -65,6 +65,7 @@ export function MultilingualGreetingTypewriter({
 
     useEffect(() => {
         if (reduceMotion) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setDisplayText("Namaste · 你好 · Bonjour · Hola");
             return;
         }

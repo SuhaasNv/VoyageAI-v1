@@ -4,9 +4,29 @@ import { useState, useEffect, useRef } from "react";
 import { Sparkles, Send, Loader2, CheckCircle2, X, Edit2, ArrowRight, MapPin, Calendar, DollarSign, Heart } from "lucide-react";
 import { ensureCsrfToken, type Trip } from "@/lib/api";
 
+interface ExtractedTripParams {
+    destination?: string;
+    startDate?: string;
+    endDate?: string;
+    budget?: { total?: number; currency?: string };
+    style?: string;
+    imageUrl?: string;
+    interests?: string[];
+    [key: string]: unknown;
+}
+
+interface FlowInput {
+    tripId: string;
+    destination: string;
+    startDate: string;
+    endDate: string;
+    style?: string;
+    imageUrl?: string | null;
+}
+
 interface AICommandPaletteProps {
     onTripCreated: (trip: Trip) => void;
-    onFlowStart?: (tripId: string, input: any) => void;
+    onFlowStart?: (tripId: string, input: FlowInput) => void;
 }
 
 const SAMPLE_PROMPTS = [
@@ -19,7 +39,7 @@ export function AICommandPalette({ onTripCreated, onFlowStart }: AICommandPalett
     const [isOpen, setIsOpen] = useState(false);
     const [prompt, setPrompt] = useState("");
     const [isLoading, setIsLoading] = useState(false);
-    const [extractedParams, setExtractedParams] = useState<any | null>(null);
+    const [extractedParams, setExtractedParams] = useState<ExtractedTripParams | null>(null);
 
     const [successMsg, setSuccessMsg] = useState<string | null>(null);
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -117,12 +137,12 @@ export function AICommandPalette({ onTripCreated, onFlowStart }: AICommandPalett
                 
                 if (onFlowStart) {
                     onFlowStart(newTrip.id, {
+                        tripId: newTrip.id,
                         destination: newTrip.destination,
-                        description: prompt,
-                        dates: `${newTrip.startDate} to ${newTrip.endDate}`,
-                        budget: newTrip.budget?.total || 0,
-                        context: extractedParams.style ? `Style: ${extractedParams.style}` : "",
-                        imageUrl: newTrip.imageUrl
+                        startDate: newTrip.startDate,
+                        endDate: newTrip.endDate,
+                        style: extractedParams?.style,
+                        imageUrl: newTrip.imageUrl ?? null,
                     });
                 }
             } else {

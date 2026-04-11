@@ -84,14 +84,15 @@ export function ProviderDonut({ data }: { data: { provider: string; calls: numbe
     const R = 36; const CX = 50; const CY = 50; const strokeW = 14;
     const circumference = 2 * Math.PI * R;
 
-    let offset = 0;
-    const slices = data.map((d, i) => {
-        const pct = d.calls / total;
-        const dashLen = pct * circumference;
-        const slice = { ...d, pct, dashLen, offset, color: COLORS[i % COLORS.length] };
-        offset += dashLen;
-        return slice;
-    });
+    const slices = data.reduce<Array<typeof data[number] & { pct: number; dashLen: number; offset: number; color: string }>>(
+        (acc, d, i) => {
+            const pct = d.calls / total;
+            const dashLen = pct * circumference;
+            const offset = acc.reduce((s, sl) => s + sl.dashLen, 0);
+            return [...acc, { ...d, pct, dashLen, offset, color: COLORS[i % COLORS.length] }];
+        },
+        [],
+    );
 
     return (
         <div className="flex items-center gap-6">

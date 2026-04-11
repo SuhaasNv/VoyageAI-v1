@@ -27,7 +27,6 @@ export function useTrips() {
             return;
         }
 
-        setIsLoading(true);
         getUpcomingTrips()
             .then(setTrips)
             .catch((err) => {
