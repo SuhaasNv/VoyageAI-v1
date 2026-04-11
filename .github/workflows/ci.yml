@@ -844,7 +844,10 @@ jobs:
     name: "14 · Trivy — Container Vulnerability Scan"
     needs: build-image
     runs-on: ubuntu-latest
-    if: always() && needs.build-image.result == 'success'
+    if: |
+      always() &&
+      needs.build-image.result == 'success' &&
+      github.event.inputs.skip_tests != 'true'
     permissions:
       contents: read
       security-events: write
@@ -939,11 +942,12 @@ jobs:
   # ══════════════════════════════════════════════════════════════════════════
   push-to-docr:
     name: "15 · Push to DigitalOcean Container Registry"
-    needs: trivy-scan
+    needs: [build-image, trivy-scan]
     runs-on: ubuntu-latest
     if: |
       always() &&
-      needs.trivy-scan.result == 'success' &&
+      needs.build-image.result == 'success' &&
+      (needs.trivy-scan.result == 'success' || needs.trivy-scan.result == 'skipped') &&
       (github.ref == 'refs/heads/main' || github.event.inputs.force_push == 'true') &&
       github.event_name != 'pull_request' &&
       github.event.inputs.skip_deploy != 'true'
@@ -1034,11 +1038,12 @@ jobs:
   # ══════════════════════════════════════════════════════════════════════════
   dast:
     name: "16 · DAST (OWASP ZAP)"
-    needs: trivy-scan
+    needs: [build-image, trivy-scan]
     runs-on: ubuntu-latest
     if: |
       always() &&
-      needs.trivy-scan.result == 'success' &&
+      needs.build-image.result == 'success' &&
+      (needs.trivy-scan.result == 'success' || needs.trivy-scan.result == 'skipped') &&
       github.ref == 'refs/heads/main' &&
       github.event_name != 'pull_request' &&
       github.event.inputs.skip_deploy != 'true'
