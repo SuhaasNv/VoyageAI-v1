@@ -58,9 +58,12 @@ env:
   JWT_REFRESH_SECRET: "ci-jwt-refresh-secret-at-least-32-characters-long"
   CSRF_SECRET: "ci-csrf-secret-at-least-32-characters-long-ok"
   NEXT_PUBLIC_MAPBOX_TOKEN: "ci-mapbox-token"
-  # Docker image name — prefixed with registry.digitalocean.com/<DO_REGISTRY_NAME>/ on push
+  # Docker / DOCR
   IMAGE_NAME: voyageai-langgraph
   PYTHON_VERSION: "3.11"
+  # Registry name — falls back to vars.REGISTRY_NAME then 'voyageai' if the
+  # DO_REGISTRY_NAME secret is not set.
+  DOCR_REGISTRY_NAME: ${{ secrets.DO_REGISTRY_NAME || vars.REGISTRY_NAME || 'voyageai' }}
 
 defaults:
   run:
@@ -973,7 +976,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}
+          images: registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}
           tags: |
             type=sha,prefix=sha-,format=short
             type=raw,value=latest
@@ -996,7 +999,7 @@ jobs:
       - name: Trivy — verify pushed image in registry
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}:latest
+          image-ref: registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}:latest
           format: table
           severity: CRITICAL
           ignore-unfixed: true
@@ -1012,7 +1015,7 @@ jobs:
             echo ""
             echo "| Field | Value |"
             echo "|-------|-------|"
-            echo "| **Registry** | \`registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}\` |"
+            echo "| **Registry** | \`registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}\` |"
             echo "| **Image** | \`${{ env.IMAGE_NAME }}\` |"
             echo "| **Tags** | \`latest\`, \`sha-$(echo ${{ github.sha }} | head -c7)\`, \`${{ github.run_number }}\` |"
             echo "| **Digest** | \`${{ steps.push.outputs.digest }}\` |"

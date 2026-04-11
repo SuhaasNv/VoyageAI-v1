@@ -103,6 +103,7 @@ env:
   # Docker
   IMAGE_NAME: voyageai-langgraph
   PYTHON_VERSION: "3.11"
+  DOCR_REGISTRY_NAME: ${{ secrets.DO_REGISTRY_NAME || vars.REGISTRY_NAME || 'voyageai' }}
   # AI gate — static checks, no real LLM calls, no production DB
   SKIP_ENV_VALIDATION: "1"
   LLM_PROVIDER: "mock"
@@ -497,7 +498,7 @@ jobs:
         id: meta-docr
         uses: docker/metadata-action@v5
         with:
-          images: registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}
+          images: registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}
           tags: |
             type=sha,prefix=sha-,format=short
             type=raw,value=latest
@@ -520,7 +521,7 @@ jobs:
       - name: Trivy — verify pushed registry image
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}:latest
+          image-ref: registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}:latest
           format: table
           severity: CRITICAL
           ignore-unfixed: true
@@ -537,7 +538,7 @@ jobs:
             echo ""
             echo "| Field | Value |"
             echo "|-------|-------|"
-            echo "| **Registry** | \`registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}\` |"
+            echo "| **Registry** | \`registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}\` |"
             echo "| **Image** | \`${{ env.IMAGE_NAME }}\` |"
             echo "| **Tags** | \`latest\`, \`sha-${SHORT_SHA}\`, \`${{ github.run_number }}\` |"
             echo "| **Digest** | \`${{ steps.push.outputs.digest }}\` |"
@@ -947,7 +948,7 @@ jobs:
             echo "|---------|----------|-----|"
             echo "| Next.js app | Railway | ${{ secrets.PRODUCTION_URL }} |"
             echo "| LangGraph service | DO App Platform | (see infra outputs) |"
-            echo "| Container image | DOCR | \`registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}:sha-${SHORT_SHA}\` |"
+            echo "| Container image | DOCR | \`registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}:sha-${SHORT_SHA}\` |"
             echo ""
             echo "---"
             echo ""
