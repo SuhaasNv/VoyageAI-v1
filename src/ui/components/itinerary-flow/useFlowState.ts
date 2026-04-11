@@ -32,6 +32,11 @@ export type Action =
     | { type: "SET_RESEARCH"; result: EnrichedTripContext; meta: FlowMetadata }
     | { type: "SET_LOGISTICS"; result: OptimizedTripContext; meta: FlowMetadata }
     | { type: "SET_BUDGET"; result: BudgetedTripContext; meta: FlowMetadata }
+    /**
+     * In-place budget update after applyOptimalPlan() — stays on budget stage,
+     * replaces itinerary + budget numbers without advancing or re-running agents.
+     */
+    | { type: "PATCH_BUDGET"; result: BudgetedTripContext }
     | { type: "SET_SAFETY"; result: SafeTripContext; meta: FlowMetadata }
     | { type: "ADVANCE" }
     | { type: "SAVED" }
@@ -87,6 +92,10 @@ function reducer(state: FlowState, action: Action): FlowState {
                 meta: { ...state.meta, budget: action.meta },
                 error: null,
             };
+
+        case "PATCH_BUDGET":
+            // Stay on budget stage; only swap out the result.
+            return { ...state, budgetResult: action.result, error: null };
 
         case "SET_SAFETY":
             return {

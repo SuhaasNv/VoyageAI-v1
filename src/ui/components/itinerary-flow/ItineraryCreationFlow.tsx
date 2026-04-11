@@ -27,7 +27,8 @@ import { ResearchStage } from "./stages/ResearchStage";
 import { LogisticsStage } from "./stages/LogisticsStage";
 import { BudgetStage } from "./stages/BudgetStage";
 import { SafetyStage } from "./stages/SafetyStage";
-import type { FlowInput, FlowStage, TripContext, EnrichedTripContext, OptimizedTripContext } from "./types";
+import type { FlowInput, FlowStage, TripContext, EnrichedTripContext, OptimizedTripContext, BudgetedTripContext } from "./types";
+import type { CostBreakdown, CostLineItem } from "@/agents/budget/budgetAgent";
 import { ensureCsrfToken } from "@/lib/api";
 
 interface ItineraryCreationFlowProps {
@@ -87,6 +88,9 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
     const [isSaving, setIsSaving] = useState(false);
     const [isOffline, setIsOffline] = useState(false);
     const [mounted, setMounted] = useState(false);
+    const [isApplyingPlan, setIsApplyingPlan] = useState(false);
+    const [applyPlanWarnings, setApplyPlanWarnings] = useState<string[]>([]);
+    const [appliedSavings, setAppliedSavings] = useState(0);
     // Becomes true once the CSRF token is confirmed in the ref — gates the auto-start.
     const [csrfReady, setCsrfReady] = useState(false);
 
@@ -300,6 +304,58 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
         }
     }, [state.safetyResult, tripId, onComplete, prefersReduced, dispatch]);
 
+    const handleApplyPlan = useCallback(async () => {
+        const currentBudget = state.budgetResult;
+        const plan = currentBudget?.budget?.budgetAnalysis?.optimalPlan;
+        if (!currentBudget || !plan) return;
+
+        setIsApplyingPlan(true);
+        try {
+            const data = await callApi<{
+                updatedContext: OptimizedTripContext;
+                updatedBudget:  { total: number; breakdown: CostBreakdown; ledger: CostLineItem[] };
+                warnings:       string[];
+            }>("apply-plan", { context: currentBudget, plan });
+
+            const originalTotal = currentBudget.budget.totalEstimatedCost;
+            const newTotal      = data.updatedBudget.total;
+            const preferences   = currentBudget.preferences;
+
+            const updatedBudgetResult: BudgetedTripContext = {
+                ...data.updatedContext,
+                budget: {
+                    ...currentBudget.budget,
+                    totalEstimatedCost: newTotal,
+                    costPerDay:         data.updatedBudget.breakdown.perDay,
+                    isOverBudget:       preferences?.budget ? newTotal > preferences.budget : false,
+                    budgetGap:          preferences?.budget && newTotal > preferences.budget
+                                            ? newTotal - preferences.budget
+                                            : undefined,
+                    ledger:             data.updatedBudget.ledger,
+                    costBreakdown:      data.updatedBudget.breakdown,
+                    // Clear the plan so the Apply button disappears.
+                    budgetAnalysis:     currentBudget.budget.budgetAnalysis
+                                            ? { ...currentBudget.budget.budgetAnalysis, optimalPlan: undefined }
+                                            : undefined,
+                },
+            };
+
+            dispatch({ type: "PATCH_BUDGET", result: updatedBudgetResult });
+            setAppliedSavings(Math.max(0, originalTotal - newTotal));
+            setApplyPlanWarnings(data.warnings);
+            showToast(
+                data.warnings.length === 0
+                    ? "Plan applied — itinerary updated ✓"
+                    : "Plan applied with some notes",
+                data.warnings.length === 0 ? "success" : "info",
+            );
+        } catch (err) {
+            showToast("Failed to apply plan. Check your connection and try again.", "error");
+        } finally {
+            setIsApplyingPlan(false);
+        }
+    }, [state.budgetResult, dispatch]);
+
     // Auto-start planner only after CSRF token is confirmed ready
     useEffect(() => {
         if (!csrfReady) return;
@@ -454,6 +510,10 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
                                         onAdjust={() => state.researchResult && runLogistics(state.researchResult)}
                                         onExplain={() => openExplain("budget")}
                                         onRetry={() => state.logisticsResult && runBudget(state.logisticsResult)}
+                                        onApplyPlan={handleApplyPlan}
+                                        isApplyingPlan={isApplyingPlan}
+                                        applyPlanWarnings={applyPlanWarnings}
+                                        appliedSavings={appliedSavings}
                                     />
                                 )}
 
