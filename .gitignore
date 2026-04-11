@@ -49,3 +49,14 @@ next-env.d.ts
 # CI audit artefacts
 npm-audit.json
 sbom.json
+
+# Terraform — local state and secrets (never commit)
+infra/.terraform/
+infra/.terraform.lock.hcl
+infra/terraform.tfstate
+infra/terraform.tfstate.backup
+infra/tfplan.binary
+infra/plan.txt
+infra/plan-readable.txt
+infra/terraform.tfvars
+infra/*.auto.tfvars

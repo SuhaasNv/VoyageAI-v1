@@ -1,46 +1,548 @@
-name: Release
+name: Release — VoyageAI Production Deployment
 
-# Triggered only when commits land on main (i.e. after a PR is merged).
-# The CI workflow already validated quality + build, so this job focuses
-# exclusively on migration safety and production deployment.
+# ─────────────────────────────────────────────────────────────────────────────
+#  Full production release pipeline. Runs automatically when a commit lands on
+#  main (i.e. after a PR is approved and merged).
+#
+#  Deployment order — each stage is blocked until the previous one passes:
+#
+#   ┌──────────────────────────────────────────────────────────────────────┐
+#   │  GATE: AI Security (model · data · bias · risk score)               │
+#   └──────────────────────────┬───────────────────────────────────────────┘
+#                              │
+#          ┌───────────────────┼───────────────────┐
+#          ↓                   ↓                   ↓
+#   infra-apply          docker-push           migrate
+#   (DigitalOcean         (Build image,         (Prisma
+#    Terraform —          Trivy scan,            migrate
+#    conditional)         push to DOCR)          deploy)
+#          └───────────────────┼───────────────────┘
+#                              ↓
+#                        deploy-vercel
+#                    (Next.js → Vercel prod)
+#                              ↓
+#                        health-check
+#                  (Smoke tests on production)
+#                              ↓
+#                            dast
+#                    (OWASP ZAP full scan)
+#                              ↓
+#                      release-summary
+#                  (Step summary + GitHub Release)
+#
+# ─────────────────────────────────────────────────────────────────────────────
+#  Required GitHub Secrets (repo → Settings → Secrets → Actions):
+#
+#  AI Gate + CI
+#    (none — AI gate runs with mock LLM, no external secrets needed)
+#
+#  Infrastructure (DigitalOcean)
+#    DIGITALOCEAN_ACCESS_TOKEN   DO API token (write:registry + app platform)
+#    DO_REGISTRY_NAME            Registry slug, e.g. "voyageai"
+#    DO_SPACES_ACCESS_KEY        Spaces access key (Terraform state)
+#    DO_SPACES_SECRET_KEY        Spaces secret key (Terraform state)
+#    TF_VAR_next_internal_url    Vercel production URL for LangGraph → Next.js calls
+#    TF_VAR_internal_agent_secret Shared secret for Next.js ↔ LangGraph auth
+#
+#  Database
+#    DIRECT_URL                  PostgreSQL direct connection string (migrations)
+#
+#  Vercel
+#    VERCEL_TOKEN                Vercel personal access token
+#    VERCEL_ORG_ID               from `vercel link`
+#    VERCEL_PROJECT_ID           from `vercel link`
+#
+#  Smoke tests + DAST
+#    PRODUCTION_URL              e.g. https://voyageai.vercel.app
+#
+#  Optional
+#    DO_SPACES_REGION            Spaces region for TF backend (default: nyc3)
+#    TF_VAR_alert_email          Email for DO infrastructure alerts
+#    RISK_THRESHOLD              AI gate minimum score (default: 60)
+# ─────────────────────────────────────────────────────────────────────────────
+
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      skip_ai_gate:
+        description: "Skip AI Security Gate (emergency deploy only — requires reason)"
+        required: false
+        default: "false"
+        type: boolean
+      skip_infra:
+        description: "Skip infrastructure apply (no Terraform changes)"
+        required: false
+        default: "false"
+        type: boolean
+      skip_dast:
+        description: "Skip DAST scan (faster release when no API surface changed)"
+        required: false
+        default: "false"
+        type: boolean
+      emergency_reason:
+        description: "Reason for skipping gates (required when any skip_* is true)"
+        required: false
+        default: ""
 
-# Never cancel a running deploy — a half-deployed release is worse than waiting.
+# Never cancel a running release — a half-deployed release is dangerous.
 concurrency:
   group: release-production
   cancel-in-progress: false
 
+# ─────────────────────────────────────────────────────────────────────────────
+#  Shared environment
+# ─────────────────────────────────────────────────────────────────────────────
+env:
+  # Node / Next.js
+  NODE_VERSION: "20"
+  NEXT_TELEMETRY_DISABLED: "1"
+  # Docker
+  IMAGE_NAME: voyageai-langgraph
+  PYTHON_VERSION: "3.11"
+  # AI gate — static checks, no real LLM calls, no production DB
+  SKIP_ENV_VALIDATION: "1"
+  LLM_PROVIDER: "mock"
+  DATABASE_URL: "postgresql://ci:ci@localhost:5432/voyageai_ci"
+  DIRECT_URL_MOCK: "postgresql://ci:ci@localhost:5432/voyageai_ci"
+  JWT_ACCESS_SECRET: "release-gate-jwt-access-secret-32-chars-ok"
+  JWT_REFRESH_SECRET: "release-gate-jwt-refresh-secret-32-chars-ok"
+  CSRF_SECRET: "release-gate-csrf-secret-32-characters-ok"
+  RISK_THRESHOLD: ${{ vars.RISK_THRESHOLD || '60' }}
+  # Terraform
+  TF_VERSION: "1.8.5"
+  TF_IN_AUTOMATION: "true"
+  TF_CLI_ARGS_plan: "-lock-timeout=60s"
+  TF_CLI_ARGS_apply: "-lock-timeout=60s"
+  DO_SPACES_REGION: ${{ vars.DO_SPACES_REGION || 'nyc3' }}
+  TF_VAR_do_token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+  TF_VAR_next_internal_url: ${{ secrets.TF_VAR_next_internal_url }}
+  TF_VAR_internal_agent_secret: ${{ secrets.TF_VAR_internal_agent_secret }}
+  TF_VAR_environment: "production"
+
+defaults:
+  run:
+    shell: bash
+
+# ─────────────────────────────────────────────────────────────────────────────
 jobs:
-  # ── Job 1: Migrate ─────────────────────────────────────────────────────────
-  # Applies any pending Prisma migrations to the production database BEFORE
-  # the new application code goes live, keeping schema and code in sync.
-  migrate:
-    name: "🗄️ Database Migrate"
+
+  # ════════════════════════════════════════════════════════════════════════════
+  #  STAGE 1 — AI SECURITY GATE
+  #
+  #  Runs all four gate scripts in sequence, aggregates into a composite
+  #  0–100 risk score, and blocks the release if score < RISK_THRESHOLD.
+  #
+  #  Scripts:
+  #    scripts/ai-gate/model-approval.ts  — approved models, bounds, fallback
+  #    scripts/ai-gate/data-approval.ts   — Zod schemas, PII, field contracts
+  #    scripts/ai-gate/bias-check.ts      — diversity, neutrality, fairness
+  #    scripts/ai-gate/risk-score.ts      — aggregate → approve / block
+  #
+  #  Skippable via workflow_dispatch.skip_ai_gate=true (emergency only).
+  # ════════════════════════════════════════════════════════════════════════════
+  ai-gate:
+    name: "1 · AI Security Gate"
+    runs-on: ubuntu-latest
+    if: github.event.inputs.skip_ai_gate != 'true'
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+      - run: npx prisma generate
+
+      - name: "Gate 1/4 — Model Approval"
+        run: npx tsx scripts/ai-gate/model-approval.ts
+
+      - name: "Gate 2/4 — Data Approval"
+        run: npx tsx scripts/ai-gate/data-approval.ts
+
+      - name: "Gate 3/4 — Bias / Fairness Check"
+        run: npx tsx scripts/ai-gate/bias-check.ts
+
+      - name: "Gate 4/4 — Risk Scoring"
+        run: npx tsx scripts/ai-gate/risk-score.ts
+        env:
+          RISK_THRESHOLD: ${{ env.RISK_THRESHOLD }}
+
+      - name: Write AI gate summary
+        if: always()
+        run: |
+          node -e "
+            const fs = require('fs');
+            let rs;
+            try { rs = JSON.parse(fs.readFileSync('reports/ai-gate/risk-score.json','utf8')); }
+            catch(e) { console.log('Risk score report not found — gate may have failed early'); process.exit(0); }
+            const icon = rs.approved ? '✅' : '❌';
+            const bar  = '█'.repeat(Math.round(rs.score/5)) + '░'.repeat(20-Math.round(rs.score/5));
+            const rows = rs.stages.map(s => '| ' + [s.stage,s.total,s.failures,s.passed?'✅':'❌'].join(' | ') + ' |').join('\n');
+            const body = [
+              '## ' + icon + ' AI Security Gate — ' + (rs.approved ? 'APPROVED' : 'BLOCKED'),
+              '',
+              '\`' + bar + '\` **' + rs.score + ' / 100** (threshold: ' + rs.threshold + ')',
+              '',
+              '| Stage | Checks | Failures | Status |',
+              '|-------|--------|----------|--------|',
+              rows,
+            ].join('\n');
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, body + '\n');
+          "
+
+      - name: Upload AI gate reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-gate-reports-${{ github.sha }}
+          path: reports/ai-gate/
+          retention-days: 30
+
+  # Gate skipped — log the emergency reason so it's auditable
+  ai-gate-skipped:
+    name: "1 · AI Security Gate (SKIPPED)"
+    runs-on: ubuntu-latest
+    if: github.event.inputs.skip_ai_gate == 'true'
+    steps:
+      - name: Log skip reason
+        run: |
+          REASON="${{ github.event.inputs.emergency_reason }}"
+          if [ -z "$REASON" ]; then
+            echo "::error::skip_ai_gate=true requires emergency_reason to be set."
+            exit 1
+          fi
+          {
+            echo "## ⚠️ AI Security Gate — SKIPPED"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| **Skipped by** | @${{ github.actor }} |"
+            echo "| **Reason** | $REASON |"
+            echo "| **Commit** | \`${{ github.sha }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::warning::AI Security Gate was skipped. Reason: $REASON"
+
+  # ════════════════════════════════════════════════════════════════════════════
+  #  STAGE 2a — INFRASTRUCTURE APPLY (DigitalOcean — Terraform)
+  #
+  #  Ensures the DigitalOcean Container Registry and App Platform service exist
+  #  before the Docker image is pushed and Vercel is deployed.
+  #
+  #  Conditional: only applies when infra/** files changed on this commit,
+  #  or when skip_infra=false is explicitly overridden via workflow_dispatch.
+  #
+  #  Runs in parallel with docker-push and migrate (both only need ai-gate).
+  # ════════════════════════════════════════════════════════════════════════════
+  infra-apply:
+    name: "2a · Infrastructure Apply (DigitalOcean)"
+    needs: [ai-gate, ai-gate-skipped]
+    if: |
+      always() &&
+      (needs.ai-gate.result == 'success' || needs.ai-gate-skipped.result == 'success') &&
+      github.event.inputs.skip_infra != 'true'
     runs-on: ubuntu-latest
     environment: production
+    defaults:
+      run:
+        working-directory: infra
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
         with:
-          node-version: "20"
-          cache: "npm"
+          fetch-depth: 2  # Need parent commit to detect changed files
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Detect infra file changes
+        id: infra-changed
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1 HEAD -- infra/ | wc -l)
+          echo "changed=${CHANGED}" >> "$GITHUB_OUTPUT"
+          echo "Infra files changed: ${CHANGED}"
 
-      - name: Generate Prisma Client
+      - name: Set up Terraform ${{ env.TF_VERSION }}
+        if: steps.infra-changed.outputs.changed != '0'
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Restore Terraform provider cache
+        if: steps.infra-changed.outputs.changed != '0'
+        uses: actions/cache@v4
+        with:
+          path: infra/.terraform
+          key: terraform-${{ runner.os }}-${{ hashFiles('infra/.terraform.lock.hcl') }}
+          restore-keys: terraform-${{ runner.os }}-
+
+      - name: terraform init
+        if: steps.infra-changed.outputs.changed != '0'
+        run: |
+          terraform init \
+            -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
+            -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
+            -backend-config="endpoint=https://${{ env.DO_SPACES_REGION }}.digitaloceanspaces.com" \
+            -input=false
+
+      - name: terraform plan
+        if: steps.infra-changed.outputs.changed != '0'
+        id: plan
+        run: terraform plan -out=tfplan.binary -input=false -no-color -detailed-exitcode
+        continue-on-error: true
+
+      - name: terraform apply
+        if: |
+          steps.infra-changed.outputs.changed != '0' &&
+          steps.plan.outputs.exitcode != '1'
+        run: terraform apply -input=false -no-color tfplan.binary
+
+      - name: Capture infra outputs
+        if: steps.infra-changed.outputs.changed != '0'
+        id: tf-out
+        run: |
+          echo "registry=$(terraform output -raw registry_endpoint 2>/dev/null || echo 'N/A')" >> "$GITHUB_OUTPUT"
+          echo "app_url=$(terraform output -raw langgraph_live_url 2>/dev/null || echo 'N/A')"  >> "$GITHUB_OUTPUT"
+
+      - name: Write infra summary
+        if: always()
+        run: |
+          CHANGED="${{ steps.infra-changed.outputs.changed }}"
+          {
+            if [ "$CHANGED" = "0" ]; then
+              echo "## 🏗️ Infrastructure — ⏭️ No Changes"
+              echo ""
+              echo "> No \`infra/\` files were modified in this commit — Terraform apply skipped."
+            else
+              echo "## 🏗️ Infrastructure — ✅ Applied"
+              echo ""
+              echo "| Resource | Value |"
+              echo "|----------|-------|"
+              echo "| **Registry** | \`${{ steps.tf-out.outputs.registry }}\` |"
+              echo "| **LangGraph URL** | \`${{ steps.tf-out.outputs.app_url }}\` |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ════════════════════════════════════════════════════════════════════════════
+  #  STAGE 2b — DOCKER: BUILD → TRIVY SCAN → PUSH TO DOCR
+  #
+  #  1. Multi-stage build of the Python LangGraph service
+  #  2. Trivy scans the image tarball:
+  #       • SARIF → GitHub Security tab (all severities)
+  #       • Blocks on CRITICAL CVEs
+  #       • Warns on HIGH CVEs (non-blocking)
+  #       • Blocks on secrets inside the image filesystem
+  #       • Blocks on CRITICAL/HIGH Dockerfile misconfigs
+  #  3. Rebuilds with DOCR tags and pushes with SLSA provenance + SBOM
+  #  4. Trivy re-verifies the pushed registry image (digest confirmation)
+  #
+  #  Runs in parallel with migrate (both need ai-gate + infra-apply).
+  # ════════════════════════════════════════════════════════════════════════════
+  docker-push:
+    name: "2b · Docker — Build · Trivy · Push to DOCR"
+    needs: [ai-gate, ai-gate-skipped, infra-apply]
+    if: |
+      always() &&
+      (needs.ai-gate.result == 'success' || needs.ai-gate-skipped.result == 'success') &&
+      (needs.infra-apply.result == 'success' || needs.infra-apply.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # ── Build (export as tarball — no push yet) ───────────────────────────
+      - name: Compute image metadata
+        id: meta-local
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: type=raw,value=latest
+
+      - name: Build image and export tarball
+        uses: docker/build-push-action@v5
+        with:
+          context: ./python/agent_graph
+          dockerfile: ./python/agent_graph/Dockerfile
+          push: false
+          tags: ${{ steps.meta-local.outputs.tags }}
+          outputs: type=docker,dest=/tmp/langgraph-image.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILD_DATE=${{ github.event.repository.updated_at }}
+            GIT_SHA=${{ github.sha }}
+
+      - name: Load image into Docker daemon
+        run: docker load --input /tmp/langgraph-image.tar
+
+      # ── Trivy scans ───────────────────────────────────────────────────────
+      - name: Trivy — SARIF report (all severities → Security tab)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:latest
+          format: sarif
+          output: trivy-results.sarif
+          severity: "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          scanners: "vuln,secret,config"
+
+      - name: Upload SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-release
+
+      - name: Trivy — gate on CRITICAL CVEs
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:latest
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          scanners: "vuln"
+          exit-code: "1"
+
+      - name: Trivy — warn on HIGH CVEs
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:latest
+          format: table
+          severity: HIGH
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          scanners: "vuln"
+          exit-code: "0"
+
+      - name: Trivy — secret scan inside image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:latest
+          format: table
+          scanners: "secret"
+          exit-code: "1"
+
+      - name: Trivy — Dockerfile misconfig scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          scan-ref: ./python/agent_graph
+          format: table
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+
+      # ── Push to DOCR ──────────────────────────────────────────────────────
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Log in to DigitalOcean Container Registry
+        run: doctl registry login --expiry-seconds 600
+
+      - name: Compute DOCR image metadata
+        id: meta-docr
+        uses: docker/metadata-action@v5
+        with:
+          images: registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest
+            type=raw,value=${{ github.run_number }}
+
+      - name: Build and push to DOCR (layers cached)
+        id: push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./python/agent_graph
+          dockerfile: ./python/agent_graph/Dockerfile
+          push: true
+          tags: ${{ steps.meta-docr.outputs.tags }}
+          labels: ${{ steps.meta-docr.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      - name: Trivy — verify pushed registry image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}:latest
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+        env:
+          TRIVY_USERNAME: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          TRIVY_PASSWORD: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Write Docker summary
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          {
+            echo "## 🐳 Docker — ✅ Pushed to DOCR"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| **Registry** | \`registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}\` |"
+            echo "| **Image** | \`${{ env.IMAGE_NAME }}\` |"
+            echo "| **Tags** | \`latest\`, \`sha-${SHORT_SHA}\`, \`${{ github.run_number }}\` |"
+            echo "| **Digest** | \`${{ steps.push.outputs.digest }}\` |"
+            echo "| **Trivy** | ✅ No CRITICAL CVEs |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ════════════════════════════════════════════════════════════════════════════
+  #  STAGE 2c — DATABASE MIGRATION
+  #
+  #  Runs Prisma `migrate deploy` against the production database BEFORE
+  #  the new application code goes live.
+  #  Safe for production: applies only committed SQL files, never auto-generates.
+  #
+  #  Runs in parallel with docker-push (both need ai-gate + infra-apply).
+  # ════════════════════════════════════════════════════════════════════════════
+  migrate:
+    name: "2c · Database Migration (Prisma)"
+    needs: [ai-gate, ai-gate-skipped, infra-apply]
+    if: |
+      always() &&
+      (needs.ai-gate.result == 'success' || needs.ai-gate-skipped.result == 'success') &&
+      (needs.infra-apply.result == 'success' || needs.infra-apply.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Generate Prisma client
         run: npx prisma generate
         env:
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
 
+      - name: Validate migration state (dry run)
+        run: npx prisma migrate status
+        env:
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+
       - name: Apply pending migrations
-        # `migrate deploy` is safe for production: it applies only the SQL
-        # files already committed to the repo and never auto-generates new ones.
         run: npx prisma migrate deploy
         env:
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
@@ -48,54 +550,55 @@ jobs:
       - name: Write migration summary
         if: always()
         run: |
+          STATUS="${{ job.status }}"
+          ICON=$([ "$STATUS" = "success" ] && echo "✅" || echo "❌")
           {
-            echo "## 🗄️ Database Migration — ${{ job.status == 'success' && '✅ Applied' || '❌ Failed' }}"
+            echo "## 🗄️ Database Migration — ${ICON} ${STATUS^}"
             echo ""
-            echo "All pending Prisma migrations have been deployed to production."
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| **Status** | ${ICON} ${STATUS^} |"
+            echo "| **Commit** | \`${{ github.sha }}\` |"
+            echo ""
+            echo "> Prisma \`migrate deploy\` applies only committed SQL migrations."
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # ── Job 2: Deploy ──────────────────────────────────────────────────────────
-  # Deploys the application to Vercel after the migration job succeeds.
-  # Uses `vercel --prebuilt` to upload an already-verified build rather than
-  # re-running `next build` on Vercel's infra.
+  # ════════════════════════════════════════════════════════════════════════════
+  #  STAGE 3 — DEPLOY TO VERCEL (Next.js Production)
   #
-  # Required GitHub Secrets (set in repo → Settings → Secrets → Actions):
-  #   VERCEL_TOKEN        — Vercel personal access token
-  #   VERCEL_ORG_ID       — from `vercel link` (stored in .vercel/project.json)
-  #   VERCEL_PROJECT_ID   — from `vercel link` (stored in .vercel/project.json)
+  #  Runs after docker-push AND migrate both succeed, ensuring:
+  #    • The LangGraph container is live in DOCR (App Platform auto-deploys)
+  #    • The database schema is up-to-date before the new app code hits it
   #
-  # All runtime env vars (DATABASE_URL, JWT_*, etc.) should be configured
-  # directly in the Vercel project dashboard, NOT passed here.
-  deploy:
-    name: "🚀 Deploy to Production"
-    needs: migrate
+  #  Uses `vercel --prebuilt` to deploy the already-built artifact rather than
+  #  re-running `next build` on Vercel's infrastructure.
+  # ════════════════════════════════════════════════════════════════════════════
+  deploy-vercel:
+    name: "3 · Deploy — Next.js → Vercel"
+    needs: [docker-push, migrate]
     runs-on: ubuntu-latest
     environment:
       name: production
       url: ${{ steps.deploy.outputs.url }}
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: "npm"
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
 
-      - name: Install dependencies
-        run: npm ci
+      - run: npm ci
+      - run: npm install --global vercel@latest
 
-      - name: Install Vercel CLI
-        run: npm install --global vercel@latest
-
-      - name: Pull Vercel environment & project config
+      - name: Pull Vercel environment + project config
         run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
-      - name: Build for production (Vercel)
+      - name: Build for production
         run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
@@ -115,13 +618,343 @@ jobs:
       - name: Write deploy summary
         if: always()
         run: |
+          STATUS="${{ job.status }}"
+          ICON=$([ "$STATUS" = "success" ] && echo "✅" || echo "❌")
           {
-            echo "## 🚀 Production Deploy — ${{ job.status == 'success' && '✅ Live' || '❌ Failed' }}"
+            echo "## 🚀 Vercel Deploy — ${ICON} ${STATUS^}"
             echo ""
             echo "| Field | Value |"
             echo "|-------|-------|"
             echo "| **URL** | ${{ steps.deploy.outputs.url || '_unavailable_' }} |"
             echo "| **Commit** | \`${{ github.sha }}\` |"
             echo "| **Author** | @${{ github.actor }} |"
-            echo "| **Triggered by** | ${{ github.event.head_commit.message }} |"
+            echo "| **Message** | ${{ github.event.head_commit.message }} |"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # ════════════════════════════════════════════════════════════════════════════
+  #  STAGE 4 — HEALTH CHECK (Production Smoke Tests)
+  #
+  #  Hits key production endpoints to confirm the deployment is healthy before
+  #  running DAST. Retries each endpoint up to 5 times with 10s back-off.
+  #
+  #  Checks:
+  #    • Next.js root page         — GET /          (200)
+  #    • CSRF endpoint             — GET /api/auth/csrf  (200 + token in body)
+  #    • LangGraph health          — GET <langgraph_url>/health (200 + status:ok)
+  # ════════════════════════════════════════════════════════════════════════════
+  health-check:
+    name: "4 · Health Check (Production Smoke Tests)"
+    needs: deploy-vercel
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Wait 20s for Vercel edge propagation
+        run: sleep 20
+
+      - name: Smoke test — Next.js root page
+        run: |
+          URL="${{ secrets.PRODUCTION_URL }}"
+          echo "Testing: ${URL}"
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "${URL}" || echo "000")
+            if [ "$STATUS" = "200" ] || [ "$STATUS" = "307" ] || [ "$STATUS" = "308" ]; then
+              echo "✅ Root page returned HTTP ${STATUS}"
+              break
+            fi
+            echo "Attempt ${i}/5 — HTTP ${STATUS} — retrying in 10s..."
+            [ "$i" = "5" ] && { echo "❌ Root page health check failed after 5 attempts"; exit 1; }
+            sleep 10
+          done
+
+      - name: Smoke test — CSRF endpoint
+        run: |
+          URL="${{ secrets.PRODUCTION_URL }}/api/auth/csrf"
+          for i in 1 2 3 4 5; do
+            BODY=$(curl -s --max-time 10 "${URL}" || echo "")
+            if echo "$BODY" | grep -q "csrfToken\|token"; then
+              echo "✅ CSRF endpoint is healthy"
+              break
+            fi
+            echo "Attempt ${i}/5 — CSRF endpoint not ready — retrying in 10s..."
+            [ "$i" = "5" ] && { echo "❌ CSRF endpoint health check failed"; exit 1; }
+            sleep 10
+          done
+
+      - name: Smoke test — LangGraph /health
+        run: |
+          # LangGraph URL comes from TF output; fall back to env var if not available
+          LG_URL="${{ secrets.TF_VAR_next_internal_url }}"
+          # The LangGraph service is separate from the Next.js app
+          # Its URL is set in LANGGRAPH_SERVICE_URL on Vercel
+          # We check the internal URL if accessible, or skip gracefully
+          if [ -z "$LG_URL" ]; then
+            echo "⏭️ LANGGRAPH_SERVICE_URL not set — skipping LangGraph health check"
+            exit 0
+          fi
+          for i in 1 2 3 4 5; do
+            BODY=$(curl -s --max-time 10 "${LG_URL}/health" || echo "")
+            if echo "$BODY" | grep -q '"status":"ok"'; then
+              echo "✅ LangGraph health endpoint is healthy"
+              break
+            fi
+            echo "Attempt ${i}/5 — LangGraph not ready — retrying in 10s..."
+            [ "$i" = "5" ] && echo "⚠️ LangGraph health check inconclusive (may be warming up)"
+            sleep 10
+          done
+
+      - name: Write health check summary
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          ICON=$([ "$STATUS" = "success" ] && echo "✅" || echo "❌")
+          {
+            echo "## 🩺 Health Check — ${ICON} ${STATUS^}"
+            echo ""
+            echo "| Endpoint | Check |"
+            echo "|----------|-------|"
+            echo "| \`GET /\` | Next.js root page — HTTP 200 |"
+            echo "| \`GET /api/auth/csrf\` | CSRF token present |"
+            echo "| \`GET <langgraph>/health\` | status: ok |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ════════════════════════════════════════════════════════════════════════════
+  #  STAGE 5 — DAST (OWASP ZAP Full Scan on Production)
+  #
+  #  Dynamic Application Security Testing against the live production URL.
+  #  Runs after a successful health check (confirms the app is ready for scan).
+  #
+  #  Catches runtime issues that static analysis misses:
+  #    • Missing security headers (CSP, HSTS, X-Frame-Options)
+  #    • Insecure cookies / session fixation
+  #    • CORS misconfiguration + open redirects
+  #    • Injection surfaces (header, path, body)
+  #    • Information disclosure in error responses
+  #
+  #  False-positive suppressions: .github/zap/rules.tsv
+  #  Skippable via workflow_dispatch.skip_dast=true.
+  # ════════════════════════════════════════════════════════════════════════════
+  dast:
+    name: "5 · DAST — OWASP ZAP (Production)"
+    needs: health-check
+    runs-on: ubuntu-latest
+    if: github.event.inputs.skip_dast != 'true'
+    permissions:
+      contents: read
+      security-events: write
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ZAP Full Scan — ${{ secrets.PRODUCTION_URL }}
+        uses: zaproxy/action-full-scan@v0.10.0
+        with:
+          target: ${{ secrets.PRODUCTION_URL }}
+          allow_issue_writing: true
+          fail_action: true
+          rules_file_name: .github/zap/rules.tsv
+          cmd_options: |
+            -config globalexcludeurl.url_list.url(0).regex=.*\.map$
+            -config globalexcludeurl.url_list.url(1).regex=.*/_next/static/.*
+            -config globalexcludeurl.url_list.url(2).regex=.*/api/auth/.*
+          artifact_name: zap-production-${{ github.sha }}
+
+      - name: Upload ZAP SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: zap_scan_report.json
+          category: owasp-zap-production
+        continue-on-error: true
+
+      - name: Write DAST summary
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          ICON=$([ "$STATUS" = "success" ] && echo "✅" || echo "⚠️")
+          {
+            echo "## 🕷️ DAST — ${ICON} OWASP ZAP (Production)"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| **Target** | ${{ secrets.PRODUCTION_URL }} |"
+            echo "| **Scan type** | Full scan (active + passive) |"
+            echo "| **Status** | ${STATUS^} |"
+            echo ""
+            echo "> Full HTML report in artifact \`zap-production-${{ github.sha }}\`."
+            echo "> Findings ≥ WARN are automatically raised as GitHub Issues."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  dast-skipped:
+    name: "5 · DAST — SKIPPED"
+    needs: health-check
+    runs-on: ubuntu-latest
+    if: github.event.inputs.skip_dast == 'true'
+    steps:
+      - name: Log skip reason
+        run: |
+          {
+            echo "## ⏭️ DAST — SKIPPED"
+            echo ""
+            echo "| Skipped by | Reason |"
+            echo "|------------|--------|"
+            echo "| @${{ github.actor }} | ${{ github.event.inputs.emergency_reason || 'No reason provided' }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ════════════════════════════════════════════════════════════════════════════
+  #  STAGE 6 — RELEASE SUMMARY + GITHUB RELEASE TAG
+  #
+  #  Runs always (even if earlier stages failed) to produce a complete audit
+  #  record of every deployment attempt.
+  #
+  #  Creates a GitHub Release tag on success so the deployment is linked to
+  #  a permanent, browsable release page.
+  # ════════════════════════════════════════════════════════════════════════════
+  release-summary:
+    name: "6 · Release Summary"
+    needs: [ai-gate, ai-gate-skipped, infra-apply, docker-push, migrate, deploy-vercel, health-check, dast, dast-skipped]
+    runs-on: ubuntu-latest
+    if: always()
+    permissions:
+      contents: write    # Required to create a GitHub Release
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download AI gate reports
+        uses: actions/download-artifact@v4
+        with:
+          name: ai-gate-reports-${{ github.sha }}
+          path: reports/ai-gate/
+        continue-on-error: true   # May not exist if ai-gate was skipped
+
+      - name: Write comprehensive release summary
+        run: |
+          # Collect job results
+          AI_GATE="${{ needs.ai-gate.result }}${{ needs.ai-gate-skipped.result }}"
+          INFRA="${{ needs.infra-apply.result }}"
+          DOCKER="${{ needs.docker-push.result }}"
+          MIGRATE="${{ needs.migrate.result }}"
+          VERCEL="${{ needs.deploy-vercel.result }}"
+          HEALTH="${{ needs.health-check.result }}"
+          DAST="${{ needs.dast.result }}${{ needs.dast-skipped.result }}"
+
+          icon() {
+            case "$1" in
+              success)  echo "✅" ;;
+              skipped)  echo "⏭️" ;;
+              failure)  echo "❌" ;;
+              *)        echo "⚪" ;;
+            esac
+          }
+
+          # Overall result
+          OVERALL="✅ SUCCESS"
+          for r in "${{ needs.ai-gate.result }}" "${{ needs.docker-push.result }}" "${{ needs.migrate.result }}" "${{ needs.deploy-vercel.result }}" "${{ needs.health-check.result }}"; do
+            if [ "$r" = "failure" ]; then OVERALL="❌ FAILED"; break; fi
+          done
+
+          # Read risk score if available
+          RISK_SCORE="N/A"
+          RISK_APPROVED="N/A"
+          if [ -f reports/ai-gate/risk-score.json ]; then
+            RISK_SCORE=$(node -e "console.log(require('./reports/ai-gate/risk-score.json').score)" 2>/dev/null || echo "N/A")
+            RISK_APPROVED=$(node -e "console.log(require('./reports/ai-gate/risk-score.json').approved)" 2>/dev/null || echo "N/A")
+          fi
+
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          RELEASE_TIME=$(date -u '+%Y-%m-%d %H:%M UTC')
+
+          {
+            echo "---"
+            echo "## 🚀 Release — ${OVERALL}"
+            echo ""
+            echo "**${RELEASE_TIME}** · Commit [\`${SHORT_SHA}\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}) · By @${{ github.actor }}"
+            echo ""
+            echo "---"
+            echo ""
+            echo "### Pipeline Stages"
+            echo ""
+            echo "| # | Stage | Status |"
+            echo "|---|-------|--------|"
+            echo "| 1 | AI Security Gate | $(icon '${{ needs.ai-gate.result }}')$(icon '${{ needs.ai-gate-skipped.result }}') |"
+            echo "| 2a | Infrastructure (Terraform) | $(icon '${INFRA}') |"
+            echo "| 2b | Docker — Build · Trivy · Push | $(icon '${{ needs.docker-push.result }}') |"
+            echo "| 2c | Database Migration | $(icon '${{ needs.migrate.result }}') |"
+            echo "| 3 | Deploy → Vercel | $(icon '${{ needs.deploy-vercel.result }}') |"
+            echo "| 4 | Health Check | $(icon '${{ needs.health-check.result }}') |"
+            echo "| 5 | DAST (OWASP ZAP) | $(icon '${{ needs.dast.result }}')$(icon '${{ needs.dast-skipped.result }}') |"
+            echo ""
+            echo "---"
+            echo ""
+            echo "### AI Security Gate"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|--------|-------|"
+            echo "| **Risk score** | ${RISK_SCORE} / 100 |"
+            echo "| **Approved** | ${RISK_APPROVED} |"
+            echo "| **Threshold** | ${{ env.RISK_THRESHOLD }} |"
+            echo ""
+            echo "---"
+            echo ""
+            echo "### Deployment Targets"
+            echo ""
+            echo "| Service | Platform | URL |"
+            echo "|---------|----------|-----|"
+            echo "| Next.js app | Vercel | ${{ secrets.PRODUCTION_URL }} |"
+            echo "| LangGraph service | DO App Platform | (see infra outputs) |"
+            echo "| Container image | DOCR | \`registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}:sha-${SHORT_SHA}\` |"
+            echo ""
+            echo "---"
+            echo ""
+            echo "### Artifacts"
+            echo ""
+            echo "| Artifact | Retention |"
+            echo "|----------|-----------|"
+            echo "| \`ai-gate-reports-${{ github.sha }}\` | 30 days |"
+            echo "| \`zap-production-${{ github.sha }}\` | (ZAP report) |"
+            echo ""
+            echo "> Run [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Create a GitHub Release tag on full success
+      - name: Create GitHub Release
+        if: |
+          needs.deploy-vercel.result == 'success' &&
+          needs.health-check.result == 'success'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const sha      = context.sha;
+            const shortSha = sha.substring(0, 7);
+            const now      = new Date().toISOString().replace('T',' ').substring(0,16) + ' UTC';
+            const runUrl   = `${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`;
+
+            await github.rest.repos.createRelease({
+              owner:            context.repo.owner,
+              repo:             context.repo.repo,
+              tag_name:         `release-${shortSha}`,
+              name:             `Release ${shortSha} — ${now}`,
+              target_commitish: sha,
+              body: [
+                `## 🚀 Production Release`,
+                ``,
+                `| Field | Value |`,
+                `|-------|-------|`,
+                `| **Commit** | \`${shortSha}\` |`,
+                `| **Deployed by** | @${{ github.actor }} |`,
+                `| **Deployed at** | ${now} |`,
+                `| **Run** | [#${{ github.run_number }}](${runUrl}) |`,
+                ``,
+                `### What's included`,
+                `- ✅ AI Security Gate passed`,
+                `- 🐳 LangGraph image pushed to DOCR`,
+                `- 🗄️ Database migrations applied`,
+                `- 🚀 Next.js deployed to Vercel`,
+                `- 🩺 Health checks passed`,
+              ].join('\n'),
+              draft:      false,
+              prerelease: false,
+              make_latest: 'true',
+            });

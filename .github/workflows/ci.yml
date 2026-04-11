@@ -8,6 +8,12 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      force_push:
+        description: "Force push Docker image to DOCR even on non-main branch"
+        required: false
+        default: "false"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -29,6 +35,9 @@ env:
   JWT_REFRESH_SECRET: "ci-jwt-refresh-secret-at-least-32-characters-long"
   CSRF_SECRET: "ci-csrf-secret-at-least-32-characters-long-ok"
   NEXT_PUBLIC_MAPBOX_TOKEN: "ci-mapbox-token"
+  # Docker image name — prefixed with registry.digitalocean.com/<DO_REGISTRY_NAME>/ on push
+  IMAGE_NAME: voyageai-langgraph
+  PYTHON_VERSION: "3.11"
 
 defaults:
   run:
@@ -40,19 +49,33 @@ defaults:
 #   1 secret-scan  ──────────────────────────────────────────────────────┐
 #   2 lint          ← secret-scan                                        │
 #   3 build         ← lint                                               │
-#   4 unittest      ← build                                              │
-#   5 sast          ← lint (CodeQL autobuild — independent of app build) │
-#   6 sca           ← build                                              │
-#   7 data-validation   ← build                                          │
-#   8 model-validation  ← build                                          │
-#   9 prompt-validation ← model-validation  (NEW)                        │
-#  10 prompt-tests  ← [unittest, prompt-validation]                      │
-#  11 safety-tests  ← [unittest, prompt-validation]                      │
-#  12 evaluation    ← [prompt-tests, safety-tests]   ─────────────────────┘
+#   4 unittest      ← build           ┐                                 │
+#   5 sast          ← lint            │  All must pass — if ANY of      │
+#   6 sca           ← build           │  stages 4–12 fail, the          │
+#   7 data-validation   ← build       │  quality-gate job fails and      │
+#   8 model-validation  ← build       │  stages 13–16 are blocked.      │
+#   9 prompt-validation ← model-val   │                                 │
+#  10 prompt-tests  ← [4, 9]          │                                 │
+#  11 safety-tests  ← [4, 9]          │                                 │
+#  12 evaluation    ← [10, 11]        ┘                                 │
+#        │                                                               │
+#   quality-gate ← [4,5,6,7,12]  ◄── single blocking aggregator ────────┘
+#        │
+#  13 build-image   ← quality-gate  (Docker — LangGraph Python service)
+#                                │
+#  14 trivy-scan    ← build-image  (CVE gate, secret scan, misconfig scan)
+#                                │
+#              ┌─────────────────┴──────────────────┐
+#  15 push-to-docr  ← trivy-scan  (main only)        │
+#  16 dast          ← trivy-scan  (main only)  ──────┘
+#
+#  Required secrets for stages 15–16:
+#    DIGITALOCEAN_ACCESS_TOKEN  — DO API token (write:registry)
+#    DO_REGISTRY_NAME           — registry slug, e.g. "voyageai"
+#    STAGING_URL                — staging URL for DAST, e.g. https://voyageai-staging.vercel.app
 # ─────────────────────────────────────────────────────────────────────────────
 
 jobs:
-
   # ══════════════════════════════════════════════════════════════════════════
   #  1. SECRET SCAN — Block the entire pipeline if secrets are committed
   # ══════════════════════════════════════════════════════════════════════════
@@ -62,7 +85,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # Full history required for accurate Gitleaks scan
+          fetch-depth: 0 # Full history required for accurate Gitleaks scan
 
       - name: Gitleaks — detect committed secrets
         uses: gitleaks/gitleaks-action@v2
@@ -503,3 +526,353 @@ jobs:
             }
             console.log('All quality gates passed.');
           "
+
+  # ══════════════════════════════════════════════════════════════════════════
+  #  QUALITY GATE — single aggregating blocker for stages 13–16
+  #
+  #  WHY THIS EXISTS:
+  #    Stages 5 (sast), 6 (sca), and 7 (data-validation) run in parallel with
+  #    the main evaluation chain. They have NO downstream dependents, so if any
+  #    of them fail the `evaluation` job still completes and build-image runs.
+  #
+  #    This job collects every quality check (4–12) into one place.
+  #    If ANY of them failed or was skipped due to an upstream failure,
+  #    this job fails and stages 13–16 are blocked.
+  #
+  #  Covered checks:
+  #    unittest (4)       — at least one test must pass
+  #    sast (5)           — CodeQL must find no security issues
+  #    sca (6)            — no high/critical dependency CVEs
+  #    data-validation (7)— Zod schemas + agent contracts intact
+  #    evaluation (12)    — covers 8, 9, 10, 11 transitively
+  # ══════════════════════════════════════════════════════════════════════════
+  quality-gate:
+    name: "✅ Quality Gate (all checks)"
+    needs: [unittest, sast, sca, data-validation, evaluation]
+    runs-on: ubuntu-latest
+    # Default (no `if`) means: only run when ALL needs completed with success.
+    # If any needed job failed or was skipped, this job is also skipped,
+    # which propagates the block to build-image.
+
+    steps:
+      - name: All quality gates passed
+        run: |
+          {
+            echo "## ✅ Quality Gate — All Checks Passed"
+            echo ""
+            echo "| Check | Stage | Result |"
+            echo "|-------|-------|--------|"
+            echo "| Unit Tests         | 4  | ✅ |"
+            echo "| SAST (CodeQL)      | 5  | ✅ |"
+            echo "| SCA (deps CVE)     | 6  | ✅ |"
+            echo "| Data Validation    | 7  | ✅ |"
+            echo "| Model Validation   | 8  | ✅ |"
+            echo "| Prompt Validation  | 9  | ✅ |"
+            echo "| Prompt Tests       | 10 | ✅ |"
+            echo "| Safety Tests       | 11 | ✅ |"
+            echo "| Evaluation         | 12 | ✅ |"
+            echo ""
+            echo "> Pipeline cleared for Docker build and delivery stages."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ══════════════════════════════════════════════════════════════════════════
+  #  13. BUILD DOCKER IMAGE
+  #      Builds the multi-stage LangGraph Dockerfile and exports it as an OCI
+  #      tarball so Trivy can scan it without touching a registry.
+  #      Only runs after ALL quality gates pass (via quality-gate aggregator).
+  # ══════════════════════════════════════════════════════════════════════════
+  build-image:
+    name: "13 · Build Docker Image (LangGraph)"
+    needs: quality-gate
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build image (cache-backed) and export tarball
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: ./python/agent_graph
+          dockerfile: ./python/agent_graph/Dockerfile
+          push: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=docker,dest=/tmp/langgraph-image.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILD_DATE=${{ github.event.repository.updated_at }}
+            GIT_SHA=${{ github.sha }}
+
+      - name: Upload image tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: langgraph-image-${{ github.sha }}
+          path: /tmp/langgraph-image.tar
+          retention-days: 1
+
+  # ══════════════════════════════════════════════════════════════════════════
+  #  14. TRIVY — CONTAINER VULNERABILITY SCAN
+  #      Four scans on the built tarball:
+  #        • SARIF report (all severities) → GitHub Security tab
+  #        • CRITICAL CVE gate             → blocks pipeline
+  #        • HIGH CVE scan                 → warning only, non-blocking
+  #        • Secret scan inside image      → blocks pipeline
+  #        • Dockerfile misconfig scan     → blocks on CRITICAL/HIGH
+  # ══════════════════════════════════════════════════════════════════════════
+  trivy-scan:
+    name: "14 · Trivy — Container Vulnerability Scan"
+    needs: build-image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download image tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: langgraph-image-${{ github.sha }}
+          path: /tmp/
+
+      - name: Load image into Docker daemon
+        run: docker load --input /tmp/langgraph-image.tar
+
+      - name: Trivy — SARIF report (all severities → Security tab)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:latest
+          format: sarif
+          output: trivy-results.sarif
+          severity: "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          scanners: "vuln,secret,config"
+
+      - name: Upload SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-container
+
+      - name: Trivy — gate on CRITICAL CVEs (blocks pipeline)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:latest
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          scanners: "vuln"
+          exit-code: "1"
+
+      - name: Trivy — warn on HIGH CVEs (non-blocking)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:latest
+          format: table
+          severity: HIGH
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          scanners: "vuln"
+          exit-code: "0"
+
+      - name: Trivy — secret scan inside image filesystem
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:latest
+          format: table
+          scanners: "secret"
+          exit-code: "1"
+
+      - name: Trivy — Dockerfile misconfig scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          scan-ref: ./python/agent_graph
+          format: table
+          exit-code: "1"
+          severity: "CRITICAL,HIGH"
+
+      - name: Upload Trivy SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-results-${{ github.sha }}
+          path: trivy-results.sarif
+          retention-days: 30
+
+  # ══════════════════════════════════════════════════════════════════════════
+  #  15. PUSH TO DIGITALOCEAN CONTAINER REGISTRY
+  #      Runs only on main (or when force_push=true via workflow_dispatch).
+  #      Re-builds with registry tags using the BuildKit GHA layer cache
+  #      (fast — all layers already cached from stage 13).
+  #      Attaches SLSA provenance + CycloneDX SBOM to the image manifest.
+  #
+  #  Required secrets:
+  #    DIGITALOCEAN_ACCESS_TOKEN  — DO personal access token (write:registry)
+  #    DO_REGISTRY_NAME           — registry slug (e.g. "voyageai")
+  # ══════════════════════════════════════════════════════════════════════════
+  push-to-docr:
+    name: "15 · Push to DigitalOcean Container Registry"
+    needs: trivy-scan
+    runs-on: ubuntu-latest
+    if: |
+      (github.ref == 'refs/heads/main' || github.event.inputs.force_push == 'true') &&
+      github.event_name != 'pull_request'
+    permissions:
+      packages: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Log in to DigitalOcean Container Registry
+        run: doctl registry login --expiry-seconds 600
+
+      - name: Compute registry image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest
+            type=raw,value=${{ github.run_number }}
+
+      - name: Build and push to DOCR (layers cached from stage 13)
+        id: push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./python/agent_graph
+          dockerfile: ./python/agent_graph/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      - name: Trivy — verify pushed image in registry
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}:latest
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+        env:
+          TRIVY_USERNAME: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          TRIVY_PASSWORD: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Write push summary
+        run: |
+          {
+            echo "## 🐳 Container Push — ✅ Published"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| **Registry** | \`registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}\` |"
+            echo "| **Image** | \`${{ env.IMAGE_NAME }}\` |"
+            echo "| **Tags** | \`latest\`, \`sha-$(echo ${{ github.sha }} | head -c7)\`, \`${{ github.run_number }}\` |"
+            echo "| **Digest** | \`${{ steps.push.outputs.digest }}\` |"
+            echo "| **Commit** | \`${{ github.sha }}\` |"
+            echo "| **Actor** | @${{ github.actor }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ══════════════════════════════════════════════════════════════════════════
+  #  16. DAST — OWASP ZAP FULL SCAN
+  #      Dynamic Application Security Testing against the live staging URL.
+  #      Runs in parallel with push-to-docr (both gate on trivy-scan).
+  #      Catches runtime issues that static analysis cannot:
+  #        • Missing security headers (CSP, HSTS, X-Frame-Options)
+  #        • Insecure cookies / session fixation
+  #        • CORS misconfiguration
+  #        • Open redirects + injection surfaces
+  #        • Information disclosure in error responses
+  #
+  #  Required secret:
+  #    STAGING_URL — e.g. https://voyageai-staging.vercel.app
+  #
+  #  False-positive suppressions: .github/zap/rules.tsv
+  # ══════════════════════════════════════════════════════════════════════════
+  dast:
+    name: "16 · DAST (OWASP ZAP)"
+    needs: trivy-scan
+    runs-on: ubuntu-latest
+    if: |
+      github.ref == 'refs/heads/main' &&
+      github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      security-events: write
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ZAP Full Scan — ${{ secrets.STAGING_URL }}
+        uses: zaproxy/action-full-scan@v0.10.0
+        with:
+          target: ${{ secrets.STAGING_URL }}
+          allow_issue_writing: true
+          fail_action: true
+          rules_file_name: .github/zap/rules.tsv
+          cmd_options: |
+            -config globalexcludeurl.url_list.url(0).regex=.*\.map$
+            -config globalexcludeurl.url_list.url(1).regex=.*/_next/static/.*
+            -config globalexcludeurl.url_list.url(2).regex=.*/api/auth/.*
+          artifact_name: zap-report-${{ github.sha }}
+
+      - name: Upload ZAP SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: zap_scan_report.json
+          category: owasp-zap
+        continue-on-error: true
+
+      - name: Write DAST summary
+        if: always()
+        run: |
+          {
+            echo "## 🕷️ DAST — OWASP ZAP Full Scan"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| **Target** | ${{ secrets.STAGING_URL }} |"
+            echo "| **Scan type** | Full (active + passive) |"
+            echo "| **Commit** | \`${{ github.sha }}\` |"
+            echo ""
+            echo "> Full HTML report available in the **zap-report-${{ github.sha }}** artifact."
+            echo "> Findings with severity ≥ WARN are also raised as GitHub Issues."
+          } >> "$GITHUB_STEP_SUMMARY"

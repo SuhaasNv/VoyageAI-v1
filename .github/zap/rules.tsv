@@ -1,0 +1,29 @@
+# OWASP ZAP — False-positive suppression rules for VoyageAI
+#
+# Format (tab-separated):
+#   <rule-id>   IGNORE   <reason>
+#
+# Full rule list: https://www.zaproxy.org/docs/alerts/
+#
+# ─── Rules suppressed for this application ────────────────────────────────────
+#
+# 10055   IGNORE  CSP is set at Vercel edge layer (X-Content-Type-Options, etc.)
+#                 — not visible when ZAP hits the origin
+#
+# 10096   IGNORE  Timestamp disclosure in /api/health is intentional
+#
+# 10038   IGNORE  CSP "unsafe-inline" is required by Next.js inline styles
+#                 and is mitigated by nonce rotation — acceptable for staging
+#
+# 10021   IGNORE  X-Content-Type-Options is set at CDN, not origin
+#
+# 10035   IGNORE  Strict-Transport-Security (HSTS) is enforced by Vercel CDN
+#
+# 90022   IGNORE  App framework version disclosure (Next.js) — low priority
+#
+10055	IGNORE	CSP managed at Vercel edge CDN layer
+10096	IGNORE	Intentional timestamp in /api/health endpoint
+10038	IGNORE	Next.js requires unsafe-inline; nonce mitigates
+10021	IGNORE	X-Content-Type-Options set at CDN layer
+10035	IGNORE	HSTS enforced at Vercel CDN level
+90022	IGNORE	Framework fingerprinting accepted for staging
