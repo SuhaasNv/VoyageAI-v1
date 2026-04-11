@@ -26,18 +26,18 @@ name: Infrastructure — DigitalOcean (Terraform)
 #    DIGITALOCEAN_ACCESS_TOKEN  — DO API token (write:registry + app platform)
 #    DO_SPACES_ACCESS_KEY       — Spaces access key (for Terraform state bucket)
 #    DO_SPACES_SECRET_KEY       — Spaces secret key (for Terraform state bucket)
-#    TF_VAR_next_internal_url   — Vercel production URL (e.g. https://voyageai.vercel.app)
+#    TF_VAR_next_internal_url   — Railway public app URL (e.g. https://voyageai.up.railway.app)
 #    TF_VAR_internal_agent_secret — Shared secret for Next.js ↔ LangGraph auth
 #
 #  Optional GitHub Secrets / Variables:
-#    DO_SPACES_REGION           — Spaces region (default: nyc3)
+#    DO_SPACES_REGION           — Spaces region (default: sgp1)
 #    TF_VAR_alert_email         — Email for infrastructure alerts
-#    TF_VAR_region              — DO region (default: nyc3)
+#    TF_VAR_region              — DO region (default: sgp1)
 #    TF_VAR_environment         — staging | production (default: production)
 #    TF_VAR_langgraph_image_tag — Image tag to deploy (default: latest)
 #
 #  One-time bootstrap (run locally before first CI run):
-#    doctl spaces create voyageai-tfstate --region nyc3
+#    doctl spaces create voyageai-tfstate --region sgp1
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -80,7 +80,7 @@ env:
   TF_VERSION: "1.8.5"
   TF_WORKING_DIR: infra
   # DigitalOcean Spaces backend config
-  DO_SPACES_REGION: ${{ vars.DO_SPACES_REGION || 'nyc3' }}
+  DO_SPACES_REGION: ${{ vars.DO_SPACES_REGION || 'sgp1' }}
   TF_BACKEND_BUCKET: voyageai-tfstate
   # Pass DO token to both Terraform provider and doctl
   DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
@@ -90,7 +90,7 @@ env:
   TF_VAR_internal_agent_secret: ${{ secrets.TF_VAR_internal_agent_secret }}
   TF_VAR_alert_email: ${{ secrets.TF_VAR_alert_email || '' }}
   TF_VAR_environment: ${{ github.event.inputs.environment || 'production' }}
-  TF_IN_AUTOMATION: "true"    # Suppress interactive prompts in Terraform output
+  TF_IN_AUTOMATION: "true" # Suppress interactive prompts in Terraform output
   TF_CLI_ARGS_plan: "-lock-timeout=60s"
   TF_CLI_ARGS_apply: "-lock-timeout=60s"
 
@@ -101,7 +101,6 @@ defaults:
 
 # ─────────────────────────────────────────────────────────────────────────────
 jobs:
-
   # ════════════════════════════════════════════════════════════════════════════
   #  VALIDATE
   #  • terraform fmt   — enforces canonical formatting (fails on drift)
@@ -125,7 +124,7 @@ jobs:
       - name: terraform fmt — check canonical formatting
         id: fmt
         run: terraform fmt -check -recursive -diff
-        continue-on-error: true   # Report but don't block — fmt errors are cosmetic
+        continue-on-error: true # Report but don't block — fmt errors are cosmetic
 
       - name: terraform init
         id: init
@@ -311,7 +310,7 @@ jobs:
     name: "🚀 Apply"
     needs: plan
     runs-on: ubuntu-latest
-    environment: production       # Requires manual approval in GitHub Environments
+    environment: production # Requires manual approval in GitHub Environments
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
@@ -355,10 +354,10 @@ jobs:
         run: |
           REGISTRY=$(terraform output -raw registry_endpoint 2>/dev/null || echo "N/A")
           APP_URL=$(terraform output -raw langgraph_live_url 2>/dev/null || echo "N/A")
-          VERCEL_HINT=$(terraform output -raw vercel_env_hint 2>/dev/null || echo "N/A")
+          RAILWAY_HINT=$(terraform output -raw railway_env_hint 2>/dev/null || echo "N/A")
           echo "registry=${REGISTRY}"       >> "$GITHUB_OUTPUT"
           echo "app_url=${APP_URL}"          >> "$GITHUB_OUTPUT"
-          echo "vercel_hint=${VERCEL_HINT}"  >> "$GITHUB_OUTPUT"
+          echo "railway_hint=${RAILWAY_HINT}" >> "$GITHUB_OUTPUT"
 
       - name: Write apply summary
         run: |
@@ -373,10 +372,10 @@ jobs:
             echo "| **Applied by** | @${{ github.actor }} |"
             echo ""
             echo "### Next step"
-            echo "Add the following to your **Vercel project environment variables**:"
+            echo "Add the following to your **Railway** project (Next.js service → Variables):"
             echo ""
             echo '```'
-            echo "${{ steps.outputs.outputs.vercel_hint }}"
+            echo "${{ steps.outputs.outputs.railway_hint }}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -435,5 +434,5 @@ jobs:
             echo "| **Commit** | \`${{ github.sha }}\` |"
             echo ""
             echo "> All DigitalOcean resources (registry, app, project) have been destroyed."
-            echo "> Remember to remove \`LANGGRAPH_SERVICE_URL\` from the Vercel project settings."
+            echo "> Remember to remove \`LANGGRAPH_SERVICE_URL\` from the Railway service variables."
           } >> "$GITHUB_STEP_SUMMARY"

@@ -40,7 +40,7 @@ output "langgraph_app_urn" {
 }
 
 output "langgraph_live_url" {
-  description = "Public HTTPS URL of the LangGraph service — set this as LANGGRAPH_SERVICE_URL in Vercel"
+  description = "Public HTTPS URL of the LangGraph service — set as LANGGRAPH_SERVICE_URL in Railway"
   value       = digitalocean_app.langgraph.live_url
 }
 
@@ -56,9 +56,15 @@ output "project_id" {
   value       = digitalocean_project.voyageai.id
 }
 
-# ── Vercel integration hint ───────────────────────────────────────────────────
+# ── Railway integration hint ────────────────────────────────────────────────
 
+output "railway_env_hint" {
+  description = "Environment variable to set on the Railway Next.js service (Variables tab)"
+  value       = "LANGGRAPH_SERVICE_URL=${digitalocean_app.langgraph.live_url}"
+}
+
+# Backward compatibility — same value as railway_env_hint
 output "vercel_env_hint" {
-  description = "Environment variable to add to the Vercel project dashboard"
+  description = "Deprecated: use railway_env_hint (same value)"
   value       = "LANGGRAPH_SERVICE_URL=${digitalocean_app.langgraph.live_url}"
 }

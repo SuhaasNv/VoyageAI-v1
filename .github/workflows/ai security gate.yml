@@ -46,13 +46,17 @@ concurrency:
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Shared environment — no real LLM calls; all checks are static or mock-based
+#
+#  Optional Railway secrets (same as Railway dashboard): DATABASE_URL, DIRECT_URL, REDIS_URL
+#  When unset, placeholders are used so static gate scripts still run.
 # ─────────────────────────────────────────────────────────────────────────────
 env:
   NODE_VERSION: "20"
   SKIP_ENV_VALIDATION: "1"
   LLM_PROVIDER: "mock"
-  DATABASE_URL: "postgresql://ci:ci@localhost:5432/voyageai_ci"
-  DIRECT_URL: "postgresql://ci:ci@localhost:5432/voyageai_ci"
+  DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgresql://ci:ci@localhost:5432/voyageai_ci' }}
+  DIRECT_URL: ${{ secrets.DIRECT_URL || secrets.DATABASE_URL || 'postgresql://ci:ci@localhost:5432/voyageai_ci' }}
+  REDIS_URL: ${{ secrets.REDIS_URL || '' }}
   JWT_ACCESS_SECRET: "ci-gate-jwt-access-secret-at-least-32-chars"
   JWT_REFRESH_SECRET: "ci-gate-jwt-refresh-secret-at-least-32-chars"
   CSRF_SECRET: "ci-gate-csrf-secret-at-least-32-characters-ok"

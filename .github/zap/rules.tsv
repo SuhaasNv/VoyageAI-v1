@@ -7,7 +7,7 @@
 #
 # ─── Rules suppressed for this application ────────────────────────────────────
 #
-# 10055   IGNORE  CSP is set at Vercel edge layer (X-Content-Type-Options, etc.)
+# 10055   IGNORE  CSP may be set at Railway / edge (X-Content-Type-Options, etc.)
 #                 — not visible when ZAP hits the origin
 #
 # 10096   IGNORE  Timestamp disclosure in /api/health is intentional
@@ -17,7 +17,7 @@
 #
 # 10021   IGNORE  X-Content-Type-Options is set at CDN, not origin
 #
-# 10035   IGNORE  Strict-Transport-Security (HSTS) is enforced by Vercel CDN
+# 10035   IGNORE  Strict-Transport-Security (HSTS) may be enforced at Railway / edge
 #
 # 90022   IGNORE  App framework version disclosure (Next.js) — low priority
 #
@@ -25,5 +25,5 @@
 10096	IGNORE	Intentional timestamp in /api/health endpoint
 10038	IGNORE	Next.js requires unsafe-inline; nonce mitigates
 10021	IGNORE	X-Content-Type-Options set at CDN layer
-10035	IGNORE	HSTS enforced at Vercel CDN level
+10035	IGNORE	HSTS enforced at Railway / edge level
 90022	IGNORE	Framework fingerprinting accepted for staging

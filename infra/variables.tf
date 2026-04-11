@@ -100,7 +100,7 @@ variable "langgraph_instance_size" {
 }
 
 variable "next_internal_url" {
-  description = "URL of the Next.js app that the LangGraph service calls for agent execution (e.g. Vercel production URL)"
+  description = "Public HTTPS URL of the Next.js app on Railway (LangGraph calls this for /api/internal/agent/execute)"
   type        = string
 }
 

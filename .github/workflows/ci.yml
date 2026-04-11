@@ -23,14 +23,21 @@ concurrency:
 #  Shared environment
 #  LLM_PROVIDER=mock  → zero real API calls in CI.
 #  SKIP_ENV_VALIDATION → bypasses production-only boot-time secret checks.
+#
+#  Railway (Postgres + Redis):
+#    Set repo secrets DATABASE_URL, DIRECT_URL, REDIS_URL to your Railway
+#    service variables (same strings as in Railway dashboard). When unset,
+#    DATABASE_URL/DIRECT_URL fall back to a local placeholder so fork PRs
+#    without secrets can still run lint-only paths (jobs that need DB may fail).
 # ─────────────────────────────────────────────────────────────────────────────
 env:
   NODE_VERSION: "20"
   NEXT_TELEMETRY_DISABLED: "1"
   SKIP_ENV_VALIDATION: "1"
   LLM_PROVIDER: "mock"
-  DATABASE_URL: "postgresql://ci:ci@localhost:5432/voyageai_ci"
-  DIRECT_URL: "postgresql://ci:ci@localhost:5432/voyageai_ci"
+  DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgresql://ci:ci@localhost:5432/voyageai_ci' }}
+  DIRECT_URL: ${{ secrets.DIRECT_URL || secrets.DATABASE_URL || 'postgresql://ci:ci@localhost:5432/voyageai_ci' }}
+  REDIS_URL: ${{ secrets.REDIS_URL || '' }}
   JWT_ACCESS_SECRET: "ci-jwt-access-secret-at-least-32-characters-long"
   JWT_REFRESH_SECRET: "ci-jwt-refresh-secret-at-least-32-characters-long"
   CSRF_SECRET: "ci-csrf-secret-at-least-32-characters-long-ok"
@@ -72,7 +79,10 @@ defaults:
 #  Required secrets for stages 15–16:
 #    DIGITALOCEAN_ACCESS_TOKEN  — DO API token (write:registry)
 #    DO_REGISTRY_NAME           — registry slug, e.g. "voyageai"
-#    STAGING_URL                — staging URL for DAST, e.g. https://voyageai-staging.vercel.app
+#    PRODUCTION_URL             — public Railway app URL for DAST (main only), e.g. https://xxx.up.railway.app
+#
+#  Recommended (Railway — used by jobs that touch DB/Redis):
+#    DATABASE_URL, DIRECT_URL, REDIS_URL
 # ─────────────────────────────────────────────────────────────────────────────
 
 jobs:
@@ -956,7 +966,7 @@ jobs:
   #        • Information disclosure in error responses
   #
   #  Required secret:
-  #    STAGING_URL — e.g. https://voyageai-staging.vercel.app
+  #    PRODUCTION_URL — public Railway HTTPS URL (same as NEXT_PUBLIC_APP_URL origin)
   #
   #  False-positive suppressions: .github/zap/rules.tsv
   # ══════════════════════════════════════════════════════════════════════════
@@ -975,10 +985,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: ZAP Full Scan — ${{ secrets.STAGING_URL }}
+      - name: ZAP Full Scan — ${{ secrets.PRODUCTION_URL }}
         uses: zaproxy/action-full-scan@v0.10.0
         with:
-          target: ${{ secrets.STAGING_URL }}
+          target: ${{ secrets.PRODUCTION_URL }}
           allow_issue_writing: true
           fail_action: true
           rules_file_name: .github/zap/rules.tsv
@@ -1004,7 +1014,7 @@ jobs:
             echo ""
             echo "| Field | Value |"
             echo "|-------|-------|"
-            echo "| **Target** | ${{ secrets.STAGING_URL }} |"
+            echo "| **Target** | ${{ secrets.PRODUCTION_URL }} |"
             echo "| **Scan type** | Full (active + passive) |"
             echo "| **Commit** | \`${{ github.sha }}\` |"
             echo ""

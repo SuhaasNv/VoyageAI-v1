@@ -18,8 +18,8 @@ name: Release — VoyageAI Production Deployment
 #    conditional)         push to DOCR)          deploy)
 #          └───────────────────┼───────────────────┘
 #                              ↓
-#                        deploy-vercel
-#                    (Next.js → Vercel prod)
+#                        deploy-railway
+#                    (Next.js → Railway — CLI redeploy or rely on GitHub integration)
 #                              ↓
 #                        health-check
 #                  (Smoke tests on production)
@@ -41,19 +41,21 @@ name: Release — VoyageAI Production Deployment
 #    DO_REGISTRY_NAME            Registry slug, e.g. "voyageai"
 #    DO_SPACES_ACCESS_KEY        Spaces access key (Terraform state)
 #    DO_SPACES_SECRET_KEY        Spaces secret key (Terraform state)
-#    TF_VAR_next_internal_url    Vercel production URL for LangGraph → Next.js calls
+#    TF_VAR_next_internal_url    Railway public HTTPS URL of the Next.js app (LangGraph → Next)
 #    TF_VAR_internal_agent_secret Shared secret for Next.js ↔ LangGraph auth
 #
-#  Database
-#    DIRECT_URL                  PostgreSQL direct connection string (migrations)
+#  Database + cache (Railway)
+#    DATABASE_URL                Railway Postgres connection string (pooler URL for app)
+#    DIRECT_URL                  Railway Postgres direct URL (Prisma migrate deploy)
+#    REDIS_URL                   Railway Redis URL (optional in CI; required in prod for rate limits)
 #
-#  Vercel
-#    VERCEL_TOKEN                Vercel personal access token
-#    VERCEL_ORG_ID               from `vercel link`
-#    VERCEL_PROJECT_ID           from `vercel link`
+#  Railway deploy (CLI redeploy — optional if GitHub integration auto-deploys)
+#    RAILWAY_TOKEN               Railway account / project token
+#    RAILWAY_SERVICE_ID          Next.js service ID (from Railway dashboard → service → Settings)
 #
 #  Smoke tests + DAST
-#    PRODUCTION_URL              e.g. https://voyageai.vercel.app
+#    PRODUCTION_URL              Public Railway app URL, e.g. https://xxx.up.railway.app
+#    LANGGRAPH_SERVICE_URL       DO LangGraph HTTPS URL (optional health check)
 #
 #  Optional
 #    DO_SPACES_REGION            Spaces region for TF backend (default: nyc3)
@@ -104,8 +106,9 @@ env:
   # AI gate — static checks, no real LLM calls, no production DB
   SKIP_ENV_VALIDATION: "1"
   LLM_PROVIDER: "mock"
-  DATABASE_URL: "postgresql://ci:ci@localhost:5432/voyageai_ci"
-  DIRECT_URL_MOCK: "postgresql://ci:ci@localhost:5432/voyageai_ci"
+  DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgresql://ci:ci@localhost:5432/voyageai_ci' }}
+  DIRECT_URL_MOCK: ${{ secrets.DIRECT_URL || secrets.DATABASE_URL || 'postgresql://ci:ci@localhost:5432/voyageai_ci' }}
+  REDIS_URL: ${{ secrets.REDIS_URL || '' }}
   JWT_ACCESS_SECRET: "release-gate-jwt-access-secret-32-chars-ok"
   JWT_REFRESH_SECRET: "release-gate-jwt-refresh-secret-32-chars-ok"
   CSRF_SECRET: "release-gate-csrf-secret-32-characters-ok"
@@ -233,7 +236,7 @@ jobs:
   #  STAGE 2a — INFRASTRUCTURE APPLY (DigitalOcean — Terraform)
   #
   #  Ensures the DigitalOcean Container Registry and App Platform service exist
-  #  before the Docker image is pushed and Vercel is deployed.
+  #  before the Docker image is pushed and Railway app is updated.
   #
   #  Conditional: only applies when infra/** files changed on this commit,
   #  or when skip_infra=false is explicitly overridden via workflow_dispatch.
@@ -564,56 +567,50 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ════════════════════════════════════════════════════════════════════════════
-  #  STAGE 3 — DEPLOY TO VERCEL (Next.js Production)
+  #  STAGE 3 — DEPLOY TO RAILWAY (Next.js Production)
   #
   #  Runs after docker-push AND migrate both succeed, ensuring:
   #    • The LangGraph container is live in DOCR (App Platform auto-deploys)
-  #    • The database schema is up-to-date before the new app code hits it
+  #    • The database schema is up-to-date before new app code runs
   #
-  #  Uses `vercel --prebuilt` to deploy the already-built artifact rather than
-  #  re-running `next build` on Vercel's infrastructure.
+  #  Triggers a Railway service redeploy via the official CLI so the latest
+  #  commit is built and deployed on Railway. If RAILWAY_TOKEN or
+  #  RAILWAY_SERVICE_ID is not set, the step succeeds with a notice — use
+  #  Railway’s GitHub integration (auto-deploy on push) instead.
+  #
+  #  Required secrets for CLI redeploy:
+  #    RAILWAY_TOKEN, RAILWAY_SERVICE_ID
+  #  App URL for the environment gate:
+  #    PRODUCTION_URL (same value as NEXT_PUBLIC_APP_URL in Railway)
   # ════════════════════════════════════════════════════════════════════════════
-  deploy-vercel:
-    name: "3 · Deploy — Next.js → Vercel"
+  deploy-railway:
+    name: "3 · Deploy — Next.js → Railway"
     needs: [docker-push, migrate]
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: ${{ steps.deploy.outputs.url }}
+      url: ${{ secrets.PRODUCTION_URL }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
 
-      - run: npm ci
-      - run: npm install --global vercel@latest
-
-      - name: Pull Vercel environment + project config
-        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
-        env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-
-      - name: Build for production
-        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
-        env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-          NEXT_TELEMETRY_DISABLED: "1"
-
-      - name: Deploy prebuilt artifact to Vercel
+      - name: Trigger Railway redeploy
         id: deploy
-        run: |
-          DEPLOY_URL=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }} 2>&1 | tail -1)
-          echo "url=${DEPLOY_URL}" >> "$GITHUB_OUTPUT"
-          echo "Deployed to: ${DEPLOY_URL}"
         env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
+        run: |
+          if [ -z "$RAILWAY_TOKEN" ] || [ -z "$RAILWAY_SERVICE_ID" ]; then
+            echo "::notice::RAILWAY_TOKEN or RAILWAY_SERVICE_ID not set — skipping CLI redeploy."
+            echo "Connect the repo in Railway (Settings → GitHub) for auto-deploy on push, or add both secrets."
+            echo "url=${{ secrets.PRODUCTION_URL }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          railway redeploy --service "$RAILWAY_SERVICE_ID" --yes
+          echo "url=${{ secrets.PRODUCTION_URL }}" >> "$GITHUB_OUTPUT"
 
       - name: Write deploy summary
         if: always()
@@ -621,14 +618,16 @@ jobs:
           STATUS="${{ job.status }}"
           ICON=$([ "$STATUS" = "success" ] && echo "✅" || echo "❌")
           {
-            echo "## 🚀 Vercel Deploy — ${ICON} ${STATUS^}"
+            echo "## 🚂 Railway Deploy — ${ICON} ${STATUS^}"
             echo ""
             echo "| Field | Value |"
             echo "|-------|-------|"
-            echo "| **URL** | ${{ steps.deploy.outputs.url || '_unavailable_' }} |"
+            echo "| **App URL** | ${{ secrets.PRODUCTION_URL }} |"
             echo "| **Commit** | \`${{ github.sha }}\` |"
             echo "| **Author** | @${{ github.actor }} |"
             echo "| **Message** | ${{ github.event.head_commit.message }} |"
+            echo ""
+            echo "> Variables (Postgres, Redis, secrets) are configured in the Railway dashboard."
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ════════════════════════════════════════════════════════════════════════════
@@ -644,12 +643,12 @@ jobs:
   # ════════════════════════════════════════════════════════════════════════════
   health-check:
     name: "4 · Health Check (Production Smoke Tests)"
-    needs: deploy-vercel
+    needs: deploy-railway
     runs-on: ubuntu-latest
 
     steps:
-      - name: Wait 20s for Vercel edge propagation
-        run: sleep 20
+      - name: Wait 30s for Railway deploy propagation
+        run: sleep 30
 
       - name: Smoke test — Next.js root page
         run: |
@@ -682,13 +681,9 @@ jobs:
 
       - name: Smoke test — LangGraph /health
         run: |
-          # LangGraph URL comes from TF output; fall back to env var if not available
-          LG_URL="${{ secrets.TF_VAR_next_internal_url }}"
-          # The LangGraph service is separate from the Next.js app
-          # Its URL is set in LANGGRAPH_SERVICE_URL on Vercel
-          # We check the internal URL if accessible, or skip gracefully
+          LG_URL="${{ secrets.LANGGRAPH_SERVICE_URL }}"
           if [ -z "$LG_URL" ]; then
-            echo "⏭️ LANGGRAPH_SERVICE_URL not set — skipping LangGraph health check"
+            echo "⏭️ LANGGRAPH_SERVICE_URL secret not set — skipping LangGraph health check"
             exit 0
           fi
           for i in 1 2 3 4 5; do
@@ -812,7 +807,7 @@ jobs:
   # ════════════════════════════════════════════════════════════════════════════
   release-summary:
     name: "6 · Release Summary"
-    needs: [ai-gate, ai-gate-skipped, infra-apply, docker-push, migrate, deploy-vercel, health-check, dast, dast-skipped]
+    needs: [ai-gate, ai-gate-skipped, infra-apply, docker-push, migrate, deploy-railway, health-check, dast, dast-skipped]
     runs-on: ubuntu-latest
     if: always()
     permissions:
@@ -835,7 +830,7 @@ jobs:
           INFRA="${{ needs.infra-apply.result }}"
           DOCKER="${{ needs.docker-push.result }}"
           MIGRATE="${{ needs.migrate.result }}"
-          VERCEL="${{ needs.deploy-vercel.result }}"
+          RAILWAY_DEPLOY="${{ needs.deploy-railway.result }}"
           HEALTH="${{ needs.health-check.result }}"
           DAST="${{ needs.dast.result }}${{ needs.dast-skipped.result }}"
 
@@ -850,7 +845,7 @@ jobs:
 
           # Overall result
           OVERALL="✅ SUCCESS"
-          for r in "${{ needs.ai-gate.result }}" "${{ needs.docker-push.result }}" "${{ needs.migrate.result }}" "${{ needs.deploy-vercel.result }}" "${{ needs.health-check.result }}"; do
+          for r in "${{ needs.ai-gate.result }}" "${{ needs.docker-push.result }}" "${{ needs.migrate.result }}" "${{ needs.deploy-railway.result }}" "${{ needs.health-check.result }}"; do
             if [ "$r" = "failure" ]; then OVERALL="❌ FAILED"; break; fi
           done
 
@@ -881,7 +876,7 @@ jobs:
             echo "| 2a | Infrastructure (Terraform) | $(icon '${INFRA}') |"
             echo "| 2b | Docker — Build · Trivy · Push | $(icon '${{ needs.docker-push.result }}') |"
             echo "| 2c | Database Migration | $(icon '${{ needs.migrate.result }}') |"
-            echo "| 3 | Deploy → Vercel | $(icon '${{ needs.deploy-vercel.result }}') |"
+            echo "| 3 | Deploy → Railway | $(icon '${{ needs.deploy-railway.result }}') |"
             echo "| 4 | Health Check | $(icon '${{ needs.health-check.result }}') |"
             echo "| 5 | DAST (OWASP ZAP) | $(icon '${{ needs.dast.result }}')$(icon '${{ needs.dast-skipped.result }}') |"
             echo ""
@@ -901,7 +896,7 @@ jobs:
             echo ""
             echo "| Service | Platform | URL |"
             echo "|---------|----------|-----|"
-            echo "| Next.js app | Vercel | ${{ secrets.PRODUCTION_URL }} |"
+            echo "| Next.js app | Railway | ${{ secrets.PRODUCTION_URL }} |"
             echo "| LangGraph service | DO App Platform | (see infra outputs) |"
             echo "| Container image | DOCR | \`registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}:sha-${SHORT_SHA}\` |"
             echo ""
@@ -920,7 +915,7 @@ jobs:
       # Create a GitHub Release tag on full success
       - name: Create GitHub Release
         if: |
-          needs.deploy-vercel.result == 'success' &&
+          needs.deploy-railway.result == 'success' &&
           needs.health-check.result == 'success'
         uses: actions/github-script@v7
         with:
@@ -951,7 +946,7 @@ jobs:
                 `- ✅ AI Security Gate passed`,
                 `- 🐳 LangGraph image pushed to DOCR`,
                 `- 🗄️ Database migrations applied`,
-                `- 🚀 Next.js deployed to Vercel`,
+                `- 🚀 Next.js deployed on Railway`,
                 `- 🩺 Health checks passed`,
               ].join('\n'),
               draft:      false,
