@@ -1,17 +1,20 @@
 # ─────────────────────────────────────────────────────────────────────────────
 #  infra/app.tf
 #
-#  DigitalOcean App Platform — VoyageAI LangGraph Orchestration Service
+#  DigitalOcean App Platform — VoyageAI Multi-Service Stack
 #
 #  Architecture:
-#    Railway (Next.js) ──HTTP──▶ App Platform (LangGraph) ──HTTP──▶ Railway /api/internal
+#    App Platform (Next.js) ──HTTP──▶ App Platform (LangGraph) ──HTTP──▶ Next.js /api/internal
 #
-#  The service:
-#    • Pulls the voyageai-langgraph image from DOCR on every deploy
-#    • Exposes POST /run  and  GET /health  on HTTP port 8000
-#    • Scales horizontally via var.langgraph_instance_count
+#  Services:
+#    • voyageai-langgraph  — Python FastAPI + LangGraph orchestration (port 8000)
+#    • voyageai-nextjs     — Next.js 15 frontend + API routes        (port 3000)
+#
+#  Both services:
+#    • Pull images from DOCR on every deploy
+#    • Scale horizontally via var.*_instance_count
 #    • All secrets are injected as App Platform secret env vars (never in logs)
-#    • Health check on /health with a 15s startup grace period
+#    • Health checks ensure zero-downtime deployments
 #
 #  Also contains:
 #    • digitalocean_project resource  (groups all DO resources for billing)
@@ -135,12 +138,205 @@ resource "digitalocean_app" "langgraph" {
   }
 }
 
-# ── Assign app to project ─────────────────────────────────────────────────────
+# ── App Platform — Next.js frontend ──────────────────────────────────────────
+
+resource "digitalocean_app" "nextjs" {
+  # Registry must exist before App Platform validates the image source.
+  depends_on = [digitalocean_container_registry.voyageai]
+
+  spec {
+    name   = "voyageai-nextjs-${var.environment}"
+    region = var.region
+
+    # ── Service definition ───────────────────────────────────────────────────
+    service {
+      name               = "nextjs"
+      instance_count     = var.nextjs_instance_count
+      instance_size_slug = var.nextjs_instance_size
+
+      # ── Image source (DOCR) ─────────────────────────────────────────────
+      image {
+        registry_type = "DOCR"
+        repository    = "voyageai-nextjs"
+        tag           = var.nextjs_image_tag
+
+        deploy_on_push {
+          enabled = var.environment == "production" ? true : false
+        }
+      }
+
+      # ── Networking ──────────────────────────────────────────────────────
+      http_port = 3000
+
+      # ── Health check ────────────────────────────────────────────────────
+      health_check {
+        http_path             = "/api/auth/csrf"
+        initial_delay_seconds = 60
+        period_seconds        = 30
+        timeout_seconds       = 10
+        success_threshold     = 1
+        failure_threshold     = 3
+      }
+
+      # ── Non-sensitive environment variables ─────────────────────────────
+      env {
+        key   = "NODE_ENV"
+        value = "production"
+        scope = "RUN_TIME"
+        type  = "GENERAL"
+      }
+
+      env {
+        key   = "NEXT_TELEMETRY_DISABLED"
+        value = "1"
+        scope = "RUN_TIME"
+        type  = "GENERAL"
+      }
+
+      env {
+        key   = "LLM_PROVIDER"
+        value = var.llm_provider
+        scope = "RUN_TIME"
+        type  = "GENERAL"
+      }
+
+      env {
+        key   = "LANGGRAPH_SERVICE_URL"
+        value = var.langgraph_service_url
+        scope = "RUN_TIME"
+        type  = "GENERAL"
+      }
+
+      # Public Mapbox token — safe to expose to the browser
+      env {
+        key   = "NEXT_PUBLIC_MAPBOX_TOKEN"
+        value = var.mapbox_token
+        scope = "RUN_TIME"
+        type  = "GENERAL"
+      }
+
+      env {
+        key   = "GOOGLE_CLIENT_ID"
+        value = var.google_client_id
+        scope = "RUN_TIME"
+        type  = "GENERAL"
+      }
+
+      env {
+        key   = "UPSTASH_REDIS_REST_URL"
+        value = var.upstash_redis_rest_url
+        scope = "RUN_TIME"
+        type  = "GENERAL"
+      }
+
+      # ── Secrets (encrypted at rest, masked in logs) ─────────────────────
+      env {
+        key   = "DATABASE_URL"
+        value = var.database_url
+        scope = "RUN_TIME"
+        type  = "SECRET"
+      }
+
+      env {
+        key   = "DIRECT_URL"
+        value = var.direct_url
+        scope = "RUN_TIME"
+        type  = "SECRET"
+      }
+
+      env {
+        key   = "JWT_ACCESS_SECRET"
+        value = var.jwt_access_secret
+        scope = "RUN_TIME"
+        type  = "SECRET"
+      }
+
+      env {
+        key   = "JWT_REFRESH_SECRET"
+        value = var.jwt_refresh_secret
+        scope = "RUN_TIME"
+        type  = "SECRET"
+      }
+
+      env {
+        key   = "CSRF_SECRET"
+        value = var.csrf_secret
+        scope = "RUN_TIME"
+        type  = "SECRET"
+      }
+
+      env {
+        key   = "INTERNAL_AGENT_SECRET"
+        value = var.internal_agent_secret
+        scope = "RUN_TIME"
+        type  = "SECRET"
+      }
+
+      env {
+        key   = "GOOGLE_CLIENT_SECRET"
+        value = var.google_client_secret
+        scope = "RUN_TIME"
+        type  = "SECRET"
+      }
+
+      env {
+        key   = "OPENAI_API_KEY"
+        value = var.openai_api_key
+        scope = "RUN_TIME"
+        type  = "SECRET"
+      }
+
+      env {
+        key   = "GEMINI_API_KEY"
+        value = var.gemini_api_key
+        scope = "RUN_TIME"
+        type  = "SECRET"
+      }
+
+      env {
+        key   = "PEXELS_API_KEY"
+        value = var.pexels_api_key
+        scope = "RUN_TIME"
+        type  = "SECRET"
+      }
+
+      env {
+        key   = "UPSTASH_REDIS_REST_TOKEN"
+        value = var.upstash_redis_rest_token
+        scope = "RUN_TIME"
+        type  = "SECRET"
+      }
+    }
+
+    # ── Ingress (route all traffic to the Next.js service) ───────────────────
+    ingress {
+      rule {
+        component {
+          name = "nextjs"
+        }
+        match {
+          path {
+            prefix = "/"
+          }
+        }
+      }
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      spec[0].service[0].image[0].tag,
+    ]
+  }
+}
+
+# ── Assign apps to project ────────────────────────────────────────────────────
 
 resource "digitalocean_project_resources" "app" {
   project = digitalocean_project.voyageai.id
   resources = [
     digitalocean_app.langgraph.urn,
+    digitalocean_app.nextjs.urn,
   ]
 }
 

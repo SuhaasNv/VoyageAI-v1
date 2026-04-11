@@ -86,11 +86,26 @@ env:
   DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
   # All TF_VAR_* are automatically picked up by Terraform as input variables
   TF_VAR_do_token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
-  TF_VAR_next_internal_url: ${{ secrets.TF_VAR_next_internal_url }}
+  TF_VAR_next_internal_url: ${{ secrets.TF_VAR_next_internal_url || '' }}
   TF_VAR_internal_agent_secret: ${{ secrets.TF_VAR_internal_agent_secret }}
   TF_VAR_alert_email: ${{ secrets.TF_VAR_alert_email || '' }}
   TF_VAR_environment: ${{ github.event.inputs.environment || 'production' }}
-  TF_IN_AUTOMATION: "true" # Suppress interactive prompts in Terraform output
+  # ── Next.js runtime secrets — injected into the App Platform Next.js service ─
+  TF_VAR_database_url: ${{ secrets.DATABASE_URL || '' }}
+  TF_VAR_direct_url: ${{ secrets.DIRECT_URL || '' }}
+  TF_VAR_jwt_access_secret: ${{ secrets.JWT_ACCESS_SECRET || '' }}
+  TF_VAR_jwt_refresh_secret: ${{ secrets.JWT_REFRESH_SECRET || '' }}
+  TF_VAR_csrf_secret: ${{ secrets.CSRF_SECRET || '' }}
+  TF_VAR_google_client_id: ${{ secrets.GOOGLE_CLIENT_ID || '' }}
+  TF_VAR_google_client_secret: ${{ secrets.GOOGLE_CLIENT_SECRET || '' }}
+  TF_VAR_llm_provider: ${{ vars.LLM_PROVIDER || 'openai' }}
+  TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY || '' }}
+  TF_VAR_gemini_api_key: ${{ secrets.GEMINI_API_KEY || '' }}
+  TF_VAR_mapbox_token: ${{ secrets.NEXT_PUBLIC_MAPBOX_TOKEN || '' }}
+  TF_VAR_pexels_api_key: ${{ secrets.PEXELS_API_KEY || '' }}
+  TF_VAR_upstash_redis_rest_url: ${{ secrets.UPSTASH_REDIS_REST_URL || '' }}
+  TF_VAR_upstash_redis_rest_token: ${{ secrets.UPSTASH_REDIS_REST_TOKEN || '' }}
+  TF_VAR_langgraph_service_url: ${{ secrets.LANGGRAPH_SERVICE_URL || '' }}
   TF_CLI_ARGS_plan: "-lock-timeout=60s"
   TF_CLI_ARGS_apply: "-lock-timeout=60s"
   # Registry name must match var.registry_name default (used in placeholder push)
@@ -370,13 +385,23 @@ jobs:
       # is never overwritten by infra runs.  The app is created with
       # tag="placeholder"; the docker-push job later triggers a redeployment
       # to :latest via doctl.
-      - name: Push placeholder image to DOCR
+      # Always push both placeholder images before terraform apply.
+      # Using :placeholder keeps :latest untouched so the real CI image
+      # is never overwritten by infra runs.  Both apps are created with
+      # tag="placeholder"; docker-push jobs later trigger redeployments.
+      - name: Push placeholder images to DOCR
         run: |
-          IMAGE="${DOCR_REGISTRY}/voyageai-langgraph:placeholder"
+          REGISTRY="${DOCR_REGISTRY}"
           echo "$DIGITALOCEAN_ACCESS_TOKEN" | \
             docker login registry.digitalocean.com --username token --password-stdin
-          docker build -t "$IMAGE" placeholder/
-          docker push "$IMAGE"
+          # LangGraph placeholder
+          LG_IMAGE="${REGISTRY}/voyageai-langgraph:placeholder"
+          docker build -t "$LG_IMAGE" placeholder/
+          docker push "$LG_IMAGE"
+          # Next.js placeholder
+          NX_IMAGE="${REGISTRY}/voyageai-nextjs:placeholder"
+          docker build -t "$NX_IMAGE" placeholder/nextjs/
+          docker push "$NX_IMAGE"
 
       - name: Download plan artifact
         uses: actions/download-artifact@v4
@@ -393,11 +418,15 @@ jobs:
         id: outputs
         run: |
           REGISTRY=$(terraform output -raw registry_endpoint 2>/dev/null || echo "N/A")
-          APP_URL=$(terraform output -raw langgraph_live_url 2>/dev/null || echo "N/A")
-          RAILWAY_HINT=$(terraform output -raw railway_env_hint 2>/dev/null || echo "N/A")
-          echo "registry=${REGISTRY}"       >> "$GITHUB_OUTPUT"
-          echo "app_url=${APP_URL}"          >> "$GITHUB_OUTPUT"
-          echo "railway_hint=${RAILWAY_HINT}" >> "$GITHUB_OUTPUT"
+          LG_URL=$(terraform output -raw langgraph_live_url 2>/dev/null || echo "N/A")
+          NX_URL=$(terraform output -raw nextjs_live_url 2>/dev/null || echo "N/A")
+          LG_HINT=$(terraform output -raw langgraph_env_hint 2>/dev/null || echo "N/A")
+          NX_HINT=$(terraform output -raw nextjs_env_hint 2>/dev/null || echo "N/A")
+          echo "registry=${REGISTRY}"   >> "$GITHUB_OUTPUT"
+          echo "lg_url=${LG_URL}"       >> "$GITHUB_OUTPUT"
+          echo "nx_url=${NX_URL}"       >> "$GITHUB_OUTPUT"
+          echo "lg_hint=${LG_HINT}"     >> "$GITHUB_OUTPUT"
+          echo "nx_hint=${NX_HINT}"     >> "$GITHUB_OUTPUT"
 
       - name: Write apply summary
         run: |
@@ -407,15 +436,21 @@ jobs:
             echo "| Resource | Value |"
             echo "|----------|-------|"
             echo "| **Container Registry** | \`${{ steps.outputs.outputs.registry }}\` |"
-            echo "| **LangGraph App URL** | \`${{ steps.outputs.outputs.app_url }}\` |"
+            echo "| **LangGraph URL** | \`${{ steps.outputs.outputs.lg_url }}\` |"
+            echo "| **Next.js URL** | \`${{ steps.outputs.outputs.nx_url }}\` |"
             echo "| **Commit** | \`${{ github.sha }}\` |"
             echo "| **Applied by** | @${{ github.actor }} |"
             echo ""
-            echo "### Next step"
-            echo "Add the following to your **Railway** project (Next.js service → Variables):"
+            echo "### Post-deploy wiring"
+            echo ""
+            echo "After both apps are live, update GitHub Secrets with:"
             echo ""
             echo '```'
-            echo "${{ steps.outputs.outputs.railway_hint }}"
+            echo "# Set in GitHub Secrets → used by TF_VAR_langgraph_service_url"
+            echo "${{ steps.outputs.outputs.nx_hint }}"
+            echo ""
+            echo "# Set in GitHub Secrets → used by TF_VAR_next_internal_url"
+            echo "${{ steps.outputs.outputs.lg_hint }}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 

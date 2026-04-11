@@ -100,14 +100,150 @@ variable "langgraph_instance_size" {
 }
 
 variable "next_internal_url" {
-  description = "Public HTTPS URL of the Next.js app on Railway (LangGraph calls this for /api/internal/agent/execute)"
+  description = "Public HTTPS URL of the Next.js App Platform service (LangGraph calls /api/internal/agent/execute)"
   type        = string
+  default     = ""
 }
 
 variable "internal_agent_secret" {
   description = "Shared secret for Next.js ↔ LangGraph internal API authentication (INTERNAL_AGENT_SECRET)"
   type        = string
   sensitive   = true
+}
+
+# ── App Platform — Next.js service ───────────────────────────────────────────
+
+variable "nextjs_image_tag" {
+  description = "Docker image tag to deploy for the Next.js service on App Platform (e.g. 'latest' or a specific SHA tag)"
+  type        = string
+  default     = "placeholder"
+}
+
+variable "nextjs_instance_count" {
+  description = "Number of Next.js service instances (horizontal scaling)"
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.nextjs_instance_count >= 1 && var.nextjs_instance_count <= 10
+    error_message = "instance_count must be between 1 and 10."
+  }
+}
+
+variable "nextjs_instance_size" {
+  description = "App Platform instance size slug for the Next.js service"
+  type        = string
+  default     = "professional-xs"
+
+  validation {
+    condition = contains([
+      "basic-xxs", "basic-xs", "basic-s", "basic-m",
+      "professional-xs", "professional-s", "professional-m", "professional-l", "professional-xl",
+    ], var.nextjs_instance_size)
+    error_message = "Must be a valid App Platform instance size slug."
+  }
+}
+
+# ── Next.js runtime secrets ───────────────────────────────────────────────────
+
+variable "database_url" {
+  description = "Railway PostgreSQL connection string (DATABASE_URL — pooler URL for the app)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "direct_url" {
+  description = "Railway PostgreSQL direct connection string for Prisma migrations (DIRECT_URL)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "jwt_access_secret" {
+  description = "JWT access token signing secret"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "jwt_refresh_secret" {
+  description = "JWT refresh token signing secret"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "csrf_secret" {
+  description = "CSRF token HMAC secret"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "google_client_id" {
+  description = "Google OAuth client ID"
+  type        = string
+  default     = ""
+}
+
+variable "google_client_secret" {
+  description = "Google OAuth client secret"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "llm_provider" {
+  description = "Primary LLM provider: openai | gemini"
+  type        = string
+  default     = "openai"
+}
+
+variable "openai_api_key" {
+  description = "OpenAI API key"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "gemini_api_key" {
+  description = "Google Gemini API key"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "mapbox_token" {
+  description = "Mapbox public token (NEXT_PUBLIC_MAPBOX_TOKEN — safe to expose to client)"
+  type        = string
+  default     = ""
+}
+
+variable "pexels_api_key" {
+  description = "Pexels image API key"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "upstash_redis_rest_url" {
+  description = "Upstash Redis REST URL (LLM response caching, rate limiting)"
+  type        = string
+  default     = ""
+}
+
+variable "upstash_redis_rest_token" {
+  description = "Upstash Redis REST token"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "langgraph_service_url" {
+  description = "Public HTTPS URL of the LangGraph App Platform service (LANGGRAPH_SERVICE_URL in Next.js)"
+  type        = string
+  default     = ""
 }
 
 # ── Alerting ──────────────────────────────────────────────────────────────────
