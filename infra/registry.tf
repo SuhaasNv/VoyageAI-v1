@@ -30,12 +30,7 @@ resource "digitalocean_container_registry_docker_credentials" "app_platform" {
   expiry_seconds = 0     # 0 = never expires (rotated by CI on each deploy)
 }
 
-# ── Project membership ────────────────────────────────────────────────────────
-# Assigns the registry to the DigitalOcean project for cost tracking + grouping.
-
-resource "digitalocean_project_resources" "registry" {
-  project = digitalocean_project.voyageai.id
-  resources = [
-    "do:registry:${digitalocean_container_registry.voyageai.name}",
-  ]
-}
+# NOTE: Container Registry is an account-level resource in DigitalOcean and
+# cannot be assigned to a project via the project resources API.
+# Only apps, droplets, databases, Kubernetes clusters, load balancers,
+# domains, volumes, spaces, and floating IPs are project-assignable.

@@ -30,6 +30,9 @@ resource "digitalocean_project" "voyageai" {
 # ── App Platform — LangGraph service ─────────────────────────────────────────
 
 resource "digitalocean_app" "langgraph" {
+  # Registry must exist before App Platform validates the image source.
+  depends_on = [digitalocean_container_registry.voyageai]
+
   spec {
     name   = "voyageai-langgraph-${var.environment}"
     region = var.region
