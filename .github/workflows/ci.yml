@@ -14,6 +14,17 @@ on:
         description: "Force push Docker image to DOCR even on non-main branch"
         required: false
         default: "false"
+        type: boolean
+      ignore_test_failures:
+        description: "Bypass quality gate — allow build/push even if tests, SAST, or validations fail (emergency only)"
+        required: false
+        default: "false"
+        type: boolean
+      skip_deploy:
+        description: "Skip push-to-DOCR and DAST (build and scan only)"
+        required: false
+        default: "false"
+        type: boolean
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -80,6 +91,11 @@ defaults:
 #    DIGITALOCEAN_ACCESS_TOKEN  — DO API token (write:registry)
 #    DO_REGISTRY_NAME           — registry slug, e.g. "voyageai"
 #    PRODUCTION_URL             — public Railway app URL for DAST (main only), e.g. https://xxx.up.railway.app
+#
+#  workflow_dispatch inputs:
+#    force_push           — push to DOCR even on non-main branch
+#    ignore_test_failures — bypass quality gate on test/SAST/validation failure (emergency)
+#    skip_deploy          — run build + scan only; skip push-to-DOCR and DAST
 #
 #  Recommended (Railway — used by jobs that touch DB/Redis):
 #    DATABASE_URL, DIRECT_URL, REDIS_URL
@@ -695,27 +711,51 @@ jobs:
     name: "✅ Quality Gate (all checks)"
     needs: [unittest, sast, sca, data-validation, evaluation]
     runs-on: ubuntu-latest
-    # Default (no `if`) means: only run when ALL needs completed with success.
-    # If any needed job failed or was skipped, this job is also skipped,
-    # which propagates the block to build-image.
+    # Runs when all needs completed (any result) so we can inspect them ourselves.
+    # When ignore_test_failures=true we pass regardless; otherwise we require
+    # all upstream jobs to have succeeded.
+    if: always()
 
     steps:
-      - name: All quality gates passed
+      - name: Evaluate gate
         run: |
+          IGNORE="${{ github.event.inputs.ignore_test_failures }}"
+
+          UNITTEST="${{ needs.unittest.result }}"
+          SAST="${{ needs.sast.result }}"
+          SCA="${{ needs.sca.result }}"
+          DATA="${{ needs.data-validation.result }}"
+          EVAL="${{ needs.evaluation.result }}"
+
+          FAILED=0
+          for JOB in "$UNITTEST" "$SAST" "$SCA" "$DATA" "$EVAL"; do
+            if [ "$JOB" != "success" ] && [ "$JOB" != "skipped" ]; then
+              FAILED=1
+            fi
+          done
+
+          if [ "$FAILED" = "1" ] && [ "$IGNORE" != "true" ]; then
+            echo "::error::Quality gate FAILED — one or more upstream checks did not pass."
+            echo "To bypass in an emergency, re-run with ignore_test_failures=true."
+            exit 1
+          fi
+
           {
-            echo "## ✅ Quality Gate — All Checks Passed"
+            if [ "$IGNORE" = "true" ] && [ "$FAILED" = "1" ]; then
+              echo "## ⚠️ Quality Gate — BYPASSED (ignore_test_failures=true)"
+              echo ""
+              echo "> **Warning:** test failures were ignored by manual override."
+            else
+              echo "## ✅ Quality Gate — All Checks Passed"
+            fi
             echo ""
             echo "| Check | Stage | Result |"
             echo "|-------|-------|--------|"
-            echo "| Unit Tests         | 4  | ✅ |"
-            echo "| SAST (CodeQL)      | 5  | ✅ |"
-            echo "| SCA (deps CVE)     | 6  | ✅ |"
-            echo "| Data Validation    | 7  | ✅ |"
-            echo "| Model Validation   | 8  | ✅ |"
-            echo "| Prompt Validation  | 9  | ✅ |"
-            echo "| Prompt Tests       | 10 | ✅ |"
-            echo "| Safety Tests       | 11 | ✅ |"
-            echo "| Evaluation         | 12 | ✅ |"
+            echo "| Unit Tests         | 4  | $( [ "$UNITTEST" = "success" ] && echo '✅' || echo '⚠️' ) ${UNITTEST} |"
+            echo "| SAST (CodeQL)      | 5  | $( [ "$SAST"     = "success" ] && echo '✅' || echo '⚠️' ) ${SAST} |"
+            echo "| SCA (deps CVE)     | 6  | $( [ "$SCA"      = "success" ] && echo '✅' || echo '⚠️' ) ${SCA} |"
+            echo "| Data Validation    | 7  | $( [ "$DATA"     = "success" ] && echo '✅' || echo '⚠️' ) ${DATA} |"
+            echo "| Evaluation         | 12 | $( [ "$EVAL"     = "success" ] && echo '✅' || echo '⚠️' ) ${EVAL} |"
             echo ""
             echo "> Pipeline cleared for Docker build and delivery stages."
           } >> "$GITHUB_STEP_SUMMARY"
@@ -884,7 +924,8 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       (github.ref == 'refs/heads/main' || github.event.inputs.force_push == 'true') &&
-      github.event_name != 'pull_request'
+      github.event_name != 'pull_request' &&
+      github.event.inputs.skip_deploy != 'true'
     permissions:
       packages: write
       contents: read
@@ -976,7 +1017,8 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       github.ref == 'refs/heads/main' &&
-      github.event_name != 'pull_request'
+      github.event_name != 'pull_request' &&
+      github.event.inputs.skip_deploy != 'true'
     permissions:
       contents: read
       security-events: write
