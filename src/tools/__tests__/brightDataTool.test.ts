@@ -303,7 +303,7 @@ describe("brightDataTool — stale cache background refresh", () => {
 
         // Patch getCached to return the stale payload — must happen BEFORE resetModules
         const cacheMod = await import("@/lib/ai/cache");
-        vi.spyOn(cacheMod, "getBrightDataCached").mockResolvedValue(stalePayload as any);
+        vi.spyOn(cacheMod, "getBrightDataCached").mockResolvedValue(stalePayload as never);
 
         // Import the tool after the spy is installed (no resetModules — keeps spy active)
         const { searchAttractions } = await import("../brightDataTool");

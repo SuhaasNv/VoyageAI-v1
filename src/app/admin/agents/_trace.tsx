@@ -6,7 +6,7 @@ import {
     Clock, Zap, DollarSign, Bot, RefreshCw, AlertTriangle,
     ArrowRight, Code2,
 } from "lucide-react";
-import type { PipelineRun } from "./page";
+import type { PipelineRun } from "./types";
 import type { ReplayTrace, ReplayStep, LLMCallSummary } from "@/services/ai/agentReplayLogger";
 import { ensureCsrfToken } from "@/lib/api";
 

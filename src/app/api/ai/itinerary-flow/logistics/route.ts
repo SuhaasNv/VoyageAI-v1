@@ -7,7 +7,8 @@ import { formatErrorResponse } from "@/lib/errors";
 import { logStructured } from "@/infrastructure/logger";
 import { LogisticsAgent } from "@/agents/logistics/logisticsAgent";
 
-const ActivitySchema = z.object({
+// Forward-declared so ActivitySchema can reference itself for restaurantOptions.
+const BaseActivitySchema = z.object({
     name: z.string(),
     type: z.enum(["attraction", "experience", "restaurant"]),
     description: z.string(),
@@ -15,7 +16,17 @@ const ActivitySchema = z.object({
     lat: z.number().optional(),
     lng: z.number().optional(),
     geoConfidence: z.enum(["high", "medium", "low"]).optional(),
+    // Phase 1: restaurant enrichment fields
+    cuisine: z.string().optional(),
+    shortDescription: z.string().optional(),
+    priceLevel: z.enum(["$", "$$", "$$$"]).optional(),
 });
+
+// Phase 2: nested restaurantOptions (self-referential, one level deep)
+const ActivitySchema: z.ZodType<z.infer<typeof BaseActivitySchema> & { restaurantOptions?: z.infer<typeof BaseActivitySchema>[] }> =
+    BaseActivitySchema.extend({
+        restaurantOptions: z.lazy(() => z.array(BaseActivitySchema)).optional(),
+    });
 
 const HotelSchema = z.object({
     name: z.string(),

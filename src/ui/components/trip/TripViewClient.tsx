@@ -77,7 +77,7 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
     const flowStyleRef = useRef<string | undefined>(undefined);
 
     useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
+         
         setMounted(true);
     }, []);
 
@@ -89,14 +89,14 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
         if (params.get("fromLanding") !== "1") return;
         flowStyleRef.current = params.get("style") ?? undefined;
         hasLaunchedFlowRef.current = true;
-        // eslint-disable-next-line react-hooks/set-state-in-effect
+         
         setShowFlow(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Detect online/offline status and seed localStorage cache with initial data.
     useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
+         
         setIsOffline(!navigator.onLine);
 
         // Seed cache with server-provided data so it's available immediately offline.
@@ -123,18 +123,18 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
     // Run risk analysis after itinerary loads / changes — non-blocking (post-render).
     useEffect(() => {
         if (!rawItinerary) {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
+             
             setRiskAnalysis(null);
             return;
         }
-        // eslint-disable-next-line react-hooks/set-state-in-effect
+         
         setRiskDismissed(false);
-        // eslint-disable-next-line react-hooks/set-state-in-effect
+         
         setRiskAnalysis(analyzeTripRisks(rawItinerary, trip.budget.total));
-        // eslint-disable-next-line react-hooks/set-state-in-effect
+         
         setTravelScore(calculateTravelScore(rawItinerary, trip.budget.total));
     // trip.budget.total is a number — safe as dep
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     }, [rawItinerary, trip.budget.total]);
 
     const handleEventsReorder = useCallback((dayNumber: number, orderedIds: string[]) => {

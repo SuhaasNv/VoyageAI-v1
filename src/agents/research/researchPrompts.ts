@@ -15,6 +15,15 @@ Output rules:
 - Use realistic cost estimates in USD.
 - Avoid duplicate names across the entire output.
 - Avoid vague names like "Local Market", "City Tour", or "Nice Restaurant".
+
+CRITICAL — Activity type diversity (MANDATORY, no exceptions):
+- Every day MUST contain a mix of activity types.
+- Specifically: at minimum 2 attractions or experiences per day, and at most 4 restaurants per day.
+- Even for food-themed days (e.g. "Food & Culinary"): include food-related EXPERIENCES
+  (cooking class, market tour, food district walk) and ATTRACTIONS (famous food hall,
+  historic café district) alongside restaurant entries.
+- A day composed entirely of restaurants is INVALID and will be rejected.
+- Restaurants should be dining options; attractions and experiences should be things TO DO.
 `.trim();
 
 export const RESEARCH_SCHEMA_INSTRUCTION = `

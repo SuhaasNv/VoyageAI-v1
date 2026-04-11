@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useMemo } from "react";
 import {
     Brain, Bot, Wrench, TrendingUp, ChevronDown,
     BookOpen, Database, BarChart3, ArrowRight, Search,
@@ -74,13 +74,14 @@ function ExplanationPanel({ decision }: { decision: DecisionEntry }) {
     const cfg  = TYPE_CONFIG[decision.decisionType] ?? TYPE_CONFIG.ASSISTANT_RESPONSE;
     const Icon = cfg.icon;
 
-    const relTime = (() => {
+    const relTime = useMemo(() => {
+        // eslint-disable-next-line react-hooks/purity
         const diff = Date.now() - new Date(decision.createdAt).getTime();
-        if (diff < 60_000)    return "Just now";
-        if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-        if (diff < 86_400_000)return `${Math.floor(diff / 3_600_000)}h ago`;
+        if (diff < 60_000)     return "Just now";
+        if (diff < 3_600_000)  return `${Math.floor(diff / 60_000)}m ago`;
+        if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
         return new Date(decision.createdAt).toLocaleDateString();
-    })();
+    }, [decision.createdAt]);
 
     return (
         <div className="border-t border-white/[0.06] bg-[#070C12] rounded-b-xl overflow-hidden">

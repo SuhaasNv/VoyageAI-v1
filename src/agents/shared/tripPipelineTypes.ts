@@ -49,6 +49,16 @@ export interface Activity {
     lng?: number;
     /** Geocoding precision — set after attachCoordinates; absent on Logistics input. */
     geoConfidence?: GeoConfidence;
+    /** Restaurant-only fields — populated by enrichRestaurantMetadata(); absent on other activity types. */
+    cuisine?: string;
+    shortDescription?: string;
+    priceLevel?: "$" | "$$" | "$$$";
+    /**
+     * Nearby dining options — populated by attachNearbyRestaurants() after geocoding.
+     * Present only on non-restaurant activities; restaurants themselves never carry this.
+     * Each entry is a restaurant Activity (type === "restaurant") sorted by proximity.
+     */
+    restaurantOptions?: Activity[];
 }
 
 export type PriceRange = "$" | "$$" | "$$$" | "$$$$";
@@ -83,12 +93,25 @@ export type ScheduledActivity = Activity & {
     startTime?: string;
     endTime?: string;
     travelTimeFromPrevMs?: number;
+    /** True when this activity was auto-injected as a meal stop by injectMeals(). */
+    isMeal?: boolean;
+    /** Set on auto-injected meal activities only. */
+    mealType?: "lunch" | "dinner";
 };
 
 export interface OptimizedDay {
     day: number;
     theme: string;
     activities: ScheduledActivity[];
+}
+
+export interface FoodCostSummary {
+    /** Estimated food spend per day (index 0 = day 1), in USD. */
+    perDay: number[];
+    /** Sum of all perDay values — total food cost for the trip. */
+    total: number;
+    /** Average food cost per day across the trip. */
+    avgPerDay: number;
 }
 
 export type OptimizedTripContext = Omit<EnrichedTripContext, "days"> & {
@@ -100,4 +123,9 @@ export type OptimizedTripContext = Omit<EnrichedTripContext, "days"> & {
      * Downstream agents and API routes should surface these to the UI.
      */
     warnings?: string[];
+    /**
+     * Food cost breakdown computed from injected meal activities.
+     * Absent only when no meal activities were produced (e.g. no restaurantOptions).
+     */
+    foodCostSummary?: FoodCostSummary;
 };

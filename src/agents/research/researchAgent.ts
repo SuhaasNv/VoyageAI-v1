@@ -180,6 +180,254 @@ function inferPrimaryCity(
     return top && top[1] >= 3 ? top[0] : null;
 }
 
+// ─── Restaurant metadata enrichment ──────────────────────────────────────────
+
+/**
+ * Keyword map: list of trigger words → cuisine label.
+ * Checked in order — first match wins.
+ */
+const CUISINE_KEYWORDS: Array<[string[], string]> = [
+    [["sushi", "ramen", "tempura", "udon", "yakitori", "sashimi"],          "Japanese"],
+    [["pasta", "pizza", "risotto", "trattoria", "osteria", "carbonara"],    "Italian"],
+    [["steak", "burger", "bbq", "barbecue", "american grill", "steakhouse"],"Western"],
+    [["curry", "tandoor", "biryani", "naan", "masala", "chai"],             "Indian"],
+    [["taco", "burrito", "quesadilla", "enchilada", "guacamole"],           "Mexican"],
+    [["croissant", "brasserie", "patisserie", "french", "foie gras"],       "French"],
+    [["dim sum", "wonton", "peking duck", "cantonese", "dumplings"],        "Chinese"],
+    [["falafel", "shawarma", "hummus", "kebab", "lebanese", "mezze"],       "Middle Eastern"],
+    [["tapas", "paella", "sangria", "spanish"],                             "Spanish"],
+    [["oyster", "lobster", "clam", "seafood", "fish market"],               "Seafood"],
+    [["vegan", "plant-based", "vegetarian", "tofu"],                        "Vegetarian"],
+];
+
+const PRICE_SIGNALS: Array<["$$$" | "$$", string[]]> = [
+    ["$$$", ["fine dining", "luxury", "michelin", "upscale", "haute cuisine", "tasting menu", "gourmet"]],
+    ["$$",  ["casual", "bistro", "cafe", "café", "brasserie", "mid-range", "neighbourhood"]],
+];
+
+const PRICE_MIDPOINT: Record<"$$$" | "$$" | "$", number> = {
+    "$$$": 75,  // midpoint of 50–100 USD
+    "$$":  30,  // midpoint of 20–40 USD
+    "$":   12,  // midpoint of 10–15 USD
+};
+
+/**
+ * Deterministically enriches a restaurant Activity with:
+ *   - cuisine    — detected from name + description keywords; falls back to "Local"
+ *   - shortDescription — first sentence of the description, capped at 120 chars
+ *   - priceLevel — heuristic from price-signal keywords; falls back to "$"
+ *   - estimatedCost — midpoint of the price band (only set when not already present)
+ *
+ * Pure function — no LLM calls, no async, no side effects.
+ */
+function enrichRestaurantMetadata(
+    activity: Activity,
+): Pick<Activity, "cuisine" | "shortDescription" | "priceLevel" | "estimatedCost"> {
+    const text = `${activity.name} ${activity.description}`.toLowerCase();
+
+    // ── Cuisine detection ────────────────────────────────────────────────────
+    let cuisine = "Local";
+    for (const [keywords, label] of CUISINE_KEYWORDS) {
+        if (keywords.some((kw) => text.includes(kw))) {
+            cuisine = label;
+            break;
+        }
+    }
+
+    // ── Price level ──────────────────────────────────────────────────────────
+    let priceLevel: "$$$" | "$$" | "$" = "$";
+    for (const [level, signals] of PRICE_SIGNALS) {
+        if (signals.some((kw) => text.includes(kw))) {
+            priceLevel = level;
+            break;
+        }
+    }
+
+    // ── Short description — first sentence, max 120 chars ────────────────────
+    const firstSentence = activity.description
+        .replace(/\s+/g, " ")
+        .trim()
+        .split(/(?<=[.!?])\s/)[0]
+        ?.trim() ?? "";
+    const shortDescription =
+        firstSentence.length > 5 ? firstSentence.slice(0, 120) : undefined;
+
+    // ── Estimated cost — only override if not already set by the LLM ────────
+    const estimatedCost =
+        typeof activity.estimatedCost === "number" && activity.estimatedCost >= 0
+            ? activity.estimatedCost
+            : PRICE_MIDPOINT[priceLevel];
+
+    return { cuisine, shortDescription, priceLevel, estimatedCost };
+}
+
+// ─── Nearby restaurant attachment ─────────────────────────────────────────────
+
+/** Maximum straight-line distance (km) to include a restaurant as "nearby". */
+const MAX_RESTAURANT_DISTANCE_KM = 2.5;
+
+/** Maximum number of restaurant options to attach per activity. */
+const MAX_RESTAURANT_OPTIONS = 3;
+
+/**
+ * Returns the straight-line distance in kilometres between two lat/lng points.
+ * Inline Haversine — avoids importing the travel-time variant from mapbox.ts
+ * which returns minutes and applies an urban-speed factor, not raw km.
+ */
+function haversineKm(
+    lat1: number, lng1: number,
+    lat2: number, lng2: number,
+): number {
+    const R    = 6_371;
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLng = (lng2 - lng1) * (Math.PI / 180);
+    const a    =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(lat1 * (Math.PI / 180)) *
+        Math.cos(lat2 * (Math.PI / 180)) *
+        Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/**
+ * For every non-restaurant activity in a day's activity list, attaches up to
+ * MAX_RESTAURANT_OPTIONS nearby restaurants sorted by straight-line distance.
+ *
+ * Rules:
+ *   - Only activities with valid lat/lng are considered (restaurants without
+ *     coordinates are silently skipped — no (0,0) pollution).
+ *   - Restaurants within MAX_RESTAURANT_DISTANCE_KM are preferred.
+ *   - If none fall within the radius, the closest available restaurants are
+ *     used as a fallback (up to MAX_RESTAURANT_OPTIONS) so the field is never
+ *     empty when restaurants exist.
+ *   - Restaurant activities themselves receive no restaurantOptions field.
+ *   - Returns a new array — no mutation of input objects.
+ *
+ * Called per-day AFTER attachCoordinates() so lat/lng are guaranteed to exist.
+ */
+function attachNearbyRestaurants(activities: Activity[]): Activity[] {
+    const restaurants = activities.filter(
+        (a) => a.type === "restaurant" &&
+               typeof a.lat === "number" && isFinite(a.lat) &&
+               typeof a.lng === "number" && isFinite(a.lng) &&
+               !(a.lat === 0 && a.lng === 0),
+    );
+
+    // Nothing to attach if there are no geocoded restaurants in this day
+    if (restaurants.length === 0) return activities;
+
+    return activities.map((act) => {
+        // Restaurants don't get restaurantOptions
+        if (act.type === "restaurant") return act;
+
+        // Skip non-restaurant activities that lack coordinates
+        if (
+            typeof act.lat !== "number" || !isFinite(act.lat) ||
+            typeof act.lng !== "number" || !isFinite(act.lng) ||
+            (act.lat === 0 && act.lng === 0)
+        ) {
+            return act;
+        }
+
+        // Sort all restaurants by distance to this activity
+        const sorted = restaurants
+            .map((r) => ({
+                restaurant: r,
+                distKm: haversineKm(act.lat!, act.lng!, r.lat!, r.lng!),
+            }))
+            .sort((a, b) => a.distKm - b.distKm);
+
+        // Prefer restaurants within the radius; fall back to nearest if none qualify
+        const withinRadius = sorted.filter((r) => r.distKm <= MAX_RESTAURANT_DISTANCE_KM);
+        const candidates   = withinRadius.length > 0 ? withinRadius : sorted;
+
+        const restaurantOptions = candidates
+            .slice(0, MAX_RESTAURANT_OPTIONS)
+            .map((c) => c.restaurant);
+
+        return { ...act, restaurantOptions };
+    });
+}
+
+/**
+ * Applies attachNearbyRestaurants to every day in an EnrichedTripContext,
+ * returning a new context object with the same shape.
+ *
+ * For days that have NO restaurant activities (e.g. a pure "Culture & Landmarks"
+ * day), the global restaurant pool (all geocoded restaurants from the entire trip)
+ * is used as a fallback so that `injectMeals` can still insert lunch/dinner.
+ */
+function withNearbyRestaurants(
+    context: EnrichedTripContext,
+    requestId?: string,
+): EnrichedTripContext {
+    let totalAttached = 0;
+    let attachedActivityCount = 0;
+
+    // Build a trip-wide pool of geocoded restaurants to use when a day
+    // has no day-local restaurant activities.
+    const globalRestaurantPool: Activity[] = context.days
+        .flatMap((d) => d.activities)
+        .filter(
+            (a) =>
+                a.type === "restaurant" &&
+                typeof a.lat === "number" && isFinite(a.lat) &&
+                typeof a.lng === "number" && isFinite(a.lng) &&
+                !(a.lat === 0 && a.lng === 0),
+        );
+
+    const days = context.days.map((day) => {
+        // Check whether this day has its own restaurant activities.
+        const dayHasRestaurants = day.activities.some(
+            (a) =>
+                a.type === "restaurant" &&
+                typeof a.lat === "number" && isFinite(a.lat) &&
+                typeof a.lng === "number" && isFinite(a.lng) &&
+                !(a.lat === 0 && a.lng === 0),
+        );
+
+        // For days without local restaurants, inject global pool options.
+        const activitiesForAttach = dayHasRestaurants
+            ? day.activities
+            : [
+                  ...day.activities,
+                  // Temporarily include global restaurants so attachNearbyRestaurants
+                  // can find nearest options. They won't appear in the output since
+                  // attachNearbyRestaurants skips restaurant-type activities.
+                  ...globalRestaurantPool,
+              ];
+
+        const enriched = attachNearbyRestaurants(activitiesForAttach)
+            // Strip the globally injected restaurants back out — only keep
+            // activities that were originally in this day.
+            .filter((a) => day.activities.some((orig) => orig.name === a.name));
+
+        enriched.forEach((act) => {
+            if (act.restaurantOptions && act.restaurantOptions.length > 0) {
+                totalAttached += act.restaurantOptions.length;
+                attachedActivityCount++;
+            }
+        });
+        return { ...day, activities: enriched };
+    });
+
+    const avg = attachedActivityCount > 0
+        ? parseFloat((totalAttached / attachedActivityCount).toFixed(2))
+        : 0;
+
+    logStructured({
+        layer: "agent", agent: "research", step: "restaurants_attached", requestId,
+        data: {
+            destination:          context.destination,
+            totalActivities:      attachedActivityCount,
+            totalOptionsAttached: totalAttached,
+            avgOptionsPerActivity: avg,
+        },
+    });
+
+    return { ...context, days };
+}
+
 /**
  * Validate, sanitise, and preference-filter raw LLM output.
  *
@@ -256,6 +504,8 @@ function validateAndSanitize(
     const rawDays = Array.isArray(obj.days) ? (obj.days as unknown[]) : [];
 
     const seenActivities = new Set<string>();
+    let restaurantEnrichedCount = 0;
+
     const days: EnrichedDay[] = rawDays
         .filter((d): d is Record<string, unknown> => typeof d === "object" && d !== null)
         .map((d) => {
@@ -289,14 +539,22 @@ function validateAndSanitize(
                         ? (a.type as ActivityType)
                         : "attraction";
 
-                    acc.push({
+                    const base: Activity = {
                         name: (a.name as string).trim(),
                         type,
                         description: typeof a.description === "string" ? a.description.trim() : "",
                         ...(typeof a.estimatedCost === "number" && a.estimatedCost >= 0
                             ? { estimatedCost: a.estimatedCost }
                             : {}),
-                    });
+                    };
+
+                    if (type === "restaurant") {
+                        const meta = enrichRestaurantMetadata(base);
+                        restaurantEnrichedCount++;
+                        acc.push({ ...base, ...meta });
+                    } else {
+                        acc.push(base);
+                    }
                     return acc;
                 }, []);
 
@@ -306,8 +564,36 @@ function validateAndSanitize(
                 activities[0] = { ...activities[0], type: "experience" };
             }
 
+            // Diversity guardrail: every day must have ≥2 non-restaurant activities.
+            // If the LLM ignored the system prompt (e.g. on a "Food & Culinary" day),
+            // reclassify the first restaurant(s) as "experience" so the Logistics Agent
+            // has non-restaurant anchors for meal injection.
+            const nonRestaurantCount = activities.filter((a) => a.type !== "restaurant").length;
+            if (nonRestaurantCount < 2 && activities.length >= 2) {
+                let promoted = 0;
+                for (let i = 0; i < activities.length && promoted < (2 - nonRestaurantCount); i++) {
+                    if (activities[i]!.type === "restaurant") {
+                        activities[i] = { ...activities[i]!, type: "experience" };
+                        promoted++;
+                    }
+                }
+                if (promoted > 0) {
+                    logStructured({
+                        layer: "agent", agent: "research", step: "output",
+                        data: { diversityFix: true, promoted, day: dayNum, theme },
+                    });
+                }
+            }
+
             return { day: dayNum, theme, activities };
         });
+
+    logStructured({
+        layer: "agent",
+        agent: "research",
+        step:  "restaurant_enriched",
+        data:  { count: restaurantEnrichedCount, destination: context.destination },
+    });
 
     return { days, hotels };
 }
@@ -675,14 +961,18 @@ Instructions:
             const result   = await attempt(enforceHotelCount);
             const geocoded = await attachCoordinates(result, requestId);
 
+            // Attach nearby restaurant options to every non-restaurant activity.
+            // Must happen AFTER attachCoordinates so lat/lng are valid for Haversine.
+            const enriched = withNearbyRestaurants(geocoded, requestId);
+
             // Store the geocoded result so the next identical request is instant
-            await setResearchCached(cacheKey, geocoded);
+            await setResearchCached(cacheKey, enriched);
             logStructured({
                 layer: "agent", agent: "research", step: "end", requestId,
                 data: { destination: context.destination, cached: true },
             });
 
-            return geocoded;
+            return enriched;
         };
 
         try {
