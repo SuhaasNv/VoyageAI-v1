@@ -36,6 +36,8 @@ export interface Activity {
     type: ActivityType;
     description: string;
     estimatedCost?: number;
+    lat?: number;
+    lng?: number;
 }
 
 export type PriceRange = "$" | "$$" | "$$$" | "$$$$";
@@ -46,6 +48,8 @@ export interface HotelOption {
     area: string;
     tags: string[];
     rating?: number;
+    lat?: number;
+    lng?: number;
 }
 
 export interface EnrichedDay {
@@ -63,6 +67,9 @@ export type EnrichedTripContext = Omit<TripContext, "days"> & {
 
 export type ScheduledActivity = Activity & {
     timeSlot: "morning" | "afternoon" | "evening";
+    startTime?: string;
+    endTime?: string;
+    travelTimeFromPrevMs?: number;
 };
 
 export interface OptimizedDay {

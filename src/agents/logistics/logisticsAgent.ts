@@ -1,5 +1,7 @@
-import { LLMClientFactory, parseJSONResponse } from "@/lib/ai/llm";
 import { logInfo, logError, logStructured, trunc } from "@/infrastructure/logger";
+import { getTravelTimeMatrix, isInvalidCoord } from "@/services/mapbox";
+import { buildScheduledDay } from "./routingUtils";
+import type { GeoCoordinate } from "@/services/mapbox";
 import type {
     Activity,
     EnrichedDay,
@@ -333,46 +335,63 @@ export class LogisticsAgent {
     async run(context: EnrichedTripContext, requestId?: string): Promise<OptimizedTripContext> {
         logStructured({ layer: "agent", agent: "logistics", step: "start", requestId });
         logStructured({ layer: "agent", agent: "logistics", step: "input", requestId, data: { days: context.days.length, hotels: context.hotels.length, totalActivities: context.days.reduce((s, d) => s + d.activities.length, 0), pace: context.preferences?.pace } });
-        const preprocessed = preprocessContext(context);
-        const client = LLMClientFactory.create({ agent: "logistics" });
+        
+        // 1. Hotel Selection (Fallback to scoreHotel deterministic heuristic)
+        const baseHotel = context.hotels.find(h => h.name) ?? selectHotel(context);
+        const safeHotelLat = isInvalidCoord(baseHotel.lat, baseHotel.lng) ? 40.7128 : (baseHotel.lat as number);
+        const safeHotelLng = isInvalidCoord(baseHotel.lat, baseHotel.lng) ? -74.0060 : (baseHotel.lng as number);
 
-        const messages = [
-            { role: "system" as const, content: SYSTEM_PROMPT },
-            { role: "user" as const, content: JSON.stringify(preprocessed) },
+        let globalIdCounter = 0;
+        const allGeoPoints: Array<GeoCoordinate & { id: string }> = [
+            { lat: safeHotelLat, lng: safeHotelLng, id: `hotel_${globalIdCounter++}` }
         ];
-        const options = { temperature: 0.4, maxTokens: 4096, timeoutMs: 30_000 };
 
-        let lastError: unknown;
-
-        for (let attempt = 0; attempt < 2; attempt++) {
-            try {
-                logStructured({ layer: "agent", agent: "logistics", step: "llm-call", requestId, data: { attempt: attempt + 1, maxTokens: 4096 } });
-                const response = await client.execute(messages, options);
-                const raw = parseJSONResponse<LLMResponse>(response.content);
-                const merged = mergeLLMResult(raw, preprocessed, context);
-                if (validateResult(merged, context)) {
-                    logInfo("[LogisticsAgent] LLM optimisation succeeded", { attempt: attempt + 1 });
-                    logStructured({ layer: "agent", agent: "logistics", step: "llm-response", requestId, data: { attempt: attempt + 1, latencyMs: response.latencyMs, path: "llm" } });
-                    logStructured({ layer: "agent", agent: "logistics", step: "output", requestId, data: { selectedHotel: merged.selectedHotel.name, days: merged.days.length } });
-                    logStructured({ layer: "agent", agent: "logistics", step: "end", requestId, data: { path: "llm" } });
-                    return merged;
-                }
-                lastError = new Error("LLM result failed post-merge validation");
-                logInfo("[LogisticsAgent] LLM result invalid, will retry or fall back", { attempt: attempt + 1 });
-            } catch (err) {
-                lastError = err;
-                logStructured({ layer: "agent", agent: "logistics", step: "error", requestId, data: { attempt: attempt + 1, error: trunc((err as Error).message) } });
-                logError(`[LogisticsAgent] LLM attempt ${attempt + 1} error`, err);
-            }
-        }
-
-        logInfo("[LogisticsAgent] Falling back to deterministic optimizer", {
-            reason: lastError instanceof Error ? lastError.message : String(lastError),
+        // 2. Flatten activities & inject fallback coords
+        const preprocessed = preprocessContext(context);
+        const flatActivities = preprocessed.days.flatMap(d => d.activities).map(act => {
+            const id = `act_${globalIdCounter++}`;
+            const lat = isInvalidCoord(act.lat, act.lng) ? safeHotelLat : (act.lat as number);
+            const lng = isInvalidCoord(act.lat, act.lng) ? safeHotelLng : (act.lng as number);
+            
+            allGeoPoints.push({ lat, lng, id });
+            return { ...act, lat, lng, id };
         });
-        logStructured({ layer: "agent", agent: "logistics", step: "fallback", requestId, data: { reason: trunc(lastError instanceof Error ? lastError.message : String(lastError)) } });
-        const fallback = deterministicOptimize(preprocessed);
-        logStructured({ layer: "agent", agent: "logistics", step: "output", requestId, data: { selectedHotel: fallback.selectedHotel.name, days: fallback.days.length } });
-        logStructured({ layer: "agent", agent: "logistics", step: "end", requestId, data: { path: "deterministic" } });
-        return fallback;
+
+        // 3. Matrix fetch (MAX 25 points to avoid Mapbox payload errors)
+        const routingPoints = allGeoPoints.slice(0, 25);
+        const matrix = await getTravelTimeMatrix(routingPoints);
+
+        const indexMap = new Map<string, number>();
+        routingPoints.forEach((pt, i) => indexMap.set(pt.id, i));
+        const matrixData = { matrix, indexMap };
+        
+        // 4. Cluster / Allocate Days
+        let actOffset = 0;
+        const optimizedDays: OptimizedDay[] = context.days.map((enrichedDay) => {
+            // Because we used `preprocessContext`, the arrays might have shrunken/capped
+            // Get the matching preprocessed day for length scaling
+            const prepDay = preprocessed.days.find(d => d.day === enrichedDay.day) || enrichedDay;
+            const numActs = prepDay.activities.length;
+            
+            const chunk = flatActivities.slice(actOffset, actOffset + numActs);
+            actOffset += numActs;
+             
+            return {
+                day: enrichedDay.day,
+                theme: enrichedDay.theme,
+                activities: buildScheduledDay({ lat: safeHotelLat, lng: safeHotelLng, id: allGeoPoints[0].id }, chunk, matrixData)
+            };
+        });
+
+        const optimized: OptimizedTripContext = {
+            ...context,
+            selectedHotel: { ...baseHotel, lat: safeHotelLat, lng: safeHotelLng },
+            days: optimizedDays
+        };
+
+        logStructured({ layer: "agent", agent: "logistics", step: "output", requestId, data: { selectedHotel: optimized.selectedHotel.name, days: optimized.days.length } });
+        logStructured({ layer: "agent", agent: "logistics", step: "end", requestId, data: { path: "mapbox_deterministic" } });
+
+        return optimized;
     }
 }

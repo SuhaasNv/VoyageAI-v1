@@ -54,10 +54,17 @@ export type LogStep =
     | "output"
     | "error"
     | "end"
-    | "fallback";
+    | "fallback"
+    | "matrix_fetch"
+    | "matrix_cache_hit"
+    | "matrix_truncated"
+    | "fallback_used"
+    | "route_built"
+    | "activities_dropped";
 
 export type StructuredLogEntry = {
-    layer: "agent" | "orchestrator" | "llm";
+    layer: "agent" | "orchestrator" | "llm" | "service";
+    service?: string;
     agent?: string;
     step: LogStep;
     requestId?: string;
