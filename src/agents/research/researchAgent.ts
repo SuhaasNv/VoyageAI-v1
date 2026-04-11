@@ -6,10 +6,19 @@
  *   - 3–5 hotel options total (MANDATORY — not per day)
  *
  * Data pipeline:
- *   1. Parallel Bright Data searches ground the LLM in real-world results.
- *   2. Grounding context + trip structure are fed to the LLM.
- *   3. LLM returns structured JSON conforming to EnrichedTripContext.
- *   4. Output is validated and sanitized before merging back into context.
+ *   1. Check Redis LLM-result cache → instant return on hit (6 h TTL).
+ *   2. Parallel Bright Data searches ground the LLM in real-world results.
+ *   3. Grounding context + trip structure fed to the LLM.
+ *   4. LLM returns structured JSON conforming to EnrichedTripContext.
+ *   5. Output validated + sanitized.
+ *   6. attachCoordinates — precision-aware geocoding with geoConfidence:
+ *       a. Geocode destination centroid.
+ *       b. Country-level inference: if destination is a country, find the
+ *          primary city from hotel areas (e.g. "Italy" → "Rome") and use
+ *          that as the effective centroid with city-level (50 km) threshold.
+ *       c. Batch-geocode all places with limit=3 + poi/address types.
+ *       d. Attach geoConfidence: "high" | "medium" | "low".
+ *   7. Geocoded result stored in cache.
  *
  * This agent MUST NOT: select a final hotel, optimise routes, calculate
  * cost totals, modify dates/duration, or call other agents.
@@ -19,6 +28,13 @@ import { LLMClientFactory, executeWithRetry, parseJSONResponse } from "../../lib
 import { selectModelConfig } from "../../lib/ai/modelRouter";
 import { buildFullPrompt } from "../../lib/ai/prompts/index";
 import { logError, logInfo, logStructured, trunc } from "@/infrastructure/logger";
+import {
+    geocodeCentroid,
+    batchGeocode,
+    isValidGeoCoord,
+    maxDistanceForFeatureType,
+    isDenseCityDestination,
+} from "@/services/mapboxGeocoding";
 import {
     searchAttractions,
     searchHotels,
@@ -30,11 +46,17 @@ import {
     RESEARCH_SYSTEM_PROMPT,
     RESEARCH_SCHEMA_INSTRUCTION,
 } from "./researchPrompts";
+import {
+    researchCacheKey,
+    getResearchCached,
+    setResearchCached,
+} from "@/lib/ai/cache";
 import type {
     Activity,
     ActivityType,
     EnrichedDay,
     EnrichedTripContext,
+    GeoConfidence,
     HotelOption,
     PriceRange,
     TripContext,
@@ -80,6 +102,82 @@ function withinBudget(priceRange: PriceRange, max: PriceRange): boolean {
 /** Normalise a string for deduplication comparison. */
 function normaliseName(name: string): string {
     return name.toLowerCase().trim();
+}
+
+/**
+ * For country-level destinations (e.g. "Italy"), the centroid lands in the
+ * geographic centre of the country, causing place geocodes to scatter.
+ *
+ * This function extracts the most frequently mentioned city using three
+ * signal sources (in descending reliability):
+ *   1. Hotel area strings (weight ×3) — "Rome, Italy" → "rome"
+ *   2. Activity descriptions — "Located in central Florence" → "florence"
+ *   3. Activity names — "Colosseum Rome" → "rome"
+ *
+ * Returns null when no consistent city is found (effective score ≥ 3 required,
+ * equivalent to at least two hotel mentions OR strong cross-source consensus).
+ */
+function inferPrimaryCity(
+    hotels:      HotelOption[],
+    days:        EnrichedDay[],
+    destination: string,
+): string | null {
+    const destWords = new Set(destination.toLowerCase().split(/[\s,]+/).filter(Boolean));
+    // Common stopwords that appear in area strings but are not city names
+    const stopWords = new Set([
+        ...destWords,
+        "centro", "central", "city", "centre", "center", "district", "area",
+        "north", "south", "east", "west", "old", "new", "historic",
+    ]);
+    const wordFreq = new Map<string, number>();
+
+    const addTokens = (text: string, weight: number) => {
+        const tokens = text
+            .split(/[\s,\/\-]+/)
+            .map((w) => w.toLowerCase().replace(/[^\w]/g, ""))
+            .filter((w) => w.length > 2 && !stopWords.has(w));
+        for (const token of tokens) {
+            wordFreq.set(token, (wordFreq.get(token) ?? 0) + weight);
+        }
+    };
+
+    // Source 1: hotel areas (most reliable — typically "City, Country" format)
+    for (const hotel of hotels) {
+        addTokens(hotel.area, 3);
+    }
+
+    // Source 2: activity descriptions — scan for city mentions after "in", "near", "at"
+    for (const day of days) {
+        for (const act of day.activities) {
+            if (act.description) {
+                // Pattern: "in Florence", "near Rome", "at the heart of Venice"
+                const matches = act.description.match(
+                    /\b(?:in|near|at)\s+([A-Z][a-záàèéìíòóùú]+(?:\s+[A-Z][a-záàèéìíòóùú]+)?)/g,
+                ) ?? [];
+                for (const match of matches) {
+                    const city = match
+                        .replace(/^(?:in|near|at)\s+/i, "")
+                        .toLowerCase()
+                        .replace(/[^\w]/g, "");
+                    if (city.length > 2 && !stopWords.has(city)) {
+                        wordFreq.set(city, (wordFreq.get(city) ?? 0) + 1);
+                    }
+                }
+            }
+            // Source 3: last word of activity name (e.g. "Colosseum Rome")
+            // Only if activity name ends with a capitalised word not in destination
+            const nameParts = act.name.split(/\s+/);
+            const lastName  = nameParts[nameParts.length - 1]?.toLowerCase().replace(/[^\w]/g, "") ?? "";
+            if (lastName.length > 2 && /^[A-Z]/.test(nameParts[nameParts.length - 1] ?? "") && !stopWords.has(lastName)) {
+                wordFreq.set(lastName, (wordFreq.get(lastName) ?? 0) + 0.5);
+            }
+        }
+    }
+
+    const sorted = [...wordFreq.entries()].sort((a, b) => b[1] - a[1]);
+    const top    = sorted[0];
+    // Score ≥ 3 means: 1 hotel mention (weight 3) OR multiple activity signals
+    return top && top[1] >= 3 ? top[0] : null;
 }
 
 /**
@@ -138,10 +236,19 @@ function validateAndSanitize(
         }, [])
         .slice(0, 5);
 
-    if (hotels.length < 3) {
+    if (hotels.length < 2) {
         throw new Error(
-            `[ResearchAgent] hotels has only ${hotels.length} valid entries (minimum 3 required)`
+            `[ResearchAgent] hotels has only ${hotels.length} valid entries (minimum 2 required)`
         );
+    }
+    if (hotels.length < 3) {
+        // Soft warning — 2 hotels is usable, but callers should retry with a
+        // stronger prompt if possible.  We do NOT throw here; the system must
+        // never 500 on valid user input.
+        logStructured({
+            layer: "agent", agent: "research", step: "low_hotel_count",
+            data: { count: hotels.length, destination: context.destination },
+        });
     }
 
     // ── Days / Activities ────────────────────────────────────────────────────
@@ -228,6 +335,140 @@ function mergeIntoContext(
     };
 }
 
+// ─── Geocoding enrichment ─────────────────────────────────────────────────────
+
+/**
+ * Attaches real lat/lng + geoConfidence to every Activity and HotelOption.
+ *
+ * Strategy:
+ *  1. Geocode destination centroid → extract ISO country code + featureType.
+ *  2. Country-level override: when featureType === "country" (e.g. "Italy"),
+ *     infer the primary city from hotel area strings and re-geocode that city
+ *     as the effective centroid (with city-level 50 km threshold).
+ *  3. Batch-geocode all unique place names in parallel (Promise.allSettled).
+ *     Each call uses limit=3 + poi/address types + best-candidate selection.
+ *  4. Attach geoConfidence: high (<5 km) / medium (within threshold) / low (fallback).
+ *
+ * Never throws.
+ */
+async function attachCoordinates(
+    result: EnrichedTripContext,
+    requestId?: string,
+): Promise<EnrichedTripContext> {
+    // ── Step 1: destination centroid ──────────────────────────────────────
+    const centroidResult = await geocodeCentroid(result.destination);
+
+    if (!centroidResult) {
+        logStructured({
+            layer: "agent", agent: "research", step: "geocoding_complete", requestId,
+            data: {
+                destination: result.destination,
+                skipped:     true,
+                reason:      "centroid geocode unavailable",
+                totalPlaces: 0,
+            },
+        });
+        return result;
+    }
+
+    let { lat: centLat, lng: centLng, countryCode, featureType } = centroidResult;
+
+    // ── Step 2: country-level city inference ──────────────────────────────
+    // When the destination is an entire country, the centroid lands in the
+    // geographic centre (e.g. middle of Italy), causing place geocodes to
+    // scatter across the country.  Infer the primary city from hotel areas
+    // AND activity descriptions, then re-geocode it as the effective centroid.
+    let inferredCity: string | undefined;
+
+    if (featureType === "country") {
+        const cityCandidate = inferPrimaryCity(result.hotels, result.days, result.destination);
+        if (cityCandidate) {
+            inferredCity = cityCandidate;
+            logStructured({
+                layer: "agent", agent: "research", step: "geocoding_complete", requestId,
+                data: {
+                    destination:      result.destination,
+                    countryInference: true,
+                    inferredCity:     cityCandidate,
+                    message:          "country-level destination — using inferred primary city as centroid",
+                },
+            });
+
+            const cityResult = await geocodeCentroid(`${cityCandidate}, ${result.destination}`);
+            if (cityResult && cityResult.featureType !== "country") {
+                centLat     = cityResult.lat;
+                centLng     = cityResult.lng;
+                countryCode = cityResult.countryCode ?? countryCode;
+                featureType = cityResult.featureType;
+            }
+        }
+    }
+
+    // Detect dense city (Tokyo, NYC, London …) — enables anti-centroid rule
+    const isDense = isDenseCityDestination(
+        inferredCity ?? result.destination,
+    );
+
+    const centroid = { lat: centLat, lng: centLng };
+    const fallback = centroid; // (0,0) is never used as a fallback
+
+    // ── Step 3: collect unique names + batch geocode ──────────────────────
+    const activityNames = result.days.flatMap((d) => d.activities.map((a) => a.name));
+    const hotelNames    = result.hotels.map((h) => h.name);
+    const allNames      = [...activityNames, ...hotelNames];
+
+    const maxDistanceKm = maxDistanceForFeatureType(featureType, isDense);
+
+    const geocodeOptions = {
+        proximity:    centroid,
+        centroid,
+        maxDistanceKm,
+        denseCity:    isDense,
+        ...(countryCode  ? { country: countryCode }   : {}),
+        ...(inferredCity ? { inferredCity }            : {}),
+    };
+
+    const coordMap = await batchGeocode(allNames, result.destination, fallback, geocodeOptions);
+
+    logStructured({
+        layer: "agent", agent: "research", step: "geocoding_complete", requestId,
+        data: {
+            destination:   result.destination,
+            totalPlaces:   allNames.length,
+            countryFilter: countryCode ?? "none",
+            featureType,
+            maxDistanceKm,
+            skipped:       false,
+        },
+    });
+
+    // ── Step 4: attach coords + geoConfidence ─────────────────────────────
+    // Map GeocodedPlace.precision → GeoConfidence on the entity.
+    // Falls back to centroid with geoConfidence: "low" when geocoding failed.
+    const resolveCoord = (name: string): { lat: number; lng: number; geoConfidence: GeoConfidence } => {
+        const geocoded = coordMap.get(name);
+        if (geocoded && isValidGeoCoord(geocoded.lat, geocoded.lng)) {
+            return { lat: geocoded.lat, lng: geocoded.lng, geoConfidence: geocoded.precision };
+        }
+        return { lat: fallback.lat, lng: fallback.lng, geoConfidence: "low" };
+    };
+
+    const days = result.days.map((day) => ({
+        ...day,
+        activities: day.activities.map((act) => {
+            const { lat, lng, geoConfidence } = resolveCoord(act.name);
+            return { ...act, lat, lng, geoConfidence };
+        }),
+    }));
+
+    const hotels = result.hotels.map((hotel) => {
+        const { lat, lng, geoConfidence } = resolveCoord(hotel.name);
+        return { ...hotel, lat, lng, geoConfidence };
+    });
+
+    return { ...result, days, hotels };
+}
+
 // ─── ResearchAgent ────────────────────────────────────────────────────────────
 
 export class ResearchAgent {
@@ -239,10 +480,41 @@ export class ResearchAgent {
      */
     async run(context: TripContext, requestId?: string): Promise<EnrichedTripContext> {
         logStructured({ layer: "agent", agent: "research", step: "start", requestId });
-        logStructured({ layer: "agent", agent: "research", step: "input", requestId, data: { destination: context.destination, durationDays: context.durationDays, style: context.preferences?.style } });
+        logStructured({
+            layer: "agent", agent: "research", step: "input", requestId,
+            data: { destination: context.destination, durationDays: context.durationDays, style: context.preferences?.style },
+        });
         logInfo("[ResearchAgent] starting enrichment", {
             destination: context.destination,
             days: context.durationDays,
+        });
+
+        // ── Step 0: LLM result cache check ────────────────────────────────
+        // Skip the entire LLM + Bright Data pipeline when we have a recent
+        // geocoded result.  TTL = 6 h so a second request within the same
+        // session is instant.  Cache key includes day themes so different
+        // itinerary structures are not conflated.
+        const cacheKey = researchCacheKey({
+            destination:  context.destination,
+            durationDays: context.durationDays,
+            dayThemes:    context.days.map((d) => d.theme),
+            style:        context.preferences?.style,
+            pace:         context.preferences?.pace,
+        });
+
+        const cached = await getResearchCached(cacheKey);
+        if (cached) {
+            logStructured({
+                layer: "agent", agent: "research", step: "cache_hit", requestId,
+                data: { destination: context.destination, source: "research_result_cache" },
+            });
+            logInfo("[ResearchAgent] returning cached result — skipping LLM call");
+            return cached as EnrichedTripContext;
+        }
+
+        logStructured({
+            layer: "agent", agent: "research", step: "cache_miss", requestId,
+            data: { destination: context.destination },
         });
 
         // ── Step 1: Parallel Bright Data searches ──────────────────────────
@@ -255,7 +527,6 @@ export class ResearchAgent {
         let dataSource: "brightdata" | "unverified" = "brightdata";
 
         if (isBrightDataDisabled()) {
-            // Bright Data is known-misconfigured (404 on startup probe) — skip calls entirely.
             logError("brightdata.integration_disabled", {
                 destination: context.destination,
                 message: "Skipping Bright Data calls — BRIGHTDATA_DISABLED flag is set. Operating in LLM-only mode.",
@@ -268,12 +539,12 @@ export class ResearchAgent {
                 searchRestaurants(context.destination),
             ]);
 
-            const getRes = (r: PromiseSettledResult<BrightDataResultPayload>) => r.status === "fulfilled" ? r.value : null;
-            attractions = getRes(attractionsRes);
-            hotels = getRes(hotelsRes);
-            restaurants = getRes(restaurantsRes);
+            const getRes = (r: PromiseSettledResult<BrightDataResultPayload>) =>
+                r.status === "fulfilled" ? r.value : null;
+            attractions  = getRes(attractionsRes);
+            hotels       = getRes(hotelsRes);
+            restaurants  = getRes(restaurantsRes);
 
-            // If every search came back as failed/misconfigured, treat this request as LLM-only.
             const allFailed = [attractions, hotels, restaurants].every(
                 (r) => !r || r.status === "failed"
             );
@@ -286,40 +557,66 @@ export class ResearchAgent {
             }
         }
 
-        const hasGrounding = (attractions?.data?.length || 0) + (hotels?.data?.length || 0) + (restaurants?.data?.length || 0) > 0;
+        const hasGrounding =
+            (attractions?.data?.length || 0) +
+            (hotels?.data?.length      || 0) +
+            (restaurants?.data?.length || 0) > 0;
         if (!hasGrounding) {
             logInfo("[ResearchAgent] no Bright Data results — proceeding with LLM-only generation");
         }
-        logStructured({ layer: "agent", agent: "research", step: "input", requestId, data: { groundingAttractions: !!attractions?.data?.length, groundingHotels: !!hotels?.data?.length, groundingRestaurants: !!restaurants?.data?.length, dataSource } });
+        logStructured({
+            layer: "agent", agent: "research", step: "input", requestId,
+            data: {
+                groundingAttractions: !!attractions?.data?.length,
+                groundingHotels:      !!hotels?.data?.length,
+                groundingRestaurants: !!restaurants?.data?.length,
+                dataSource,
+            },
+        });
 
         // ── Step 2: Build grounding context ───────────────────────────────
         const groundingParts: string[] = [];
-        
-        const formatEntities = (entities: BrightDataResultPayload["data"]) => entities.map((e) => `- ${e.name}${e.rating ? ` (Rating: ${e.rating})` : ''}: ${e.snippet} [Source: ${e.source}]`).join("\n");
+        const formatEntities = (entities: BrightDataResultPayload["data"]) =>
+            entities
+                .map((e) => `- ${e.name}${e.rating ? ` (Rating: ${e.rating})` : ""}: ${e.snippet} [Source: ${e.source}]`)
+                .join("\n");
 
         if (attractions?.data?.length) groundingParts.push(`## Attractions & Experiences\n${formatEntities(attractions.data)}`);
-        if (hotels?.data?.length) groundingParts.push(`## Hotels & Accommodation\n${formatEntities(hotels.data)}`);
+        if (hotels?.data?.length)      groundingParts.push(`## Hotels & Accommodation\n${formatEntities(hotels.data)}`);
         if (restaurants?.data?.length) groundingParts.push(`## Restaurants & Dining\n${formatEntities(restaurants.data)}`);
         const groundingContext = groundingParts.join("\n\n");
 
-        // ── Step 3: Build LLM prompt ───────────────────────────────────────
-        const daysList = context.days
-            .map((d) => `  - Day ${d.day}: ${d.theme}`)
-            .join("\n");
+        // ── Step 3: Shared prompt context (outside attempt closure) ──────────
+        const daysList = context.days.map((d) => `  - Day ${d.day}: ${d.theme}`).join("\n");
 
         const prefSummary = context.preferences
             ? [
-                context.preferences.budget != null
-                    ? `Budget: $${context.preferences.budget}/day`
-                    : null,
-                context.preferences.style ? `Style: ${context.preferences.style}` : null,
-                context.preferences.pace ? `Pace: ${context.preferences.pace}` : null,
+                context.preferences.budget != null ? `Budget: $${context.preferences.budget}/day` : null,
+                context.preferences.style  ? `Style: ${context.preferences.style}` : null,
+                context.preferences.pace   ? `Pace: ${context.preferences.pace}` : null,
               ]
                 .filter(Boolean)
                 .join(", ")
             : "No specific preferences";
 
-        const task = `
+        const client      = LLMClientFactory.create({ agent: "research" });
+        const modelConfig = selectModelConfig({ endpoint: "research" });
+        const llmOptions  = {
+            ...modelConfig,
+            responseFormat: "json" as const,
+            retries: 1,
+        };
+
+        // ── Step 4: LLM call ───────────────────────────────────────────────
+        // `enforceHotelCount` appends a CRITICAL override instruction when the
+        // first attempt returns fewer than 3 hotels (NYC / low-signal edge case).
+        // This avoids a full 500 on valid user input — the system must never crash.
+        const attempt = async (enforceHotelCount = false): Promise<EnrichedTripContext> => {
+            const hotelOverride = enforceHotelCount
+                ? `\n\nCRITICAL OVERRIDE — HOTELS: You MUST include AT LEAST 3 hotels in the "hotels" array. Include one budget option, one mid-range, and one upscale hotel. Returning fewer than 3 hotels is not acceptable.`
+                : "";
+
+            const task = `
 ## Task
 Enrich this trip plan with realistic options for activities and hotels.
 
@@ -335,54 +632,78 @@ Instructions:
 - Provide 3–5 activities per day matching each day's theme.
 - Provide exactly 3–5 hotel options total (shared across all days).
 - Hotels are MANDATORY — you must include them.
-- Return ONLY the JSON object. No markdown, no commentary.
+- Return ONLY the JSON object. No markdown, no commentary.${hotelOverride}
 `.trim();
 
-        const fullPrompt = buildFullPrompt({
-            system: RESEARCH_SYSTEM_PROMPT,
-            context: groundingContext,
-            schema: RESEARCH_SCHEMA_INSTRUCTION,
-            task,
-        });
+            const fullPromptForAttempt = buildFullPrompt({
+                system:  RESEARCH_SYSTEM_PROMPT,
+                context: groundingContext,
+                schema:  RESEARCH_SCHEMA_INSTRUCTION,
+                task,
+            });
 
-        const client = LLMClientFactory.create({ agent: "research" });
-
-        const modelConfig = selectModelConfig({ endpoint: "research" });
-        const llmOptions = {
-            ...modelConfig,
-            responseFormat: "json" as const,
-            retries: 1,
-        };
-
-        // ── Step 4: LLM call with single retry on validation failure ───────
-        const attempt = async (): Promise<EnrichedTripContext> => {
-            logStructured({ layer: "agent", agent: "research", step: "llm-call", requestId, data: { model: modelConfig.model, maxTokens: llmOptions.maxTokens } });
+            logStructured({
+                layer: "agent", agent: "research", step: "llm-call", requestId,
+                data: { model: modelConfig.model, maxTokens: llmOptions.maxTokens, enforceHotelCount },
+            });
             const llmResponse = await executeWithRetry(
                 client,
-                [{ role: "user", content: fullPrompt }],
+                [{ role: "user", content: fullPromptForAttempt }],
                 llmOptions
             );
-            logStructured({ layer: "agent", agent: "research", step: "llm-response", requestId, data: { contentLength: llmResponse.content.length, latencyMs: llmResponse.latencyMs } });
-            const raw = parseJSONResponse<unknown>(llmResponse.content);
+            logStructured({
+                layer: "agent", agent: "research", step: "llm-response", requestId,
+                data: { contentLength: llmResponse.content.length, latencyMs: llmResponse.latencyMs },
+            });
+            const raw       = parseJSONResponse<unknown>(llmResponse.content);
             const sanitized = validateAndSanitize(raw, context);
-            const result = mergeIntoContext(context, sanitized);
-            logStructured({ layer: "agent", agent: "research", step: "output", requestId, data: { days: result.days.length, hotels: result.hotels.length, totalActivities: result.days.reduce((s, d) => s + d.activities.length, 0), dataSource } });
+            const result    = mergeIntoContext(context, sanitized);
+            logStructured({
+                layer: "agent", agent: "research", step: "output", requestId,
+                data: {
+                    days:            result.days.length,
+                    hotels:          result.hotels.length,
+                    totalActivities: result.days.reduce((s, d) => s + d.activities.length, 0),
+                    dataSource,
+                    enforceHotelCount,
+                },
+            });
             return result;
+        };
+
+        const runWithGeocode = async (enforceHotelCount = false): Promise<EnrichedTripContext> => {
+            const result   = await attempt(enforceHotelCount);
+            const geocoded = await attachCoordinates(result, requestId);
+
+            // Store the geocoded result so the next identical request is instant
+            await setResearchCached(cacheKey, geocoded);
+            logStructured({
+                layer: "agent", agent: "research", step: "end", requestId,
+                data: { destination: context.destination, cached: true },
+            });
+
+            return geocoded;
         };
 
         try {
-            const result = await attempt();
-            logStructured({ layer: "agent", agent: "research", step: "end", requestId });
-            return result;
+            return await runWithGeocode(false);
         } catch (firstErr) {
-            logStructured({ layer: "agent", agent: "research", step: "error", requestId, data: { attempt: 1, error: trunc((firstErr as Error).message) } });
+            const firstErrMsg = (firstErr as Error).message;
+            // If first failure was a hotel-count error, retry with an explicit
+            // override instruction so the LLM knows it MUST produce 3+ hotels.
+            const isHotelCountError = firstErrMsg.includes("hotels has only");
+            logStructured({
+                layer: "agent", agent: "research", step: "error", requestId,
+                data: { attempt: 1, error: trunc(firstErrMsg), willEnforceHotels: isHotelCountError },
+            });
             logError("[ResearchAgent] first attempt failed — retrying once", firstErr);
             try {
-                const result = await attempt();
-                logStructured({ layer: "agent", agent: "research", step: "end", requestId });
-                return result;
+                return await runWithGeocode(isHotelCountError);
             } catch (secondErr) {
-                logStructured({ layer: "agent", agent: "research", step: "error", requestId, data: { attempt: 2, error: trunc((secondErr as Error).message), fatal: true } });
+                logStructured({
+                    layer: "agent", agent: "research", step: "error", requestId,
+                    data: { attempt: 2, error: trunc((secondErr as Error).message), fatal: true },
+                });
                 logError("[ResearchAgent] failed after retry — hotels could not be populated", secondErr);
                 throw secondErr;
             }

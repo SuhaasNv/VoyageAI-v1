@@ -145,8 +145,12 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
     async function callApi<T>(endpoint: string, body: unknown): Promise<T> {
         // Use the pre-fetched cached token; fall back to a fresh fetch.
         let csrfToken = csrfTokenRef.current || (await ensureCsrfToken());
-        // Hard timeout: agent stages can take 20–60s; 90s covers worst-case LLM latency.
-        const timeoutSignal = AbortSignal.timeout(90_000);
+        // Stage-aware timeout:
+        //   research — Bright Data + LLM + dense-city dual-query geocoding can
+        //              take 60–120 s for long multi-day luxury trips → 150 s.
+        //   all other stages — 90 s covers worst-case LLM + routing latency.
+        const timeoutMs = endpoint === "research" ? 150_000 : 90_000;
+        const timeoutSignal = AbortSignal.timeout(timeoutMs);
 
         const doRequest = async (token: string) =>
             fetch(`/api/ai/itinerary-flow/${endpoint}`, {
