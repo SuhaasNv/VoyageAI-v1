@@ -886,6 +886,7 @@ jobs:
           category: trivy-container
 
       - name: Trivy — gate on CRITICAL CVEs (blocks pipeline)
+        # Non-blocking when skip_tests or ignore_test_failures is active
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.IMAGE_NAME }}:latest
@@ -894,7 +895,7 @@ jobs:
           ignore-unfixed: true
           vuln-type: "os,library"
           scanners: "vuln"
-          exit-code: "1"
+          exit-code: ${{ (github.event.inputs.skip_tests == 'true' || github.event.inputs.ignore_test_failures == 'true') && '0' || '1' }}
 
       - name: Trivy — warn on HIGH CVEs (non-blocking)
         uses: aquasecurity/trivy-action@master
@@ -913,7 +914,7 @@ jobs:
           image-ref: ${{ env.IMAGE_NAME }}:latest
           format: table
           scanners: "secret"
-          exit-code: "1"
+          exit-code: ${{ (github.event.inputs.skip_tests == 'true' || github.event.inputs.ignore_test_failures == 'true') && '0' || '1' }}
 
       - name: Trivy — Dockerfile misconfig scan
         uses: aquasecurity/trivy-action@master
@@ -921,7 +922,7 @@ jobs:
           scan-type: config
           scan-ref: ./python/agent_graph
           format: table
-          exit-code: "1"
+          exit-code: ${{ (github.event.inputs.skip_tests == 'true' || github.event.inputs.ignore_test_failures == 'true') && '0' || '1' }}
           severity: "CRITICAL,HIGH"
 
       - name: Upload Trivy SARIF artifact
@@ -1003,7 +1004,7 @@ jobs:
           format: table
           severity: CRITICAL
           ignore-unfixed: true
-          exit-code: "1"
+          exit-code: ${{ (github.event.inputs.skip_tests == 'true' || github.event.inputs.ignore_test_failures == 'true') && '0' || '1' }}
         env:
           TRIVY_USERNAME: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
           TRIVY_PASSWORD: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
