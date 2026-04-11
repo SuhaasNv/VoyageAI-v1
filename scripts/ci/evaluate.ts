@@ -64,6 +64,7 @@ function passRate(report: StageReport | null): number {
 const THRESHOLDS = {
     dataValidationPassRate: 100,
     modelValidationPassRate: 100,
+    promptValidationPassRate: 100,
     promptTestPassRate: 100,
     safetyTestPassRate: 100,
     safetyCriticalFailures: 0,
@@ -79,6 +80,7 @@ console.log("\n📊 Loading upstream stage reports");
 
 const dataVal = loadReport("data-validation.json");
 const modelVal = loadReport("model-validation.json");
+const promptVal = loadReport("prompt-validation.json");
 const promptTests = loadReport("prompt-tests.json");
 const safetyTests = loadReport("safety-tests.json");
 
@@ -182,6 +184,13 @@ const metrics: MetricResult[] = [
         unit: "%",
     },
     {
+        name: "Prompt Validation Pass Rate",
+        value: passRate(promptVal),
+        threshold: THRESHOLDS.promptValidationPassRate,
+        passed: passRate(promptVal) >= THRESHOLDS.promptValidationPassRate,
+        unit: "%",
+    },
+    {
         name: "Prompt Test Pass Rate",
         value: passRate(promptTests),
         threshold: THRESHOLDS.promptTestPassRate,
@@ -245,6 +254,7 @@ const report = {
     stages: {
         dataValidation: dataVal,
         modelValidation: modelVal,
+        promptValidation: promptVal,
         promptTests,
         safetyTests,
     },
