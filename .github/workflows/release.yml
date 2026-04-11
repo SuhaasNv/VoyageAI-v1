@@ -284,11 +284,12 @@ jobs:
 
       - name: terraform init
         if: steps.infra-changed.outputs.changed != '0'
+        env:
+          AWS_ENDPOINT_URL_S3: https://${{ env.DO_SPACES_REGION }}.digitaloceanspaces.com
         run: |
           terraform init \
             -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
             -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
-            -backend-config="endpoint=https://${{ env.DO_SPACES_REGION }}.digitaloceanspaces.com" \
             -input=false
 
       - name: terraform plan

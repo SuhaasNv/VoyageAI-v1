@@ -33,10 +33,12 @@ terraform {
     # Spaces does not have real AWS regions; use this placeholder.
     region = "us-east-1"
 
-    # Spaces-specific overrides — endpoint is injected via -backend-config in CI.
+    # Spaces-specific overrides.
+    # `endpoint` is deprecated in TF >= 1.6; set AWS_ENDPOINT_URL_S3 in CI instead.
     skip_credentials_validation = true
     skip_metadata_api_check     = true
     skip_region_validation      = true
+    skip_requesting_account_id  = true
     force_path_style            = true
   }
 }

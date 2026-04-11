@@ -25,9 +25,9 @@ resource "digitalocean_container_registry" "voyageai" {
 # Grant the App Platform service account pull access to the registry.
 # Without this the App Platform cannot pull the voyageai-langgraph image.
 resource "digitalocean_container_registry_docker_credentials" "app_platform" {
-  registry_name = digitalocean_container_registry.voyageai.name
-  write         = false   # App Platform only needs read (pull) access
-  expiry_seconds = 0      # 0 = never expires (rotated by CI on each deploy)
+  registry_name  = digitalocean_container_registry.voyageai.name
+  write          = false # App Platform only needs read (pull) access
+  expiry_seconds = 0     # 0 = never expires (rotated by CI on each deploy)
 }
 
 # ── Project membership ────────────────────────────────────────────────────────

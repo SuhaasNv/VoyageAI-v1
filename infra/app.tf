@@ -4,7 +4,7 @@
 #  DigitalOcean App Platform — VoyageAI LangGraph Orchestration Service
 #
 #  Architecture:
-#    Vercel (Next.js) ──HTTP──▶ App Platform (LangGraph) ──HTTP──▶ Vercel /api/internal
+#    Railway (Next.js) ──HTTP──▶ App Platform (LangGraph) ──HTTP──▶ Railway /api/internal
 #
 #  The service:
 #    • Pulls the voyageai-langgraph image from DOCR on every deploy
@@ -24,7 +24,7 @@ resource "digitalocean_project" "voyageai" {
   name        = var.project_name
   description = "VoyageAI — AI-powered travel planning app"
   purpose     = "Web Application"
-  environment = title(var.environment)  # "Staging" | "Production"
+  environment = title(var.environment) # "Staging" | "Production"
 }
 
 # ── App Platform — LangGraph service ─────────────────────────────────────────
