@@ -93,6 +93,8 @@ env:
   TF_IN_AUTOMATION: "true" # Suppress interactive prompts in Terraform output
   TF_CLI_ARGS_plan: "-lock-timeout=60s"
   TF_CLI_ARGS_apply: "-lock-timeout=60s"
+  # Registry name must match var.registry_name default (used in placeholder push)
+  DOCR_REGISTRY: registry.digitalocean.com/${{ vars.REGISTRY_NAME || 'voyageai' }}
   # AWS SDK env vars for the S3-compatible Spaces backend.
   # Must be present for ALL terraform operations (init, plan, apply, destroy, show)
   # not just init — every state read/write authenticates against Spaces.
@@ -362,6 +364,23 @@ jobs:
             -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
             -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
             -input=false
+
+      # App Platform validates the image tag at creation time.
+      # On a brand-new registry there is nothing to pull, so we push a
+      # minimal placeholder first.  Subsequent real builds overwrite it.
+      - name: Push placeholder image if registry is empty
+        run: |
+          IMAGE="${DOCR_REGISTRY}/voyageai-langgraph:latest"
+          echo "$DIGITALOCEAN_ACCESS_TOKEN" | \
+            docker login registry.digitalocean.com --username token --password-stdin
+          if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "Image already exists — skipping placeholder push"
+          else
+            echo "Registry empty — pushing placeholder to unblock App Platform"
+            docker pull python:3.11-slim
+            docker tag python:3.11-slim "$IMAGE"
+            docker push "$IMAGE"
+          fi
 
       - name: Download plan artifact
         uses: actions/download-artifact@v4

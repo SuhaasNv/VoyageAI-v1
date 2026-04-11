@@ -119,6 +119,7 @@ env:
   TF_CLI_ARGS_plan: "-lock-timeout=60s"
   TF_CLI_ARGS_apply: "-lock-timeout=60s"
   DO_SPACES_REGION: ${{ vars.DO_SPACES_REGION || 'nyc3' }}
+  DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
   TF_VAR_do_token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
   TF_VAR_next_internal_url: ${{ secrets.TF_VAR_next_internal_url }}
   TF_VAR_internal_agent_secret: ${{ secrets.TF_VAR_internal_agent_secret }}
@@ -303,6 +304,25 @@ jobs:
             -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
             -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
             -input=false
+
+      # App Platform validates the image tag the moment POST /v2/apps is sent.
+      # Push a placeholder into DOCR so the first apply doesn't 404.
+      # Real image overwrites this in the docker-push job.
+      - name: Push placeholder image if registry is empty
+        if: steps.infra-changed.outputs.changed != '0'
+        working-directory: .
+        run: |
+          IMAGE="registry.digitalocean.com/${{ vars.REGISTRY_NAME || 'voyageai' }}/voyageai-langgraph:latest"
+          echo "$DIGITALOCEAN_ACCESS_TOKEN" | \
+            docker login registry.digitalocean.com --username token --password-stdin
+          if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "Image already exists — skipping placeholder push"
+          else
+            echo "Registry empty — pushing placeholder to unblock App Platform"
+            docker pull python:3.11-slim
+            docker tag python:3.11-slim "$IMAGE"
+            docker push "$IMAGE"
+          fi
 
       - name: terraform plan
         if: steps.infra-changed.outputs.changed != '0'
