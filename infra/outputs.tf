@@ -19,7 +19,7 @@ output "registry_name" {
 
 output "registry_urn" {
   description = "DigitalOcean URN of the Container Registry"
-  value       = digitalocean_container_registry.voyageai.urn
+  value       = "do:registry:${digitalocean_container_registry.voyageai.name}"
 }
 
 output "full_image_path" {

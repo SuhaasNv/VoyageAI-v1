@@ -36,6 +36,6 @@ resource "digitalocean_container_registry_docker_credentials" "app_platform" {
 resource "digitalocean_project_resources" "registry" {
   project = digitalocean_project.voyageai.id
   resources = [
-    digitalocean_container_registry.voyageai.urn,
+    "do:registry:${digitalocean_container_registry.voyageai.name}",
   ]
 }
