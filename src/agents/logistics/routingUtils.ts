@@ -20,7 +20,7 @@
  *  • 15-min buffer between activities (unchanged).
  */
 
-import type { Activity, ScheduledActivity } from "@/agents/shared/tripPipelineTypes";
+import type { Activity, FoodCostSummary, OptimizedDay, ScheduledActivity } from "@/agents/shared/tripPipelineTypes";
 import { logStructured } from "@/infrastructure/logger";
 import type { GeoCoordinate } from "@/services/mapbox";
 import { haversineDistanceMins } from "@/services/mapbox";
@@ -172,10 +172,225 @@ export function buildScheduledDay(
         void usedHaversineForNearest; // used only for logging above
     }
 
-    logStructured({
-        layer: "service", service: "routing", step: "route_built",
-        data: { totalScheduled: scheduled.length, remainingDropped: unvisited.size },
+logStructured({
+    layer: "service", service: "routing", step: "route_built",
+    data: { totalScheduled: scheduled.length, remainingDropped: unvisited.size },
+});
+
+return scheduled;
+}
+
+// ─── Meal injection ───────────────────────────────────────────────────────────
+
+const LUNCH_TARGET_MINS  = 13 * 60;  // 13:00 — midday anchor
+const DINNER_TARGET_MINS = 18 * 60;  // 18:00 — fits inside the 09:00–19:00 window
+const MEAL_DURATION_MINS = 60;
+const MEAL_BUFFER_MINS   = 15;       // gap between activity end and meal start
+const MAX_MEAL_END_MINS  = 23 * 60 + 59;
+
+/** Parses a valid HH:mm string into total minutes since midnight. */
+function hhmmToMins(hhmm: string): number {
+    const [hh, mm] = hhmm.split(":").map(Number);
+    return (hh ?? 0) * 60 + (mm ?? 0);
+}
+
+const HHMM_RE = /^\d{2}:\d{2}$/;
+
+/** Returns true when a ScheduledActivity has valid, parseable start + end times. */
+function hasValidTimes(a: ScheduledActivity): boolean {
+    return (
+        typeof a.startTime === "string" && HHMM_RE.test(a.startTime) &&
+        typeof a.endTime   === "string" && HHMM_RE.test(a.endTime)
+    );
+}
+
+/**
+ * Auto-injects a lunch and dinner stop into an already-scheduled day.
+ *
+ * Algorithm (for each meal):
+ *  1. Find the non-meal activity whose startTime is closest to the target
+ *     (13:00 for lunch, 18:00 for dinner).
+ *  2. Take the first entry from that activity's restaurantOptions[].
+ *     Skip if none available.
+ *  3. Calculate mealStart = anchor.endTime + 15 min buffer.
+ *  4. Validate:
+ *       a. mealEnd (mealStart + 60 min) must not exceed 23:59.
+ *       b. mealEnd must not overlap the next activity's startTime.
+ *     → Skip silently if either constraint is violated.
+ *  5. Splice the meal into the array immediately after the anchor.
+ *
+ * Guarantees:
+ *  - Returns a NEW array — no mutation of input.
+ *  - Injected activities always have valid HH:mm startTime / endTime.
+ *  - Chronological order is preserved (passes validateOutput).
+ *  - travelTimeFromPrevMs = 15 min (the buffer), within the 240-min cap.
+ *  - Restaurants never receive restaurantOptions — they already are one.
+ */
+export function injectMeals(activities: ScheduledActivity[]): {
+    activities:     ScheduledActivity[];
+    lunchInserted:  boolean;
+    dinnerInserted: boolean;
+} {
+    if (activities.length === 0) {
+        return { activities, lunchInserted: false, dinnerInserted: false };
+    }
+
+    let result = [...activities];
+    let lunchInserted  = false;
+    let dinnerInserted = false;
+
+    /**
+     * Attempts to splice a meal into `result` after the activity at `anchorIdx`.
+     * Returns true + mutates `result` on success; returns false when time
+     * constraints prevent insertion (overflow or overlap with next activity).
+     */
+    const spliceMeal = (
+        anchorIdx:    number,
+        options:      Activity[],
+        mealTypeVal:  "lunch" | "dinner",
+    ): boolean => {
+        const anchor     = result[anchorIdx]!;
+        const restaurant = options[0];
+        if (!restaurant) return false;
+
+        const anchorEndMins = hhmmToMins(anchor.endTime!);
+        const mealStart     = anchorEndMins + MEAL_BUFFER_MINS;
+        const mealEnd       = mealStart + MEAL_DURATION_MINS;
+
+        if (mealEnd > MAX_MEAL_END_MINS) return false;
+
+        const nextAct = result[anchorIdx + 1];
+        if (nextAct?.startTime && hhmmToMins(nextAct.startTime) < mealEnd) return false;
+
+        const mealSlot: ScheduledActivity["timeSlot"] =
+            mealStart < 12 * 60 ? "morning" :
+            mealStart < 17 * 60 ? "afternoon" :
+            "evening";
+
+        const meal: ScheduledActivity = {
+            ...restaurant,
+            type:                 "restaurant",
+            timeSlot:             mealSlot,
+            isMeal:               true,
+            mealType:             mealTypeVal,
+            startTime:            toHHMM(mealStart),
+            endTime:              toHHMM(mealEnd),
+            travelTimeFromPrevMs: MEAL_BUFFER_MINS * 60_000,
+            restaurantOptions:    options,
+        };
+
+        result = [
+            ...result.slice(0, anchorIdx + 1),
+            meal,
+            ...result.slice(anchorIdx + 1),
+        ];
+
+        return true;
+    };
+
+    /**
+     * Injects a meal for the given target time.
+     *
+     * Strategy (in order):
+     *  1. Try every non-meal, non-restaurant activity sorted by closeness to
+     *     targetMins. Use that activity's restaurantOptions.
+     *  2. (Dinner only) If step 1 fails, walk backward from the END of the
+     *     result array and try any activity that has restaurantOptions — this
+     *     covers the case where all non-meal activities end before the dinner
+     *     window but the injected lunch has a free slot after it.
+     *
+     * Skipping scheduled restaurant activities as anchors avoids duplicating
+     * a restaurant that the Logistics Agent already placed in the day.
+     */
+    const tryInject = (targetMins: number, mealTypeVal: "lunch" | "dinner"): boolean => {
+        // --- pass 1: non-meal, non-restaurant anchors sorted by closeness ---
+        const pass1Candidates = result
+            .map((act, idx) => ({ act, idx }))
+            .filter(({ act }) =>
+                hasValidTimes(act) &&
+                !act.isMeal &&
+                act.type !== "restaurant" &&
+                (act.restaurantOptions?.length ?? 0) > 0,
+            )
+            .sort((a, b) => {
+                const da = Math.abs(hhmmToMins(a.act.startTime!) - targetMins);
+                const db = Math.abs(hhmmToMins(b.act.startTime!) - targetMins);
+                return da - db;
+            });
+
+        for (const { act, idx } of pass1Candidates) {
+            if (spliceMeal(idx, act.restaurantOptions!, mealTypeVal)) return true;
+        }
+
+        // --- pass 2 (dinner only): try any activity from end backward -------
+        if (mealTypeVal === "dinner") {
+            for (let i = result.length - 1; i >= 0; i--) {
+                const act = result[i]!;
+                if (!hasValidTimes(act)) continue;
+                const opts = act.restaurantOptions ?? [];
+                if (opts.length === 0) continue;
+                if (spliceMeal(i, opts, mealTypeVal)) return true;
+            }
+        }
+
+        return false;
+    };
+
+    lunchInserted  = tryInject(LUNCH_TARGET_MINS,  "lunch");
+    dinnerInserted = tryInject(DINNER_TARGET_MINS, "dinner");
+
+    return { activities: result, lunchInserted, dinnerInserted };
+}
+
+// ─── Food cost computation ─────────────────────────────────────────────────────
+
+/**
+ * Fallback cost (USD) when a meal activity lacks an explicit estimatedCost.
+ * Mirrors PRICE_MIDPOINT in researchAgent.ts — same source of truth.
+ */
+const FALLBACK_COST: Record<NonNullable<Activity["priceLevel"]>, number> = {
+    "$$$": 75,
+    "$$":  30,
+    "$":   12,
+};
+
+const DEFAULT_MEAL_COST = 20; // used when neither estimatedCost nor priceLevel is set
+
+/**
+ * Computes food cost from auto-injected meal activities across all days.
+ *
+ * Only activities where `isMeal === true` contribute — regular restaurant
+ * activities that were scheduled by the routing engine are excluded so that
+ * the budget reflects what the system explicitly recommended as meal stops.
+ *
+ * Cost resolution per meal (in priority order):
+ *   1. `activity.estimatedCost`          — set by enrichRestaurantMetadata or LLM
+ *   2. FALLBACK_COST[activity.priceLevel] — heuristic midpoint for the price band
+ *   3. DEFAULT_MEAL_COST (20 USD)        — last-resort default
+ *
+ * Pure function — no side effects, no async.
+ */
+export function computeFoodCost(days: OptimizedDay[]): FoodCostSummary {
+    const perDay = days.map((day) => {
+        let dayTotal = 0;
+        for (const act of day.activities) {
+            if (!act.isMeal) continue;
+
+            if (typeof act.estimatedCost === "number" && act.estimatedCost >= 0) {
+                dayTotal += act.estimatedCost;
+            } else if (act.priceLevel && FALLBACK_COST[act.priceLevel] !== undefined) {
+                dayTotal += FALLBACK_COST[act.priceLevel]!;
+            } else {
+                dayTotal += DEFAULT_MEAL_COST;
+            }
+        }
+        return dayTotal;
     });
 
-    return scheduled;
+    const total    = perDay.reduce((sum, d) => sum + d, 0);
+    const avgPerDay = days.length > 0
+        ? parseFloat((total / days.length).toFixed(2))
+        : 0;
+
+    return { perDay, total, avgPerDay };
 }

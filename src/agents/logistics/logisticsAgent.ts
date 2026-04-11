@@ -35,7 +35,7 @@
 import { logStructured, logError } from "@/infrastructure/logger";
 import { getTravelTimeMatrix, isInvalidCoord } from "@/services/mapbox";
 import { geocodeCentroid } from "@/services/mapboxGeocoding";
-import { buildScheduledDay } from "./routingUtils";
+import { buildScheduledDay, computeFoodCost, injectMeals } from "./routingUtils";
 import type { GeoCoordinate } from "@/services/mapbox";
 import type {
     Activity,
@@ -430,15 +430,53 @@ export class LogisticsAgent {
             warnings.push("One or more days used slot-assignment fallback (Mapbox Matrix unavailable)");
         }
 
-        // ── 7. Assemble result ───────────────────────────────────────────────
+        // ── 7. Inject meals (lunch + dinner) per day ─────────────────────────
+        // Runs after routing so meal times are anchored to real schedule slots.
+        // injectMeals() is pure + deterministic — no API calls, no mutation.
+        let totalLunch  = 0;
+        let totalDinner = 0;
+
+        const daysWithMeals = optimizedDays.map((day) => {
+            const { activities, lunchInserted, dinnerInserted } =
+                injectMeals(day.activities);
+            if (lunchInserted)  totalLunch++;
+            if (dinnerInserted) totalDinner++;
+            return { ...day, activities };
+        });
+
+        logStructured({
+            layer: "agent", agent: "logistics", step: "meals_injected", requestId,
+            data: {
+                lunchInserted:  totalLunch,
+                dinnerInserted: totalDinner,
+                totalDays:      daysWithMeals.length,
+            },
+        });
+
+        // ── 8. Compute food cost ─────────────────────────────────────────────
+        // Pure pass over injected meal activities — no API calls, no mutation.
+        const foodCostSummary = computeFoodCost(daysWithMeals);
+
+        logStructured({
+            layer: "agent", agent: "logistics", step: "food_cost_computed", requestId,
+            data: {
+                total:      foodCostSummary.total,
+                avgPerDay:  foodCostSummary.avgPerDay,
+                days:       foodCostSummary.perDay,
+                destination: context.destination,
+            },
+        });
+
+        // ── 9. Assemble result ───────────────────────────────────────────────
         const result: OptimizedTripContext = {
             ...context,
-            selectedHotel: { ...baseHotel, lat: hotelLat, lng: hotelLng },
-            days:          optimizedDays,
+            selectedHotel:   { ...baseHotel, lat: hotelLat, lng: hotelLng },
+            days:            daysWithMeals,
+            foodCostSummary,
             ...(warnings.length > 0 ? { warnings } : {}),
         };
 
-        // ── 8. Output validation ─────────────────────────────────────────────
+        // ── 10. Output validation ────────────────────────────────────────────
         try {
             validateOutput(result);
         } catch (validationErr) {
