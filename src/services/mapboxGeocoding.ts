@@ -36,8 +36,8 @@ import { logStructured, logError } from "@/infrastructure/logger";
 
 const MAPBOX_GEOCODING_URL = "https://api.mapbox.com/geocoding/v5/mapbox.places";
 const GEOCODE_CACHE_TTL_S  = 604_800; // 7 days
-const FETCH_TIMEOUT_MS     = 4_000;
-const RETRY_DELAY_MS       = 300;
+const FETCH_TIMEOUT_MS     = 6_000;   // generous — 8 concurrent requests are well within limits
+const RETRY_DELAY_MS       = 500;     // slightly longer back-off on retry
 
 /**
  * Tiered distance thresholds by destination feature type.
@@ -632,9 +632,49 @@ export async function geocodePlace(
 // ─── Batch geocoder ──────────────────────────────────────────────────────────
 
 /**
- * Geocodes a list of place names in parallel, returning a precision-aware map.
+ * Maximum number of concurrent Mapbox geocoding requests.
  *
- * - Promise.allSettled — one failure never blocks others.
+ * Evidence: firing 40+ requests simultaneously triggers Mapbox rate-limiting,
+ * causing every first attempt to fail and every place to retry — doubling
+ * total API calls and adding 60–90 s to Research Agent latency.
+ * With CONCURRENCY = 8 the total call count stays predictable and well within
+ * Mapbox's free-tier limits (600 req/min).
+ */
+const GEOCODE_CONCURRENCY = 8;
+
+/**
+ * Runs an array of async tasks with a maximum concurrency cap.
+ * Order of results matches order of tasks (same contract as Promise.allSettled).
+ */
+async function allSettledWithConcurrency<T>(
+    tasks: Array<() => Promise<T>>,
+    concurrency: number,
+): Promise<PromiseSettledResult<T>[]> {
+    const results: PromiseSettledResult<T>[] = new Array(tasks.length);
+    let nextIdx = 0;
+
+    async function worker() {
+        while (nextIdx < tasks.length) {
+            const idx = nextIdx++;
+            try {
+                results[idx] = { status: "fulfilled", value: await tasks[idx]!() };
+            } catch (err) {
+                results[idx] = { status: "rejected", reason: err };
+            }
+        }
+    }
+
+    const workers = Array.from({ length: Math.min(concurrency, tasks.length) }, () => worker());
+    await Promise.all(workers);
+    return results;
+}
+
+/**
+ * Geocodes a list of place names with bounded concurrency, returning a
+ * precision-aware map.
+ *
+ * - Max GEOCODE_CONCURRENCY concurrent requests — prevents Mapbox rate-limiting
+ *   that caused every place to retry when 40+ requests fired simultaneously.
  * - Deduplicates names before Mapbox calls.
  * - Fallback entries (null result / exception) receive precision: "low".
  * - Emits a geocode_accuracy log after the batch completes.
@@ -647,8 +687,9 @@ export async function batchGeocode(
 ): Promise<Map<string, GeocodedPlace>> {
     const unique = [...new Set(names)];
 
-    const results = await Promise.allSettled(
-        unique.map((name) => geocodePlace(name, destination, options)),
+    const results = await allSettledWithConcurrency(
+        unique.map((name) => () => geocodePlace(name, destination, options)),
+        GEOCODE_CONCURRENCY,
     );
 
     const map = new Map<string, GeocodedPlace>();
