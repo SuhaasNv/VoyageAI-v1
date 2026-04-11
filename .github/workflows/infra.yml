@@ -126,6 +126,18 @@ jobs:
         run: terraform fmt -check -recursive -diff
         continue-on-error: true # Report but don't block — fmt errors are cosmetic
 
+      - name: Bootstrap tfstate bucket
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          ENDPOINT="https://${{ env.DO_SPACES_REGION }}.digitaloceanspaces.com"
+          aws s3api head-bucket --bucket voyageai-tfstate \
+            --endpoint-url "$ENDPOINT" 2>/dev/null \
+            || aws s3api create-bucket --bucket voyageai-tfstate \
+                 --endpoint-url "$ENDPOINT"
+
       - name: terraform init
         id: init
         env:
@@ -191,6 +203,18 @@ jobs:
           path: ${{ env.TF_WORKING_DIR }}/.terraform
           key: terraform-${{ runner.os }}-${{ hashFiles('infra/.terraform.lock.hcl') }}
           restore-keys: terraform-${{ runner.os }}-
+
+      - name: Bootstrap tfstate bucket
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          ENDPOINT="https://${{ env.DO_SPACES_REGION }}.digitaloceanspaces.com"
+          aws s3api head-bucket --bucket voyageai-tfstate \
+            --endpoint-url "$ENDPOINT" 2>/dev/null \
+            || aws s3api create-bucket --bucket voyageai-tfstate \
+                 --endpoint-url "$ENDPOINT"
 
       - name: terraform init
         env:
@@ -332,6 +356,18 @@ jobs:
           key: terraform-${{ runner.os }}-${{ hashFiles('infra/.terraform.lock.hcl') }}
           restore-keys: terraform-${{ runner.os }}-
 
+      - name: Bootstrap tfstate bucket
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          ENDPOINT="https://${{ env.DO_SPACES_REGION }}.digitaloceanspaces.com"
+          aws s3api head-bucket --bucket voyageai-tfstate \
+            --endpoint-url "$ENDPOINT" 2>/dev/null \
+            || aws s3api create-bucket --bucket voyageai-tfstate \
+                 --endpoint-url "$ENDPOINT"
+
       - name: terraform init
         env:
           AWS_ENDPOINT_URL_S3: https://${{ env.DO_SPACES_REGION }}.digitaloceanspaces.com
@@ -405,6 +441,18 @@ jobs:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Bootstrap tfstate bucket
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          ENDPOINT="https://${{ env.DO_SPACES_REGION }}.digitaloceanspaces.com"
+          aws s3api head-bucket --bucket voyageai-tfstate \
+            --endpoint-url "$ENDPOINT" 2>/dev/null \
+            || aws s3api create-bucket --bucket voyageai-tfstate \
+                 --endpoint-url "$ENDPOINT"
 
       - name: terraform init
         env:
