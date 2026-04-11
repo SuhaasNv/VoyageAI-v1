@@ -123,6 +123,12 @@ env:
   TF_VAR_next_internal_url: ${{ secrets.TF_VAR_next_internal_url }}
   TF_VAR_internal_agent_secret: ${{ secrets.TF_VAR_internal_agent_secret }}
   TF_VAR_environment: "production"
+  # AWS SDK env vars for the S3-compatible Spaces backend.
+  # Required for ALL terraform operations — every state read/write authenticates against Spaces.
+  AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_ACCESS_KEY }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET_KEY }}
+  AWS_DEFAULT_REGION: us-east-1
+  AWS_ENDPOINT_URL_S3: https://${{ vars.DO_SPACES_REGION || 'nyc3' }}.digitaloceanspaces.com
 
 defaults:
   run:
@@ -284,21 +290,14 @@ jobs:
 
       - name: Bootstrap tfstate bucket
         if: steps.infra-changed.outputs.changed != '0'
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_ACCESS_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET_KEY }}
-          AWS_DEFAULT_REGION: us-east-1
         run: |
-          ENDPOINT="https://${{ env.DO_SPACES_REGION }}.digitaloceanspaces.com"
           aws s3api head-bucket --bucket voyageai-tfstate \
-            --endpoint-url "$ENDPOINT" 2>/dev/null \
+            --endpoint-url "$AWS_ENDPOINT_URL_S3" 2>/dev/null \
             || aws s3api create-bucket --bucket voyageai-tfstate \
-                 --endpoint-url "$ENDPOINT"
+                 --endpoint-url "$AWS_ENDPOINT_URL_S3"
 
       - name: terraform init
         if: steps.infra-changed.outputs.changed != '0'
-        env:
-          AWS_ENDPOINT_URL_S3: https://${{ env.DO_SPACES_REGION }}.digitaloceanspaces.com
         run: |
           terraform init \
             -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
