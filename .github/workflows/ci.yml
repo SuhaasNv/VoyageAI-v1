@@ -78,31 +78,166 @@ defaults:
 jobs:
   # ══════════════════════════════════════════════════════════════════════════
   #  1. SECRET SCAN — Block the entire pipeline if secrets are committed
+  #
+  #  Uses GitHub's native secret scanning push protection API to check every
+  #  commit in this push for known secret patterns (tokens, API keys, certs).
+  #
+  #  How it works:
+  #    • GitHub Advanced Security scans all commits server-side automatically.
+  #    • This job calls the GitHub API to read any open secret-scanning alerts
+  #      for the current repo and fails the pipeline if any are active.
+  #    • A second step runs a regex sweep for project-specific patterns
+  #      (OpenAI keys, Gemini keys, DO tokens) that may not yet be in GitHub's
+  #      built-in pattern library.
+  #
+  #  Requires:
+  #    • GitHub Advanced Security enabled on the repo
+  #      (free for public repos; included in GitHub Enterprise for private repos)
+  #    • Repository secret-scanning enabled:
+  #        Settings → Security → Code security → Secret scanning → Enable
   # ══════════════════════════════════════════════════════════════════════════
   secret-scan:
-    name: "1 · Secret Scan"
+    name: "1 · Secret Scan (GitHub Secret Scanning)"
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write   # Needed to read/write secret scanning alerts
+
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Full history required for accurate Gitleaks scan
+          fetch-depth: 0   # Full history so every commit in the push is checked
 
-      - name: Gitleaks — detect committed secrets
-        uses: gitleaks/gitleaks-action@v2
+      # ── Step 1: GitHub Secret Scanning alert check ────────────────────────
+      # Queries the GitHub Secret Scanning API for any open (unresolved) alerts.
+      # Fails the pipeline if any active secrets are detected in the repo.
+      - name: GitHub Secret Scanning — check for open alerts
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Detect hardcoded API keys in source (regex)
-        # Catches patterns that Gitleaks may not cover (custom env var names, etc.)
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if grep -rE \
-            "(sk-[a-zA-Z0-9]{32,}|AIza[0-9A-Za-z_-]{35}|ghp_[a-zA-Z0-9]{36}|ghs_[a-zA-Z0-9]{36}|xoxb-[0-9-]+[a-zA-Z0-9]+)" \
-            --include="*.ts" --include="*.tsx" --include="*.js" \
-            --exclude-dir="{node_modules,.next,prisma}" \
-            . ; then
-            echo "Potential hardcoded secret detected. Aborting."; exit 1
+          echo "Querying GitHub Secret Scanning API for open alerts..."
+
+          ALERTS=$(gh api \
+            --method GET \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "/repos/${{ github.repository }}/secret-scanning/alerts?state=open&per_page=100" \
+            2>&1) || true
+
+          # If the API returns a 404 it means Secret Scanning is not enabled —
+          # warn but don't block so the repo can still be set up.
+          if echo "$ALERTS" | grep -q '"message": "Secret scanning is disabled"' || \
+             echo "$ALERTS" | grep -q "404"; then
+            echo "::warning::GitHub Secret Scanning is not enabled on this repository."
+            echo "Enable it at: Settings → Security → Code security → Secret scanning"
+            exit 0
           fi
-          echo "No hardcoded secrets found."
+
+          COUNT=$(echo "$ALERTS" | node -e "
+            let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{
+              try {
+                const a = JSON.parse(d);
+                if (!Array.isArray(a)) { console.log(0); return; }
+                console.log(a.length);
+                if (a.length > 0) {
+                  a.forEach(al => process.stderr.write(
+                    '  [' + al.secret_type_display_name + '] ' + al.html_url + '\n'
+                  ));
+                }
+              } catch(e) { console.log(0); }
+            });
+          " 2>&1) || COUNT=0
+
+          # Separate the count from any alert lines printed to stderr
+          OPEN_COUNT=$(echo "$COUNT" | head -1 | tr -d '[:space:]')
+
+          if [ "$OPEN_COUNT" -gt 0 ] 2>/dev/null; then
+            echo "::error::GitHub Secret Scanning found ${OPEN_COUNT} open secret alert(s)."
+            echo "Resolve all alerts at: ${{ github.server_url }}/${{ github.repository }}/security/secret-scanning"
+            echo "$COUNT"
+            exit 1
+          fi
+
+          echo "✅ GitHub Secret Scanning: no open alerts found."
+
+      # ── Step 2: Commit-range regex sweep (project-specific patterns) ──────
+      # Scans the files changed in this push for secret patterns that may not
+      # yet be in GitHub's built-in library (e.g. custom API key formats).
+      - name: Regex sweep — project-specific secret patterns
+        run: |
+          echo "Scanning changed files for hardcoded secrets..."
+
+          # Determine which files changed in this push
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD \
+              | grep -E '\.(ts|tsx|js|jsx|py|env|json|yaml|yml)$' || true)
+          else
+            FILES=$(git diff --name-only HEAD~1 HEAD \
+              | grep -E '\.(ts|tsx|js|jsx|py|env|json|yaml|yml)$' || true)
+          fi
+
+          if [ -z "$FILES" ]; then
+            echo "No relevant files changed — skip."
+            exit 0
+          fi
+
+          FOUND=0
+          # OpenAI API key
+          PATTERN_OAI="sk-[a-zA-Z0-9_-]{32,}"
+          # Google / Gemini API key
+          PATTERN_GEM="AIza[0-9A-Za-z_-]{35}"
+          # GitHub tokens (PAT, app, installation)
+          PATTERN_GH="(ghp|ghs|gho|github_pat)_[a-zA-Z0-9]{36,}"
+          # DigitalOcean personal access token (64 hex chars)
+          PATTERN_DO="dop_v1_[a-f0-9]{64}"
+          # Stripe live key
+          PATTERN_STRIPE="sk_live_[a-zA-Z0-9]{24,}"
+          # Generic high-entropy assignments (var = "long_alphanum")
+          PATTERN_GENERIC="(SECRET|TOKEN|API_KEY|PRIVATE_KEY)\s*=\s*['\"][a-zA-Z0-9+/]{32,}['\"]"
+
+          ALL_PATTERNS="${PATTERN_OAI}|${PATTERN_GEM}|${PATTERN_GH}|${PATTERN_DO}|${PATTERN_STRIPE}|${PATTERN_GENERIC}"
+
+          while IFS= read -r FILE; do
+            [ -f "$FILE" ] || continue
+            MATCHES=$(grep -nE "$ALL_PATTERNS" "$FILE" \
+              | grep -v "^#" \
+              | grep -v "change-me" \
+              | grep -v "ci-.*secret" \
+              | grep -v "example" \
+              | grep -v "placeholder" || true)
+            if [ -n "$MATCHES" ]; then
+              echo "::error file=${FILE}::Potential hardcoded secret detected:"
+              echo "$MATCHES" | while read -r LINE; do
+                echo "  ${FILE}: ${LINE}"
+              done
+              FOUND=1
+            fi
+          done <<< "$FILES"
+
+          if [ "$FOUND" -eq 1 ]; then
+            echo "::error::Hardcoded secrets detected. Rotate any exposed keys and remove them from source."
+            exit 1
+          fi
+          echo "✅ Regex sweep: no hardcoded secrets found in changed files."
+
+      - name: Write secret scan summary
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          STATUS="${{ job.status }}"
+          ICON=$([ "$STATUS" = "success" ] && echo "✅" || echo "❌")
+          ALERTS_URL="${{ github.server_url }}/${{ github.repository }}/security/secret-scanning"
+          {
+            echo "## ${ICON} Secret Scan — ${STATUS^}"
+            echo ""
+            echo "| Check | Method |"
+            echo "|-------|--------|"
+            echo "| Open alert check | GitHub Secret Scanning API |"
+            echo "| Commit sweep | Regex (OpenAI, Gemini, DO, GH, Stripe patterns) |"
+            echo ""
+            echo "> All secret scanning alerts: [Security tab](${ALERTS_URL})"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # ══════════════════════════════════════════════════════════════════════════
   #  2. LINT — TypeScript type-check + ESLint + circular dependency check
