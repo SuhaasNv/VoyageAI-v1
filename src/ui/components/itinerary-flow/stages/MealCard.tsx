@@ -46,6 +46,7 @@ interface OptionCardProps {
 }
 
 function OptionCard({ restaurant, isSelected, isBestMatch, onClick }: OptionCardProps) {
+    const detail = restaurant.shortDescription || restaurant.description;
     return (
         <button
             onClick={onClick}
@@ -80,9 +81,11 @@ function OptionCard({ restaurant, isSelected, isBestMatch, onClick }: OptionCard
                             </>
                         )}
                     </div>
-                    {restaurant.shortDescription && (
-                        <p className="text-[11px] text-slate-500 mt-1 line-clamp-2">
-                            {restaurant.shortDescription}
+                    {/* Show shortDescription with description as fallback so details
+                        are always visible in the selector even without enrichment. */}
+                    {detail && (
+                        <p className="text-[11px] text-slate-400 mt-1 line-clamp-2 leading-relaxed">
+                            {detail}
                         </p>
                     )}
                 </div>
@@ -119,10 +122,13 @@ export interface MealCardProps {
 export function MealCard({ meal, selected, isOpen, onToggle, onSelect }: MealCardProps) {
     const prefersReduced = useReducedMotion();
 
-    const options    = meal.restaurantOptions ?? [];
-    const canSwitch  = options.length > 1;
-    const mealLabel  = meal.mealType === "lunch" ? "Lunch" : "Dinner";
-    const mealEmoji  = meal.mealType === "lunch" ? "☀️" : "🌙";
+    const options   = meal.restaurantOptions ?? [];
+    // Show "Change" whenever there are alternatives to pick from.
+    // "No alternatives" only when there is literally nothing else to offer.
+    const canSwitch = options.length > 1;
+    const mealLabel = meal.mealType === "lunch" ? "Lunch" : "Dinner";
+    const mealEmoji = meal.mealType === "lunch" ? "☀️" : "🌙";
+    const detail    = selected.shortDescription || selected.description;
 
     return (
         <div className="rounded-xl bg-orange-500/[0.07] border border-orange-500/[0.22] overflow-hidden">
@@ -152,7 +158,7 @@ export function MealCard({ meal, selected, isOpen, onToggle, onSelect }: MealCar
                         )}
                     </button>
                 ) : (
-                    <span className="text-[10px] text-slate-600 italic">No alternatives</span>
+                    <span className="text-[10px] text-slate-600 italic">Fixed venue</span>
                 )}
             </div>
 
@@ -173,10 +179,12 @@ export function MealCard({ meal, selected, isOpen, onToggle, onSelect }: MealCar
                             </>
                         )}
                     </div>
-                    {/* Short description or fallback to description snippet */}
-                    {(selected.shortDescription || selected.description) && (
-                        <p className="text-[11px] text-slate-500 mt-1 line-clamp-2 leading-relaxed">
-                            {selected.shortDescription ?? selected.description}
+                    {/* Always show a description — shortDescription preferred,
+                        falls back to the general description so the card is never
+                        left with just a name and price tier. */}
+                    {detail && (
+                        <p className="text-[11px] text-slate-400 mt-1.5 line-clamp-2 leading-relaxed">
+                            {detail}
                         </p>
                     )}
                 </div>

@@ -79,7 +79,12 @@ export type LogStep =
     | "restaurants_attached"
     | "meals_injected"
     | "food_cost_computed"
-    | "ledger_built";
+    | "ledger_built"
+    | "budget_analysis"
+    | "budget_optimization"
+    | "adjustment_applied"
+    | "optimization_complete"
+    | "plan_applied";
 
 export type StructuredLogEntry = {
     layer: "agent" | "orchestrator" | "llm" | "service";
