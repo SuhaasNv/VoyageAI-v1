@@ -45,6 +45,11 @@ function getApiKey(): string | undefined {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+    // Attach a no-op catch so that if the timeout wins the race and the
+    // underlying promise later rejects (e.g. AbortSignal.timeout fires 2 s
+    // after the outer timer), Node.js does not surface an unhandled rejection
+    // with the message "signal timed out".
+    promise.catch(() => {});
     return Promise.race([
         promise,
         new Promise<T>((_, reject) => setTimeout(() => reject(new Error("timeout")), ms)),

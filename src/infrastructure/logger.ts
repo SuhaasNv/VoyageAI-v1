@@ -54,10 +54,31 @@ export type LogStep =
     | "output"
     | "error"
     | "end"
-    | "fallback";
+    | "fallback"
+    | "matrix_fetch"
+    | "matrix_cache_hit"
+    | "matrix_truncated"
+    | "fallback_used"
+    | "route_built"
+    | "activities_dropped"
+    | "cache_hit"
+    | "cache_miss"
+    | "cache_disabled"
+    | "success"
+    | "failed"
+    | "invalid_result"
+    | "retry_attempt"
+    | "geocoding_complete"
+    | "invalid_coord_fallback"
+    | "matrix_miss"
+    | "coord_validated"
+    | "geocode_accuracy"
+    | "second_pass"
+    | "low_hotel_count";
 
 export type StructuredLogEntry = {
-    layer: "agent" | "orchestrator" | "llm";
+    layer: "agent" | "orchestrator" | "llm" | "service";
+    service?: string;
     agent?: string;
     step: LogStep;
     requestId?: string;

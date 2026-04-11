@@ -12,6 +12,9 @@ const ActivitySchema = z.object({
     type: z.enum(["attraction", "experience", "restaurant"]),
     description: z.string(),
     estimatedCost: z.number().optional(),
+    lat: z.number().optional(),
+    lng: z.number().optional(),
+    geoConfidence: z.enum(["high", "medium", "low"]).optional(),
 });
 
 const HotelSchema = z.object({
@@ -20,6 +23,9 @@ const HotelSchema = z.object({
     area: z.string(),
     tags: z.array(z.string()),
     rating: z.number().optional(),
+    lat: z.number().optional(),
+    lng: z.number().optional(),
+    geoConfidence: z.enum(["high", "medium", "low"]).optional(),
 });
 
 const EnrichedDaySchema = z.object({

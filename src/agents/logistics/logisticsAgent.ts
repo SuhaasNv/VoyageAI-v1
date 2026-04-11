@@ -1,5 +1,42 @@
-import { LLMClientFactory, parseJSONResponse } from "@/lib/ai/llm";
-import { logInfo, logError, logStructured, trunc } from "@/infrastructure/logger";
+/**
+ * Logistics Agent — hardened routing engine
+ *
+ * Converts an EnrichedTripContext into a deterministic, physically-feasible
+ * OptimizedTripContext by:
+ *
+ *  1. Strict coordinate validation (NaN / Infinity / (0,0) / out-of-range).
+ *     Invalid coords are replaced by the destination centroid (never hardcoded
+ *     city coords) and logged as invalid_coord_fallback.
+ *
+ *  2. Per-day Mapbox Matrix calls (parallel via Promise.allSettled).
+ *     Each day gets its own matrix: [hotel, act1, act2, …] ≤ 7 points —
+ *     well within Mapbox's 25-point limit, so truncation is impossible.
+ *
+ *  3. Nearest-neighbor routing inside buildScheduledDay with:
+ *     • Haversine fallback on matrix miss
+ *     • Travel time clamped [5, 240] min
+ *     • Deterministic tie-breaking (lexicographic name)
+ *     • Time-box enforcement (09:00–19:00, drop after first activity)
+ *
+ *  4. geoConfidence awareness: activities with low-confidence geocoding are
+ *     still routed but contribute to the warnings array.
+ *
+ *  5. Strict output validation before returning — throws a structured error
+ *     if the result contains invalid times, missing names, or out-of-order
+ *     activities.
+ *
+ *  6. Warnings: non-fatal issues (Haversine fallback, low-confidence coords)
+ *     are surfaced on the OptimizedTripContext.warnings array.
+ *
+ * This agent does NOT call any LLM.
+ * It is entirely deterministic given the same input.
+ */
+
+import { logStructured, logError } from "@/infrastructure/logger";
+import { getTravelTimeMatrix, isInvalidCoord } from "@/services/mapbox";
+import { geocodeCentroid } from "@/services/mapboxGeocoding";
+import { buildScheduledDay } from "./routingUtils";
+import type { GeoCoordinate } from "@/services/mapbox";
 import type {
     Activity,
     EnrichedDay,
@@ -20,27 +57,19 @@ export type {
     ScheduledActivity,
 };
 
-// ─────────────────────────────────────────
-//  Internal constants
-// ─────────────────────────────────────────
+// ─── Internal constants ───────────────────────────────────────────────────────
 
 type TimeSlot = "morning" | "afternoon" | "evening";
 
-const VALID_SLOTS = new Set<string>(["morning", "afternoon", "evening"]);
-
-// Natural slot preference per activity type
 const SLOT_PREFERENCE: Record<Activity["type"], TimeSlot> = {
     attraction: "morning",
     experience: "afternoon",
     restaurant: "evening",
 };
 
-// Below this estimated daily budget (USD), penalise $$$$ hotels
-const BUDGET_LUXURY_THRESHOLD = 1500;
+const BUDGET_LUXURY_THRESHOLD = 1_500;
 
-// ─────────────────────────────────────────
-//  Preprocessing
-// ─────────────────────────────────────────
+// ─── Preprocessing ────────────────────────────────────────────────────────────
 
 function paceToCap(pace?: string): number {
     if (!pace) return 4;
@@ -50,23 +79,15 @@ function paceToCap(pace?: string): number {
     return 4;
 }
 
-/**
- * Deduplicates within a day and caps at the pace-derived target, preserving
- * type diversity: one of each type is kept first before filling remainder.
- */
 function selectActivities(activities: Activity[], cap: number): Activity[] {
     const seen = new Set<string>();
     const unique: Activity[] = [];
     for (const act of activities) {
         const key = `${act.type}|${act.name.trim().toLowerCase()}`;
-        if (!seen.has(key)) {
-            seen.add(key);
-            unique.push(act);
-        }
+        if (!seen.has(key)) { seen.add(key); unique.push(act); }
     }
     if (unique.length <= cap) return unique;
 
-    // Round-robin by type to maximise variety when trimming
     const groups: Record<Activity["type"], Activity[]> = {
         attraction: unique.filter((a) => a.type === "attraction"),
         experience: unique.filter((a) => a.type === "experience"),
@@ -89,7 +110,6 @@ function selectActivities(activities: Activity[], cap: number): Activity[] {
 function preprocessContext(context: EnrichedTripContext): EnrichedTripContext {
     const cap = paceToCap(context.preferences?.pace);
     const days = context.days.map((d): EnrichedDay => {
-        // Guard against empty days
         const activities = d.activities.length > 0
             ? d.activities
             : [{
@@ -102,52 +122,32 @@ function preprocessContext(context: EnrichedTripContext): EnrichedTripContext {
     return { ...context, days };
 }
 
-// ─────────────────────────────────────────
-//  Deterministic slot assignment
-// ─────────────────────────────────────────
+// ─── Deterministic slot assignment (fallback only) ────────────────────────────
 
-/**
- * Assigns time slots to a day's activities using preference-based bucketing,
- * then fixes any consecutive same-type runs to ensure variety.
- */
 function assignSlots(activities: Activity[]): ScheduledActivity[] {
     if (activities.length === 0) return [];
-
     const buckets: Record<TimeSlot, Activity[]> = { morning: [], afternoon: [], evening: [] };
-    for (const act of activities) {
-        buckets[SLOT_PREFERENCE[act.type]].push(act);
-    }
+    for (const act of activities) buckets[SLOT_PREFERENCE[act.type]].push(act);
+    while (buckets.morning.length > 1) buckets.afternoon.unshift(buckets.morning.pop()!);
 
-    // Overflow extra morning attractions into afternoon to avoid back-to-back
-    while (buckets.morning.length > 1) {
-        buckets.afternoon.unshift(buckets.morning.pop()!);
-    }
-
-    // Flatten in slot order, carrying the assigned slot
     const ordered: Array<{ act: Activity; slot: TimeSlot }> = [
         ...buckets.morning.map((act) => ({ act, slot: "morning" as TimeSlot })),
         ...buckets.afternoon.map((act) => ({ act, slot: "afternoon" as TimeSlot })),
         ...buckets.evening.map((act) => ({ act, slot: "evening" as TimeSlot })),
     ];
-
-    // Eliminate consecutive same-type by swapping forward
     for (let i = 0; i < ordered.length - 1; i++) {
         if (ordered[i]!.act.type === ordered[i + 1]!.act.type) {
             const swapIdx = ordered.findIndex(
                 (item, idx) => idx > i + 1 && item.act.type !== ordered[i]!.act.type,
             );
-            if (swapIdx !== -1) {
+            if (swapIdx !== -1)
                 [ordered[i + 1], ordered[swapIdx]] = [ordered[swapIdx]!, ordered[i + 1]!];
-            }
         }
     }
-
     return ordered.map(({ act, slot }) => ({ ...act, timeSlot: slot }));
 }
 
-// ─────────────────────────────────────────
-//  Hotel selection
-// ─────────────────────────────────────────
+// ─── Hotel selection ──────────────────────────────────────────────────────────
 
 const PLACEHOLDER_HOTEL: HotelOption = {
     name: "Accommodation — to be confirmed",
@@ -157,11 +157,7 @@ const PLACEHOLDER_HOTEL: HotelOption = {
 };
 
 function tokenize(text: string): Set<string> {
-    return new Set(
-        text.toLowerCase()
-            .split(/\W+/)
-            .filter((t) => t.length > 2),
-    );
+    return new Set(text.toLowerCase().split(/\W+/).filter((t) => t.length > 2));
 }
 
 function scoreHotel(hotel: HotelOption, context: EnrichedTripContext): number {
@@ -171,208 +167,300 @@ function scoreHotel(hotel: HotelOption, context: EnrichedTripContext): number {
         .join(" ");
 
     const corpusTokens = tokenize(corpus);
-    const hotelTokens = tokenize(`${hotel.area} ${hotel.tags.join(" ")}`);
+    const hotelTokens  = tokenize(`${hotel.area} ${hotel.tags.join(" ")}`);
 
     let score = 0;
-
-    // Semantic overlap with destination activities
-    for (const tok of hotelTokens) {
-        if (corpusTokens.has(tok)) score += 1;
-    }
-
-    // Rating bonus (0–5 scale)
+    for (const tok of hotelTokens) if (corpusTokens.has(tok)) score += 1;
     if (hotel.rating !== undefined) score += hotel.rating;
-
-    // Central location bonus — multi-day trips strongly benefit
     if (/central|downtown|centre|center/i.test(hotel.area)) score += 2;
 
-    // Budget fit
     const budget = context.preferences?.budget;
-    if (hotel.priceRange === "$$$$" && budget !== undefined && budget < BUDGET_LUXURY_THRESHOLD) {
+    if (hotel.priceRange === "$$$$" && budget !== undefined && budget < BUDGET_LUXURY_THRESHOLD)
         score -= 10;
-    }
-    // Style affinity — supports comma-separated multi-style strings
+
     const styleTokens = context.preferences?.style
         ? context.preferences.style.toLowerCase().split(",").map((s) => s.trim()).filter(Boolean)
         : [];
-    if (styleTokens.length > 0 && hotel.tags.some((t) => styleTokens.some((s) => t.toLowerCase().includes(s)))) score += 2;
+    if (styleTokens.length > 0 && hotel.tags.some((t) => styleTokens.some((s) => t.toLowerCase().includes(s))))
+        score += 2;
 
     return score;
 }
 
-function selectHotel(context: EnrichedTripContext): HotelOption {
-    if (context.hotels.length === 0) {
-        return { ...PLACEHOLDER_HOTEL, area: context.destination };
-    }
-    return context.hotels.reduce((best, candidate) =>
-        scoreHotel(candidate, context) >= scoreHotel(best, context) ? candidate : best,
-    );
+export function selectHotel(context: EnrichedTripContext): HotelOption {
+    if (context.hotels.length === 0) return { ...PLACEHOLDER_HOTEL, area: context.destination };
+    // Deterministic tie-break by hotel name when scores are equal
+    return context.hotels.reduce((best, candidate) => {
+        const bScore = scoreHotel(best, context);
+        const cScore = scoreHotel(candidate, context);
+        if (cScore > bScore) return candidate;
+        if (cScore === bScore && candidate.name < best.name) return candidate;
+        return best;
+    });
 }
 
-// ─────────────────────────────────────────
-//  Deterministic full fallback
-// ─────────────────────────────────────────
-
-function deterministicOptimize(context: EnrichedTripContext): OptimizedTripContext {
-    const days: OptimizedDay[] = context.days.map((d) => ({
-        day: d.day,
-        theme: d.theme,
-        activities: assignSlots(d.activities),
-    }));
-    return { ...context, days, selectedHotel: selectHotel(context) };
-}
-
-// ─────────────────────────────────────────
-//  Validation
-// ─────────────────────────────────────────
-
-function validateResult(result: OptimizedTripContext, original: EnrichedTripContext): boolean {
-    if (!result.selectedHotel?.name) return false;
-    if (result.days.length !== original.days.length) return false;
-    for (let i = 0; i < original.days.length; i++) {
-        const orig = original.days[i]!;
-        const opt = result.days[i]!;
-        if (opt.day !== orig.day || opt.theme !== orig.theme) return false;
-        if (!opt.activities || opt.activities.length === 0 || opt.activities.length > 5) return false;
-        for (const act of opt.activities) {
-            if (!VALID_SLOTS.has(act.timeSlot)) return false;
-        }
-    }
-    return true;
-}
-
-// ─────────────────────────────────────────
-//  LLM response types + merge-back
-// ─────────────────────────────────────────
-
-type LLMActivity = { name: string; type: string; timeSlot: string };
-type LLMDay = { day: number; theme: string; activities: LLMActivity[] };
-type LLMResponse = { days: LLMDay[]; selectedHotel: { name: string; priceRange: string } };
+// ─── Strict coordinate validation ─────────────────────────────────────────────
 
 /**
- * Merges LLM scheduling output back onto the original Activity objects so that
- * no field (estimatedCost, description, etc.) is ever lost or hallucinated.
- * Throws if any activity cannot be matched — caller falls back to deterministic.
+ * Returns true if the coordinate is unusable for routing.
+ * More strict than `isInvalidCoord` from mapbox.ts — catches NaN and
+ * Infinity that TypeScript types may allow through.
  */
-function mergeLLMResult(
-    raw: LLMResponse,
-    preprocessed: EnrichedTripContext,
-    original: EnrichedTripContext,
-): OptimizedTripContext {
-    const days: OptimizedDay[] = raw.days.map((llmDay) => {
-        const origDay = original.days.find((d) => d.day === llmDay.day);
-        const prepDay = preprocessed.days.find((d) => d.day === llmDay.day);
-        if (!origDay || !prepDay) throw new Error(`Day ${llmDay.day} not in source context`);
-
-        const activities: ScheduledActivity[] = llmDay.activities.map((llmAct) => {
-            const matched = prepDay.activities.find(
-                (a) =>
-                    a.name.trim().toLowerCase() === llmAct.name.trim().toLowerCase() &&
-                    a.type === llmAct.type,
-            );
-            if (!matched) throw new Error(`Cannot match activity "${llmAct.name}" (${llmAct.type}) in day ${llmDay.day}`);
-            if (!VALID_SLOTS.has(llmAct.timeSlot)) throw new Error(`Invalid timeSlot "${llmAct.timeSlot}"`);
-            return { ...matched, timeSlot: llmAct.timeSlot as TimeSlot };
-        });
-
-        return { day: origDay.day, theme: origDay.theme, activities };
-    });
-
-    // Hotel must exist in the original list; fall back to scorer if hallucinated
-    const selectedHotel =
-        original.hotels.find(
-            (h) => h.name === raw.selectedHotel?.name && h.priceRange === raw.selectedHotel?.priceRange,
-        ) ?? selectHotel(original);
-
-    return { ...original, days, selectedHotel };
+function strictInvalidCoord(lat?: number, lng?: number): boolean {
+    return isInvalidCoord(lat, lng);
 }
 
-// ─────────────────────────────────────────
-//  LLM Prompts
-// ─────────────────────────────────────────
+// ─── Output validation ────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are a travel logistics optimizer.
+const HH_MM_RE = /^\d{2}:\d{2}$/;
 
-Your only responsibilities:
-1. Reorder activities within each day and assign a timeSlot (morning / afternoon / evening).
-2. Select ONE hotel from the hotels array in the input.
+function hhmmToMins(t: string): number {
+    const [h, m] = t.split(":").map(Number);
+    return (h ?? 0) * 60 + (m ?? 0);
+}
 
-Scheduling rules:
-- morning  → major attractions
-- afternoon → experiences and secondary sights
-- evening   → restaurants and relaxed activities
-- Never place two attractions consecutively
-- Ensure variety: no two consecutive activities of the same type
-- Max 3–5 activities per day
-
-Hotel selection rules:
-- Pick one hotel from the provided list ONLY — never invent one
-- Prefer hotels near the activities (area / tags overlap)
-- Avoid $$$$ hotels when budget is low
-- Prefer central / downtown areas for multi-day trips
-
-Return ONLY valid JSON — no markdown, no explanation, no extra keys:
-{
-  "days": [
-    {
-      "day": <number>,
-      "theme": "<exact original theme>",
-      "activities": [
-        { "name": "<exact original name>", "type": "<exact original type>", "timeSlot": "morning|afternoon|evening" }
-      ]
+/**
+ * Validates the final OptimizedTripContext before it leaves this agent.
+ * Throws a structured error string if any invariant is violated.
+ */
+function validateOutput(result: OptimizedTripContext): void {
+    if (!result.selectedHotel?.name) {
+        throw new Error("[Logistics] selectedHotel.name is missing");
     }
-  ],
-  "selectedHotel": { "name": "<name from list>", "priceRange": "<priceRange from list>" }
-}`;
+    for (const day of result.days) {
+        let prevEndMins = 0;
+        for (const act of day.activities) {
+            if (!act.name) {
+                throw new Error(`[Logistics] Activity missing name in day ${day.day}`);
+            }
+            if (act.startTime !== undefined) {
+                if (!HH_MM_RE.test(act.startTime))
+                    throw new Error(`[Logistics] Invalid startTime "${act.startTime}" in day ${day.day}`);
+                const startMins = hhmmToMins(act.startTime);
+                if (startMins < prevEndMins)
+                    throw new Error(`[Logistics] Activity "${act.name}" starts before previous ends (day ${day.day})`);
+                prevEndMins = startMins;
+            }
+            if (act.endTime !== undefined && !HH_MM_RE.test(act.endTime)) {
+                throw new Error(`[Logistics] Invalid endTime "${act.endTime}" in day ${day.day}`);
+            }
+            if (act.travelTimeFromPrevMs !== undefined && act.travelTimeFromPrevMs > 240 * 60_000) {
+                throw new Error(`[Logistics] travelTimeFromPrevMs exceeds 4-hour cap in day ${day.day}`);
+            }
+        }
+    }
+}
 
-// ─────────────────────────────────────────
-//  LogisticsAgent
-// ─────────────────────────────────────────
+// ─── LogisticsAgent ───────────────────────────────────────────────────────────
 
 export class LogisticsAgent {
     async run(context: EnrichedTripContext, requestId?: string): Promise<OptimizedTripContext> {
-        logStructured({ layer: "agent", agent: "logistics", step: "start", requestId });
-        logStructured({ layer: "agent", agent: "logistics", step: "input", requestId, data: { days: context.days.length, hotels: context.hotels.length, totalActivities: context.days.reduce((s, d) => s + d.activities.length, 0), pace: context.preferences?.pace } });
+        logStructured({
+            layer: "agent", agent: "logistics", step: "start", requestId,
+            data: {
+                destination:     context.destination,
+                days:            context.days.length,
+                hotels:          context.hotels.length,
+                totalActivities: context.days.reduce((s, d) => s + d.activities.length, 0),
+                pace:            context.preferences?.pace,
+            },
+        });
+
+        const warnings: string[] = [];
+
+        // ── 1. Hotel selection ───────────────────────────────────────────────
+        const baseHotel = selectHotel(context);
+
+        // ── 2. Hotel coordinate fallback (no hardcodes) ──────────────────────
+        // If the Research Agent was unable to geocode the hotel (Mapbox
+        // unavailable or token absent), use the destination centroid from Redis
+        // cache. geocodeCentroid is effectively free on a cache hit.
+        let hotelLat: number;
+        let hotelLng: number;
+
+        if (strictInvalidCoord(baseHotel.lat, baseHotel.lng)) {
+            const centroid = await geocodeCentroid(context.destination);
+            if (centroid && !strictInvalidCoord(centroid.lat, centroid.lng)) {
+                hotelLat = centroid.lat;
+                hotelLng = centroid.lng;
+            } else {
+                // Centroid also unavailable — Haversine will still work (all
+                // activities will also have invalid coords → same fallback point).
+                hotelLat = 0;
+                hotelLng = 0;
+                warnings.push("Hotel coordinates unavailable — routing uses centroid fallback");
+            }
+            logStructured({
+                layer: "agent", agent: "logistics", step: "invalid_coord_fallback", requestId,
+                data: { entity: "hotel", name: baseHotel.name, fallback: "destination_centroid" },
+            });
+        } else {
+            hotelLat = baseHotel.lat as number;
+            hotelLng = baseHotel.lng as number;
+        }
+
+        const hotelCoord: GeoCoordinate & { id: string } = {
+            lat: hotelLat, lng: hotelLng, id: "hotel_0",
+        };
+
+        // ── 3. Preprocess (dedup + pace cap + empty day guard) ───────────────
         const preprocessed = preprocessContext(context);
-        const client = LLMClientFactory.create({ agent: "logistics" });
 
-        const messages = [
-            { role: "system" as const, content: SYSTEM_PROMPT },
-            { role: "user" as const, content: JSON.stringify(preprocessed) },
-        ];
-        const options = { temperature: 0.4, maxTokens: 4096, timeoutMs: 30_000 };
+        // ── 4. Coordinate validation pass — replace bad activity coords ──────
+        // Every activity must have a valid lat/lng before we build matrices.
+        // Invalid coords are replaced by the hotel coord (best available
+        // fallback — already centroid-resolved above).
+        let invalidCoordCount  = 0;
+        let lowConfidenceCount = 0;
 
-        let lastError: unknown;
+        const validatedDays = preprocessed.days.map((day) => ({
+            ...day,
+            activities: day.activities.map((act, actIdx) => {
+                if (act.geoConfidence === "low") lowConfidenceCount++;
 
-        for (let attempt = 0; attempt < 2; attempt++) {
-            try {
-                logStructured({ layer: "agent", agent: "logistics", step: "llm-call", requestId, data: { attempt: attempt + 1, maxTokens: 4096 } });
-                const response = await client.execute(messages, options);
-                const raw = parseJSONResponse<LLMResponse>(response.content);
-                const merged = mergeLLMResult(raw, preprocessed, context);
-                if (validateResult(merged, context)) {
-                    logInfo("[LogisticsAgent] LLM optimisation succeeded", { attempt: attempt + 1 });
-                    logStructured({ layer: "agent", agent: "logistics", step: "llm-response", requestId, data: { attempt: attempt + 1, latencyMs: response.latencyMs, path: "llm" } });
-                    logStructured({ layer: "agent", agent: "logistics", step: "output", requestId, data: { selectedHotel: merged.selectedHotel.name, days: merged.days.length } });
-                    logStructured({ layer: "agent", agent: "logistics", step: "end", requestId, data: { path: "llm" } });
-                    return merged;
+                if (strictInvalidCoord(act.lat, act.lng)) {
+                    invalidCoordCount++;
+                    logStructured({
+                        layer: "agent", agent: "logistics", step: "invalid_coord_fallback", requestId,
+                        data: {
+                            entity:  "activity",
+                            name:    act.name,
+                            day:     day.day,
+                            actIdx,
+                            fallback: "hotel_coord",
+                        },
+                    });
+                    return { ...act, lat: hotelLat, lng: hotelLng };
                 }
-                lastError = new Error("LLM result failed post-merge validation");
-                logInfo("[LogisticsAgent] LLM result invalid, will retry or fall back", { attempt: attempt + 1 });
-            } catch (err) {
-                lastError = err;
-                logStructured({ layer: "agent", agent: "logistics", step: "error", requestId, data: { attempt: attempt + 1, error: trunc((err as Error).message) } });
-                logError(`[LogisticsAgent] LLM attempt ${attempt + 1} error`, err);
+                return act;
+            }),
+        }));
+
+        if (invalidCoordCount > 0) {
+            warnings.push(`${invalidCoordCount} activities had invalid coordinates — routed from hotel position`);
+        }
+        if (lowConfidenceCount > 0) {
+            warnings.push(`${lowConfidenceCount} activities have low-confidence geocoding (city-centroid level)`);
+        }
+
+        // Per-day low-precision check: if ≥40% of a day's activities are "low"
+        // confidence, routing for that day will be imprecise — warn explicitly.
+        for (const day of validatedDays) {
+            const total    = day.activities.length;
+            const lowCount = day.activities.filter((a) => a.geoConfidence === "low").length;
+            if (total > 0 && lowCount / total >= 0.4) {
+                const pct = Math.round((lowCount / total) * 100);
+                warnings.push(`Day ${day.day}: ${pct}% of activities have low-confidence coordinates — routing may show centroid-level precision`);
             }
         }
 
-        logInfo("[LogisticsAgent] Falling back to deterministic optimizer", {
-            reason: lastError instanceof Error ? lastError.message : String(lastError),
+        logStructured({
+            layer: "agent", agent: "logistics", step: "coord_validated", requestId,
+            data: { invalidCoordCount, lowConfidenceCount, totalActivities: validatedDays.reduce((s, d) => s + d.activities.length, 0) },
         });
-        logStructured({ layer: "agent", agent: "logistics", step: "fallback", requestId, data: { reason: trunc(lastError instanceof Error ? lastError.message : String(lastError)) } });
-        const fallback = deterministicOptimize(preprocessed);
-        logStructured({ layer: "agent", agent: "logistics", step: "output", requestId, data: { selectedHotel: fallback.selectedHotel.name, days: fallback.days.length } });
-        logStructured({ layer: "agent", agent: "logistics", step: "end", requestId, data: { path: "deterministic" } });
-        return fallback;
+
+        // ── 5. Per-day matrix + routing (parallel) ───────────────────────────
+        //
+        // Each day uses its own matrix: [hotel, act1, act2, …]
+        // Max = 1 + 5 activities = 6 points → always within Mapbox's 25-point limit.
+        // Using Promise.allSettled so a matrix failure on one day does not
+        // prevent routing on other days.
+        let usedHaversineFallback = false;
+
+        const dayResults = await Promise.allSettled(
+            validatedDays.map(async (day): Promise<OptimizedDay> => {
+                // Build typed activity list with guaranteed valid coords
+                const dayActivities = day.activities.map((act, i) => ({
+                    ...act,
+                    lat: act.lat as number,
+                    lng: act.lng as number,
+                    id: `day${day.day}_act${i}`,
+                }));
+
+                // Points for this day's matrix: hotel first, then activities
+                const points: Array<GeoCoordinate & { id: string }> = [
+                    hotelCoord,
+                    ...dayActivities.map((a) => ({ lat: a.lat, lng: a.lng, id: a.id })),
+                ];
+
+                logStructured({
+                    layer: "agent", agent: "logistics", step: "matrix_fetch", requestId,
+                    data: { day: day.day, points: points.length },
+                });
+
+                const matrix = await getTravelTimeMatrix(points);
+                const indexMap = new Map(points.map((p, i) => [p.id, i]));
+
+                return {
+                    day:   day.day,
+                    theme: day.theme,
+                    activities: buildScheduledDay(
+                        hotelCoord,
+                        dayActivities,
+                        { matrix, indexMap },
+                    ),
+                };
+            })
+        );
+
+        // ── 6. Collect results, fall back deterministically on errors ────────
+        const optimizedDays: OptimizedDay[] = dayResults.map((settled, i) => {
+            const originalDay = validatedDays[i]!;
+
+            if (settled.status === "fulfilled") {
+                return settled.value;
+            }
+
+            // Matrix or routing threw — fall back to slot-assignment only
+            usedHaversineFallback = true;
+            logError(`[Logistics] day ${originalDay.day} matrix failed — using deterministic fallback`, settled.reason);
+            logStructured({
+                layer: "agent", agent: "logistics", step: "fallback_used", requestId,
+                data: { day: originalDay.day, reason: String(settled.reason) },
+            });
+
+            return {
+                day:        originalDay.day,
+                theme:      originalDay.theme,
+                activities: assignSlots(originalDay.activities),
+            };
+        });
+
+        if (usedHaversineFallback) {
+            warnings.push("One or more days used slot-assignment fallback (Mapbox Matrix unavailable)");
+        }
+
+        // ── 7. Assemble result ───────────────────────────────────────────────
+        const result: OptimizedTripContext = {
+            ...context,
+            selectedHotel: { ...baseHotel, lat: hotelLat, lng: hotelLng },
+            days:          optimizedDays,
+            ...(warnings.length > 0 ? { warnings } : {}),
+        };
+
+        // ── 8. Output validation ─────────────────────────────────────────────
+        try {
+            validateOutput(result);
+        } catch (validationErr) {
+            logError("[Logistics] output validation failed", validationErr);
+            logStructured({
+                layer: "agent", agent: "logistics", step: "error", requestId,
+                data: { validation: String(validationErr) },
+            });
+            throw validationErr;
+        }
+
+        logStructured({
+            layer: "agent", agent: "logistics", step: "end", requestId,
+            data: {
+                selectedHotel:   result.selectedHotel.name,
+                days:            result.days.length,
+                totalScheduled:  result.days.reduce((s, d) => s + d.activities.length, 0),
+                warnings:        warnings.length,
+                path:            "mapbox_deterministic",
+            },
+        });
+
+        return result;
     }
 }

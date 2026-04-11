@@ -65,7 +65,7 @@ export async function proxy(req: NextRequest): Promise<NextResponse> {
             "font-src 'self' https://fonts.gstatic.com",
             "img-src 'self' data: blob: https://images.pexels.com https://images.unsplash.com https://i.pravatar.cc https://lh3.googleusercontent.com",
             "connect-src 'self' https://api.mapbox.com https://*.tiles.mapbox.com https://events.mapbox.com https://generativelanguage.googleapis.com https://api.openai.com https://api.pexels.com",
-            "worker-src blob:",
+            "worker-src 'self' blob:",
             "child-src blob:",
             "frame-ancestors 'none'",
         ].join("; ")

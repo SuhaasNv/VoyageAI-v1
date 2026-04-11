@@ -15,6 +15,7 @@ const TTL_SUGGESTIONS = 6 * 60 * 60;  // 6h
 const TTL_PACKING = 6 * 60 * 60;      // 6h
 const TTL_SIMULATION = 10 * 60;        // 10 min
 const TTL_COMPARE = 60 * 60;           // 1h
+const TTL_RESEARCH = 6 * 60 * 60;           // 6h — LLM-synthesized + geocoded research result
 const TTL_BRIGHT_DATA = 24 * 60 * 60;       // 24h
 const TTL_BRIGHT_DATA_EMPTY = 60 * 60;      // 1h — short TTL for empty/no-result destinations
 const TTL_BRIGHT_DATA_MISCONFIGURED = 10 * 60; // 10 min — short TTL for permanent API failures (404/misconfigured)
@@ -400,4 +401,78 @@ export async function invalidateTravelDNACache(userId: string): Promise<void> {
     } catch {
         // Non-fatal
     }
+}
+
+// ─── Research Agent result ─────────────────────────────────────────────────────
+//
+// Caches the full Research Agent output (validated + geocoded EnrichedTripContext)
+// so repeated requests for the same trip parameters skip the 15–20 s LLM call.
+//
+// Key inputs:
+//   destination  — normalised to lowercase
+//   durationDays — day count
+//   dayThemes    — sorted list of Planner-assigned day themes
+//   style, pace  — preference axes (budget excluded to avoid over-splitting keys)
+//
+// TTL: 6 h — balances freshness vs. cost savings.
+
+/**
+ * Buckets trip duration so nearby day counts share a cache key.
+ * Rationale: a 3-day and 4-day Paris trip have nearly identical Research
+ * Agent outputs.  Sharing a key doubles cache effectiveness without
+ * meaningfully degrading result quality.
+ *
+ *   1–2 days  → "1-2"
+ *   3–4 days  → "3-4"
+ *   5–7 days  → "5-7"
+ *   8+ days   → "8+"
+ */
+function bucketDays(n: number): string {
+    if (n <= 2) return "1-2";
+    if (n <= 4) return "3-4";
+    if (n <= 7) return "5-7";
+    return "8+";
+}
+
+/**
+ * Normalises a preference string for stable cache keys:
+ *   "Culture, Food" → "culture,food"  (sorted, lowercase, no extra spaces)
+ */
+function normalizePreference(pref: string | undefined): string {
+    if (!pref) return "";
+    return pref
+        .toLowerCase()
+        .split(/[,\s]+/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .sort()
+        .join(",");
+}
+
+export function researchCacheKey(params: {
+    destination:  string;
+    durationDays: number;
+    dayThemes:    string[];
+    style?:       string;
+    pace?:        string;
+}): string {
+    const payload = JSON.stringify({
+        d:  params.destination.toLowerCase().trim(),
+        // Bucket days: 3-day and 4-day trips share the same key
+        n:  bucketDays(params.durationDays),
+        // Sort themes so ordering differences from LLM don't fragment the cache
+        t:  [...params.dayThemes].map((t) => t.toLowerCase().trim()).sort(),
+        // Normalize multi-word preferences ("Culture, Food" == "food,culture")
+        s:  normalizePreference(params.style),
+        p:  normalizePreference(params.pace),
+    });
+    return `${PREFIX}:research:v2:${hash(payload)}`;
+}
+
+export async function getResearchCached(key: string): Promise<unknown | null> {
+    return getCached(key);
+}
+
+export async function setResearchCached(key: string, value: unknown): Promise<void> {
+    await setCached(key, value, TTL_RESEARCH);
 }

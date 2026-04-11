@@ -31,11 +31,24 @@ export interface TripContext {
 
 export type ActivityType = "attraction" | "experience" | "restaurant";
 
+/**
+ * Geocoding precision level attached by the Research Agent after Mapbox lookup.
+ *   high   — result within 5 km of city centroid AND not a city-centroid-level match.
+ *   medium — within distance threshold AND not city-centroid-level.
+ *   low    — Mapbox returned city center rather than a specific POI, or this is a
+ *            centroid fallback (geocoding failed / no token).
+ */
+export type GeoConfidence = "high" | "medium" | "low";
+
 export interface Activity {
     name: string;
     type: ActivityType;
     description: string;
     estimatedCost?: number;
+    lat?: number;
+    lng?: number;
+    /** Geocoding precision — set after attachCoordinates; absent on Logistics input. */
+    geoConfidence?: GeoConfidence;
 }
 
 export type PriceRange = "$" | "$$" | "$$$" | "$$$$";
@@ -46,6 +59,10 @@ export interface HotelOption {
     area: string;
     tags: string[];
     rating?: number;
+    lat?: number;
+    lng?: number;
+    /** Geocoding precision — set after attachCoordinates; absent on Logistics input. */
+    geoConfidence?: GeoConfidence;
 }
 
 export interface EnrichedDay {
@@ -63,6 +80,9 @@ export type EnrichedTripContext = Omit<TripContext, "days"> & {
 
 export type ScheduledActivity = Activity & {
     timeSlot: "morning" | "afternoon" | "evening";
+    startTime?: string;
+    endTime?: string;
+    travelTimeFromPrevMs?: number;
 };
 
 export interface OptimizedDay {
@@ -74,4 +94,10 @@ export interface OptimizedDay {
 export type OptimizedTripContext = Omit<EnrichedTripContext, "days"> & {
     days: OptimizedDay[];
     selectedHotel: HotelOption;
+    /**
+     * Non-fatal warnings emitted by the Logistics Agent.
+     * Examples: "Using fallback routing", "Low-confidence coordinates detected".
+     * Downstream agents and API routes should surface these to the UI.
+     */
+    warnings?: string[];
 };
