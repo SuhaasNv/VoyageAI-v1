@@ -5,7 +5,7 @@
 #
 # Full rule list: https://www.zaproxy.org/docs/alerts/
 #
-# ─── Rules suppressed for this application ──────────────────────────────────── ---
+# ─── Rules suppressed for this application ────────────────────────────────────
 #
 # 10055   IGNORE  CSP is set at Vercel edge layer (X-Content-Type-Options, etc.)
 #                 — not visible when ZAP hits the origin
