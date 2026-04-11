@@ -310,7 +310,7 @@ jobs:
       # Real image overwrites this in the docker-push job.
       - name: Push placeholder image if registry is empty
         if: steps.infra-changed.outputs.changed != '0'
-        working-directory: .
+        working-directory: infra
         run: |
           IMAGE="registry.digitalocean.com/${{ vars.REGISTRY_NAME || 'voyageai' }}/voyageai-langgraph:latest"
           echo "$DIGITALOCEAN_ACCESS_TOKEN" | \
@@ -319,25 +319,7 @@ jobs:
             echo "Image already exists — skipping placeholder push"
           else
             echo "Registry empty — building minimal placeholder that passes health checks"
-            mkdir -p /tmp/placeholder
-            cat > /tmp/placeholder/server.py << 'PYEOF'
-from http.server import HTTPServer, BaseHTTPRequestHandler
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b'placeholder')
-    def log_message(self, *args):
-        pass
-HTTPServer(('', 8000), Handler).serve_forever()
-PYEOF
-            cat > /tmp/placeholder/Dockerfile << 'DEOF'
-FROM python:3.11-slim
-COPY server.py .
-EXPOSE 8000
-CMD ["python3", "server.py"]
-DEOF
-            docker build -t "$IMAGE" /tmp/placeholder
+            docker build -t "$IMAGE" placeholder/
             docker push "$IMAGE"
           fi
 

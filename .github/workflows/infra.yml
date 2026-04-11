@@ -377,26 +377,7 @@ jobs:
             echo "Image already exists — skipping placeholder push"
           else
             echo "Registry empty — building minimal placeholder that passes health checks"
-            mkdir -p /tmp/placeholder
-            # Minimal HTTP server: responds 200 to every GET (satisfies /health check)
-            cat > /tmp/placeholder/server.py << 'PYEOF'
-from http.server import HTTPServer, BaseHTTPRequestHandler
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b'placeholder')
-    def log_message(self, *args):
-        pass
-HTTPServer(('', 8000), Handler).serve_forever()
-PYEOF
-            cat > /tmp/placeholder/Dockerfile << 'DEOF'
-FROM python:3.11-slim
-COPY server.py .
-EXPOSE 8000
-CMD ["python3", "server.py"]
-DEOF
-            docker build -t "$IMAGE" /tmp/placeholder
+            docker build -t "$IMAGE" placeholder/
             docker push "$IMAGE"
           fi
 
