@@ -770,6 +770,9 @@ jobs:
     name: "13 · Build Docker Image (LangGraph)"
     needs: quality-gate
     runs-on: ubuntu-latest
+    # always() breaks the cascading-skip caused by transitive failures upstream.
+    # The second condition ensures we only run when the gate actually passed.
+    if: always() && needs.quality-gate.result == 'success'
     outputs:
       image-tag: ${{ steps.meta.outputs.tags }}
       image-digest: ${{ steps.build.outputs.digest }}
@@ -826,6 +829,7 @@ jobs:
     name: "14 · Trivy — Container Vulnerability Scan"
     needs: build-image
     runs-on: ubuntu-latest
+    if: always() && needs.build-image.result == 'success'
     permissions:
       contents: read
       security-events: write
@@ -923,6 +927,8 @@ jobs:
     needs: trivy-scan
     runs-on: ubuntu-latest
     if: |
+      always() &&
+      needs.trivy-scan.result == 'success' &&
       (github.ref == 'refs/heads/main' || github.event.inputs.force_push == 'true') &&
       github.event_name != 'pull_request' &&
       github.event.inputs.skip_deploy != 'true'
@@ -1016,6 +1022,8 @@ jobs:
     needs: trivy-scan
     runs-on: ubuntu-latest
     if: |
+      always() &&
+      needs.trivy-scan.result == 'success' &&
       github.ref == 'refs/heads/main' &&
       github.event_name != 'pull_request' &&
       github.event.inputs.skip_deploy != 'true'
