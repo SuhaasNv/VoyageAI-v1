@@ -365,21 +365,18 @@ jobs:
             -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
             -input=false
 
-      # App Platform validates the image tag at creation time.
-      # On a brand-new registry there is nothing to pull, so we push a
-      # minimal placeholder first.  Subsequent real builds overwrite it.
-      - name: Push placeholder image if registry is empty
+      # Always push the placeholder to :placeholder tag before terraform apply.
+      # Using a dedicated tag keeps :latest untouched so the real CI image
+      # is never overwritten by infra runs.  The app is created with
+      # tag="placeholder"; the docker-push job later triggers a redeployment
+      # to :latest via doctl.
+      - name: Push placeholder image to DOCR
         run: |
-          IMAGE="${DOCR_REGISTRY}/voyageai-langgraph:latest"
+          IMAGE="${DOCR_REGISTRY}/voyageai-langgraph:placeholder"
           echo "$DIGITALOCEAN_ACCESS_TOKEN" | \
             docker login registry.digitalocean.com --username token --password-stdin
-          if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
-            echo "Image already exists — skipping placeholder push"
-          else
-            echo "Registry empty — building minimal placeholder that passes health checks"
-            docker build -t "$IMAGE" placeholder/
-            docker push "$IMAGE"
-          fi
+          docker build -t "$IMAGE" placeholder/
+          docker push "$IMAGE"
 
       - name: Download plan artifact
         uses: actions/download-artifact@v4

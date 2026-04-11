@@ -259,6 +259,10 @@ jobs:
       github.event.inputs.skip_infra != 'true'
     runs-on: ubuntu-latest
     environment: production
+    outputs:
+      app_id:   ${{ steps.tf-out.outputs.app_id }}
+      app_url:  ${{ steps.tf-out.outputs.app_url }}
+      registry: ${{ steps.tf-out.outputs.registry }}
     defaults:
       run:
         working-directory: infra
@@ -305,23 +309,19 @@ jobs:
             -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
             -input=false
 
-      # App Platform validates the image tag the moment POST /v2/apps is sent.
-      # Push a placeholder into DOCR so the first apply doesn't 404.
-      # Real image overwrites this in the docker-push job.
-      - name: Push placeholder image if registry is empty
+      # Always push the placeholder to :placeholder tag before terraform apply.
+      # Using a dedicated tag keeps :latest untouched so the real CI image
+      # is never overwritten by infra runs.  The docker-push job later
+      # triggers a redeployment to :latest via doctl.
+      - name: Push placeholder image to DOCR
         if: steps.infra-changed.outputs.changed != '0'
         working-directory: infra
         run: |
-          IMAGE="registry.digitalocean.com/${{ vars.REGISTRY_NAME || 'voyageai' }}/voyageai-langgraph:latest"
+          IMAGE="registry.digitalocean.com/${{ vars.REGISTRY_NAME || 'voyageai' }}/voyageai-langgraph:placeholder"
           echo "$DIGITALOCEAN_ACCESS_TOKEN" | \
             docker login registry.digitalocean.com --username token --password-stdin
-          if docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
-            echo "Image already exists — skipping placeholder push"
-          else
-            echo "Registry empty — building minimal placeholder that passes health checks"
-            docker build -t "$IMAGE" placeholder/
-            docker push "$IMAGE"
-          fi
+          docker build -t "$IMAGE" placeholder/
+          docker push "$IMAGE"
 
       - name: terraform plan
         if: steps.infra-changed.outputs.changed != '0'
@@ -341,6 +341,7 @@ jobs:
         run: |
           echo "registry=$(terraform output -raw registry_endpoint 2>/dev/null || echo 'N/A')" >> "$GITHUB_OUTPUT"
           echo "app_url=$(terraform output -raw langgraph_live_url 2>/dev/null || echo 'N/A')"  >> "$GITHUB_OUTPUT"
+          echo "app_id=$(terraform output -raw langgraph_app_id 2>/dev/null || echo '')"        >> "$GITHUB_OUTPUT"
 
       - name: Write infra summary
         if: always()
@@ -391,6 +392,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -537,6 +543,17 @@ jobs:
             echo "| **Digest** | \`${{ steps.push.outputs.digest }}\` |"
             echo "| **Trivy** | ✅ No CRITICAL CVEs |"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # The app was initially created with tag=placeholder.
+      # Now that :latest is in DOCR, force a new deployment so App Platform
+      # picks up the real image.  Skipped if infra-apply did not surface an ID.
+      - name: Redeploy App Platform with real image
+        if: needs.infra-apply.outputs.app_id != ''
+        run: |
+          APP_ID="${{ needs.infra-apply.outputs.app_id }}"
+          echo "Triggering App Platform deployment for app ${APP_ID}"
+          doctl auth init --access-token "$DIGITALOCEAN_ACCESS_TOKEN"
+          doctl apps create-deployment "$APP_ID" --wait
 
   # ════════════════════════════════════════════════════════════════════════════
   #  STAGE 2c — DATABASE MIGRATION

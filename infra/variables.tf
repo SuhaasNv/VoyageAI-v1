@@ -71,7 +71,7 @@ variable "registry_tier" {
 variable "langgraph_image_tag" {
   description = "Docker image tag to deploy on the App Platform (e.g. 'latest' or a specific SHA tag)"
   type        = string
-  default     = "latest"
+  default     = "placeholder"
 }
 
 variable "langgraph_instance_count" {
