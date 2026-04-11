@@ -1,5 +1,8 @@
-name: CI Pipeline
+name: CI — VoyageAI MLOps Pipeline
 
+# ─────────────────────────────────────────────────────────────────────────────
+#  Triggers
+# ─────────────────────────────────────────────────────────────────────────────
 on:
   push:
     branches: [main, develop]
@@ -10,72 +13,377 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# ─────────────────────────────────────────────────────────────────────────────
+#  Shared environment
+#  LLM_PROVIDER=mock → no real API calls in CI.
+#  SKIP_ENV_VALIDATION bypasses production-only boot-time checks.
+# ─────────────────────────────────────────────────────────────────────────────
 env:
   NODE_VERSION: "20"
   NEXT_TELEMETRY_DISABLED: "1"
-  # Mock environment variables for Prisma and Next.js build validation.
-  # SKIP_ENV_VALIDATION bypasses strict production env checks so the build
-  # can complete without real secrets. This flag is only honoured during CI —
-  # real production deployments must NOT set it.
   SKIP_ENV_VALIDATION: "1"
+  LLM_PROVIDER: "mock"
   DATABASE_URL: "postgresql://ci:ci@localhost:5432/voyageai_ci"
   DIRECT_URL: "postgresql://ci:ci@localhost:5432/voyageai_ci"
   JWT_ACCESS_SECRET: "ci-jwt-access-secret-at-least-32-characters-long"
   JWT_REFRESH_SECRET: "ci-jwt-refresh-secret-at-least-32-characters-long"
   CSRF_SECRET: "ci-csrf-secret-at-least-32-characters-long-ok"
-  LLM_PROVIDER: "mock"
-  REDIS_URL: "redis://localhost:6379"
   NEXT_PUBLIC_MAPBOX_TOKEN: "ci-mapbox-token"
 
+# ─────────────────────────────────────────────────────────────────────────────
+#  Reusable setup composite
+#  Referenced by every job to keep YAML DRY.
+# ─────────────────────────────────────────────────────────────────────────────
+defaults:
+  run:
+    shell: bash
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  1. BUILD — App + model artefacts
+# ══════════════════════════════════════════════════════════════════════════════
 jobs:
-  pipeline:
-    name: Production Validation Pipeline
+  build:
+    name: "1 · Build (app + model)"
     runs-on: ubuntu-latest
     steps:
-      - name: 1. Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Full history is required for accurate secret scanning
+          fetch-depth: 0
 
-      - name: 2. Security scan for secrets
+      - name: Secret scan (Gitleaks)
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 3. Setup Node.js ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
+          cache: npm
 
       - name: Cache Next.js build
         uses: actions/cache@v4
         with:
           path: .next/cache
-          key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**/*.ts', '**/*.tsx') }}
-          restore-keys: |
-            ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**/*.ts','**/*.tsx') }}
+          restore-keys: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
 
-      - name: 4. Install dependencies
-        run: npm ci
-
-      - name: 5. Generate Prisma Client
-        run: npx prisma generate
-
-      - name: 6. Prisma schema validation
-        run: npx prisma validate
-
-      - name: 7. TypeScript type check
+      - run: npm ci
+      - run: npx prisma generate
+      - name: TypeScript type check
         run: npx tsc --noEmit
+      - name: Next.js production build
+        run: npm run build
 
-      - name: 8. ESLint validation
-        run: npm run lint
+      # Upload build artefact so downstream jobs can optionally consume it
+      - name: Upload .next artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nextjs-build-${{ github.sha }}
+          path: |
+            .next/
+            !.next/cache
+          retention-days: 1
 
-      - name: 9. Circular dependency detection
+  # ══════════════════════════════════════════════════════════════════════════════
+  #  2. UNIT TESTS — Code correctness
+  # ══════════════════════════════════════════════════════════════════════════════
+  unittest:
+    name: "2 · Unit Tests"
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+
+      - name: Run Vitest (unit + integration)
+        run: npm test -- --reporter=verbose --coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.sha }}
+          path: coverage/
+          retention-days: 7
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  #  3. SAST — Static Application Security Testing
+  # ══════════════════════════════════════════════════════════════════════════════
+  sast:
+    name: "3 · SAST (code)"
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+          config: |
+            paths-ignore:
+              - node_modules
+              - .next
+              - prisma/migrations
+
+      - uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:javascript-typescript
+          upload: always
+
+      - name: ESLint security scan
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+
+      - name: Circular dependency check
         run: npx madge --circular --extensions ts,tsx src/
 
-      - name: 10. Unit tests (Vitest)
-        run: npm test
+  # ══════════════════════════════════════════════════════════════════════════════
+  #  4. SCA — Software Composition Analysis (dependencies)
+  # ══════════════════════════════════════════════════════════════════════════════
+  sca:
+    name: "4 · SCA (dependencies)"
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: 11. Next.js production build
-        run: npm run build
+      - name: npm audit (high severity)
+        # Fail CI only on high/critical vulnerabilities; report moderate ones
+        run: npm audit --audit-level=high --json > npm-audit.json || true
+
+      - name: Parse and summarise audit
+        run: |
+          node -e "
+            const r = require('./npm-audit.json');
+            const vulns = r.metadata?.vulnerabilities ?? {};
+            const critical = vulns.critical ?? 0;
+            const high = vulns.high ?? 0;
+            console.log('Critical:', critical, '| High:', high);
+            if (critical > 0 || high > 0) { console.error('High/critical vulnerabilities found!'); process.exit(1); }
+            console.log('No high/critical vulnerabilities.');
+          "
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-${{ github.sha }}
+          path: npm-audit.json
+          retention-days: 14
+
+      # SBOM generation — provides a full bill of materials for the release
+      - name: Generate SBOM (CycloneDX)
+        run: npx @cyclonedx/cyclonedx-npm --output-format json --output-file sbom.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ github.sha }}
+          path: sbom.json
+          retention-days: 30
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  #  5. DATA VALIDATION — Schema + fixture integrity
+  # ══════════════════════════════════════════════════════════════════════════════
+  data-validation:
+    name: "5 · Data Validation"
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+
+      - name: Validate Prisma schema
+        run: npx prisma validate
+
+      - name: Run data validation script
+        run: npx tsx scripts/ci/validate-data.ts
+
+      - name: Upload data validation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-validation-${{ github.sha }}
+          path: reports/data-validation.json
+          retention-days: 7
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  #  6. MODEL VALIDATION — Agent schema + output contract verification
+  # ══════════════════════════════════════════════════════════════════════════════
+  model-validation:
+    name: "6 · Model Validation"
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+
+      - name: Run model validation script
+        run: npx tsx scripts/ci/validate-model.ts
+
+      - name: Upload model validation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-validation-${{ github.sha }}
+          path: reports/model-validation.json
+          retention-days: 7
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  #  7. PROMPT TESTS — Structural + schema compliance of LLM outputs
+  # ══════════════════════════════════════════════════════════════════════════════
+  prompt-tests:
+    name: "7 · Prompt Tests"
+    needs: [unittest, model-validation]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+
+      - name: Run prompt tests
+        run: npx tsx scripts/ci/prompt-tests.ts
+
+      - name: Upload prompt test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prompt-tests-${{ github.sha }}
+          path: reports/prompt-tests.json
+          retention-days: 7
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  #  8. SAFETY TESTS — Toxicity + jailbreak resistance
+  # ══════════════════════════════════════════════════════════════════════════════
+  safety-tests:
+    name: "8 · Safety Tests (toxicity, jailbreak)"
+    needs: [unittest, model-validation]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+
+      - name: Run safety tests
+        run: npx tsx scripts/ci/safety-tests.ts
+
+      - name: Upload safety test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safety-tests-${{ github.sha }}
+          path: reports/safety-tests.json
+          retention-days: 14
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  #  9. EVALUATION — Offline metrics (coverage, latency, quality gates)
+  # ══════════════════════════════════════════════════════════════════════════════
+  evaluation:
+    name: "9 · Evaluation (offline metrics)"
+    needs: [prompt-tests, safety-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+
+      - name: Download coverage report
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-${{ github.sha }}
+          path: coverage/
+
+      - name: Download prompt test report
+        uses: actions/download-artifact@v4
+        with:
+          name: prompt-tests-${{ github.sha }}
+          path: reports/
+
+      - name: Download safety test report
+        uses: actions/download-artifact@v4
+        with:
+          name: safety-tests-${{ github.sha }}
+          path: reports/
+
+      - name: Run offline evaluation
+        run: npx tsx scripts/ci/evaluate.ts
+
+      - name: Upload evaluation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaluation-${{ github.sha }}
+          path: reports/evaluation.json
+          retention-days: 30
+
+      - name: Write pipeline summary
+        if: always()
+        run: |
+          node -e "
+            const fs = require('fs');
+            const ev = JSON.parse(fs.readFileSync('reports/evaluation.json','utf8'));
+            const rows = ev.metrics.map(m =>
+              '| ' + [m.name, m.value, m.threshold, m.passed ? '✅' : '❌'].join(' | ') + ' |'
+            ).join('\n');
+            const summary = [
+              '## 🧪 Pipeline Evaluation — ' + (ev.passed ? '✅ PASSED' : '❌ FAILED'),
+              '',
+              '| Metric | Value | Threshold | Status |',
+              '|--------|-------|-----------|--------|',
+              rows,
+              '',
+              'Commit: \`${{ github.sha }}\`',
+            ].join('\n');
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary + '\n');
+          "
+
+      - name: Fail if evaluation did not pass
+        run: |
+          node -e "
+            const ev = require('./reports/evaluation.json');
+            if (!ev.passed) { console.error('Evaluation gate failed'); process.exit(1); }
+            console.log('All evaluation gates passed.');
+          "
