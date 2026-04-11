@@ -1,0 +1,325 @@
+name: AI Security Gate
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Triggers
+#
+#  Runs on every PR to main/develop AND on any change to the AI layer:
+#    • model config (modelRouter.ts)
+#    • agent prompts
+#    • agent logic
+#    • LLM client
+#    • CI gate scripts themselves
+#
+#  Can also be triggered manually via workflow_dispatch with a reason field
+#  (useful for re-scoring after an LLM provider change).
+# ─────────────────────────────────────────────────────────────────────────────
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "src/lib/ai/**"
+      - "src/agents/**"
+      - "src/orchestrator/**"
+      - "src/infrastructure/logger.ts"
+      - "scripts/ai-gate/**"
+      - "scripts/ci/**"
+  push:
+    branches: [main]
+    paths:
+      - "src/lib/ai/**"
+      - "src/agents/**"
+      - "src/orchestrator/**"
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Reason for manual trigger (e.g. provider change, model upgrade)"
+        required: false
+        default: "Manual re-evaluation"
+      fail_on_risk_score:
+        description: "Minimum acceptable risk score (0–100, higher = safer). Default 60."
+        required: false
+        default: "60"
+
+concurrency:
+  group: ai-security-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Shared environment — no real LLM calls; all checks are static or mock-based
+# ─────────────────────────────────────────────────────────────────────────────
+env:
+  NODE_VERSION: "20"
+  SKIP_ENV_VALIDATION: "1"
+  LLM_PROVIDER: "mock"
+  DATABASE_URL: "postgresql://ci:ci@localhost:5432/voyageai_ci"
+  DIRECT_URL: "postgresql://ci:ci@localhost:5432/voyageai_ci"
+  JWT_ACCESS_SECRET: "ci-gate-jwt-access-secret-at-least-32-chars"
+  JWT_REFRESH_SECRET: "ci-gate-jwt-refresh-secret-at-least-32-chars"
+  CSRF_SECRET: "ci-gate-csrf-secret-at-least-32-characters-ok"
+  NEXT_TELEMETRY_DISABLED: "1"
+  RISK_THRESHOLD: ${{ github.event.inputs.fail_on_risk_score || '60' }}
+
+defaults:
+  run:
+    shell: bash
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Gate order (sequential — each step must pass before the next runs):
+#
+#   1  model-approval   ← verify model registry, config contracts, provider safety
+#   2  data-approval    ← verify data contracts, schema integrity, PII controls
+#   3  bias-check       ← demographic & geographic coverage, preference neutrality
+#   4  risk-score       ← aggregate all gate results → composite risk score
+#   5  gate-decision    ← needs: risk-score → block or approve the PR/merge
+# ─────────────────────────────────────────────────────────────────────────────
+
+jobs:
+
+  # ════════════════════════════════════════════════════════════════════════════
+  #  1. MODEL APPROVAL
+  #     • All models in modelRouter.ts are on the approved list
+  #     • No production model is forbidden (GPT-3.5-turbo, etc.)
+  #     • Temperature / token / timeout values are within safe bounds
+  #     • Every endpoint has an explicit config (no silent fallback gaps)
+  #     • Provider failover path is intact
+  # ════════════════════════════════════════════════════════════════════════════
+  model-approval:
+    name: "1 · Model Approval"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+      - run: npx prisma generate
+
+      - name: Run model approval checks
+        run: npx tsx scripts/ai-gate/model-approval.ts
+
+      - name: Upload model approval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-approval-${{ github.sha }}
+          path: reports/ai-gate/model-approval.json
+          retention-days: 30
+
+  # ════════════════════════════════════════════════════════════════════════════
+  #  2. DATA APPROVAL
+  #     • All Zod schemas are present and structurally sound
+  #     • No PII flows unmasked into LLM prompt context
+  #     • Agent I/O contracts preserve required fields (no silent drops)
+  #     • Prisma schema validates cleanly
+  #     • No raw user data passes directly into LLM without sanitisation layer
+  # ════════════════════════════════════════════════════════════════════════════
+  data-approval:
+    name: "2 · Data Approval"
+    needs: model-approval
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npx prisma validate
+
+      - name: Run data approval checks
+        run: npx tsx scripts/ai-gate/data-approval.ts
+
+      - name: Upload data approval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-approval-${{ github.sha }}
+          path: reports/ai-gate/data-approval.json
+          retention-days: 30
+
+  # ════════════════════════════════════════════════════════════════════════════
+  #  3. BIAS / FAIRNESS CHECK
+  #     • Travel style options cover diverse travel personas (not skewed)
+  #     • Budget tiers represent a full economic range
+  #     • Geographic coverage includes non-Western destinations in fixtures
+  #     • Prompt templates use neutral language (no demographic assumptions)
+  #     • Safety agent risk signals do not encode demographic biases
+  #     • Activity type diversity is preserved across pace/style settings
+  # ════════════════════════════════════════════════════════════════════════════
+  bias-check:
+    name: "3 · Bias / Fairness Check"
+    needs: data-approval
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+      - run: npx prisma generate
+
+      - name: Run bias and fairness checks
+        run: npx tsx scripts/ai-gate/bias-check.ts
+
+      - name: Upload bias check report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bias-check-${{ github.sha }}
+          path: reports/ai-gate/bias-check.json
+          retention-days: 30
+
+  # ════════════════════════════════════════════════════════════════════════════
+  #  4. RISK SCORING
+  #     Aggregates results from stages 1–3 into a composite 0–100 risk score.
+  #     A score of 100 = fully approved, no issues.
+  #     Each failing check deducts weighted points by severity:
+  #       critical  → -25 pts
+  #       high      → -10 pts
+  #       medium    →  -3 pts
+  #     Pipeline is blocked if score < RISK_THRESHOLD (default: 60).
+  # ════════════════════════════════════════════════════════════════════════════
+  risk-score:
+    name: "4 · Risk Scoring"
+    needs: [model-approval, data-approval, bias-check]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Download model approval report
+        uses: actions/download-artifact@v4
+        with:
+          name: model-approval-${{ github.sha }}
+          path: reports/ai-gate/
+
+      - name: Download data approval report
+        uses: actions/download-artifact@v4
+        with:
+          name: data-approval-${{ github.sha }}
+          path: reports/ai-gate/
+
+      - name: Download bias check report
+        uses: actions/download-artifact@v4
+        with:
+          name: bias-check-${{ github.sha }}
+          path: reports/ai-gate/
+
+      - name: Compute composite risk score
+        run: npx tsx scripts/ai-gate/risk-score.ts
+        env:
+          RISK_THRESHOLD: ${{ env.RISK_THRESHOLD }}
+
+      - name: Upload risk score report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: risk-score-${{ github.sha }}
+          path: reports/ai-gate/risk-score.json
+          retention-days: 90
+
+  # ════════════════════════════════════════════════════════════════════════════
+  #  5. GATE DECISION
+  #     Reads the risk score report and writes the final GitHub step summary.
+  #     Blocks the pipeline (exit 1) if the score is below the threshold.
+  # ════════════════════════════════════════════════════════════════════════════
+  gate-decision:
+    name: "5 · Gate Decision"
+    needs: risk-score
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Download risk score report
+        uses: actions/download-artifact@v4
+        with:
+          name: risk-score-${{ github.sha }}
+          path: reports/ai-gate/
+
+      - name: Write gate summary to GitHub
+        if: always()
+        run: |
+          node -e "
+            const fs   = require('fs');
+            const rs   = JSON.parse(fs.readFileSync('reports/ai-gate/risk-score.json', 'utf8'));
+            const icon = rs.approved ? '✅' : '❌';
+            const bar  = '█'.repeat(Math.round(rs.score / 5)) + '░'.repeat(20 - Math.round(rs.score / 5));
+
+            const stageRows = rs.stages.map(s =>
+              '| ' + [s.stage, s.total, s.failures, s.criticalFailures ?? 0, s.passed ? '✅' : '❌'].join(' | ') + ' |'
+            ).join('\n');
+
+            const deductionRows = rs.deductions.map(d =>
+              '| ' + [d.stage, d.severity, d.check.substring(0, 60), d.points].join(' | ') + ' |'
+            ).join('\n');
+
+            const body = [
+              '## ' + icon + ' AI Security Gate — ' + (rs.approved ? 'APPROVED' : 'BLOCKED'),
+              '',
+              '### Risk Score',
+              '',
+              '| Score | Threshold | Status |',
+              '|-------|-----------|--------|',
+              '| **' + rs.score + ' / 100** | ' + rs.threshold + ' | ' + icon + ' |',
+              '',
+              '\`' + bar + '\` ' + rs.score + '/100',
+              '',
+              '### Stage Results',
+              '',
+              '| Stage | Checks | Failures | Critical | Status |',
+              '|-------|--------|----------|----------|--------|',
+              stageRows,
+              '',
+              ...(rs.deductions.length > 0 ? [
+                '### Score Deductions',
+                '',
+                '| Stage | Severity | Check | Points |',
+                '|-------|----------|-------|--------|',
+                deductionRows,
+                '',
+              ] : ['> No deductions — all checks passed.','']),
+              '**Commit:** \`${{ github.sha }}\`  |  **Triggered by:** @${{ github.actor }}  |  **Branch:** \`${{ github.ref_name }}\`',
+              ...(rs.approved ? [] : [
+                '',
+                '> ⚠️ **Action required:** fix the failing checks above and re-run this gate.',
+              ]),
+            ].join('\n');
+
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, body + '\n');
+            console.log('Summary written. Score:', rs.score, '| Approved:', rs.approved);
+          "
+
+      - name: Block pipeline if score below threshold
+        run: |
+          node -e "
+            const rs = require('./reports/ai-gate/risk-score.json');
+            if (!rs.approved) {
+              console.error('AI Security Gate BLOCKED — risk score ' + rs.score + ' < threshold ' + rs.threshold);
+              console.error('Failing checks:');
+              rs.deductions.forEach(d => console.error('  [' + d.severity + '] ' + d.stage + ': ' + d.check));
+              process.exit(1);
+            }
+            console.log('AI Security Gate APPROVED — risk score', rs.score, '/ 100');
+          "

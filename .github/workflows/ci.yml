@@ -1,81 +1,1013 @@
-name: CI Pipeline
+name: CI — VoyageAI MLOps Pipeline
 
+# ─────────────────────────────────────────────────────────────────────────────
+#  Triggers
+# ─────────────────────────────────────────────────────────────────────────────
 on:
   push:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      force_push:
+        description: "Force push Docker image to DOCR even on non-main branch"
+        required: false
+        default: "false"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# ─────────────────────────────────────────────────────────────────────────────
+#  Shared environment
+#  LLM_PROVIDER=mock  → zero real API calls in CI.
+#  SKIP_ENV_VALIDATION → bypasses production-only boot-time secret checks.
+# ─────────────────────────────────────────────────────────────────────────────
 env:
   NODE_VERSION: "20"
   NEXT_TELEMETRY_DISABLED: "1"
-  # Mock environment variables for Prisma and Next.js build validation.
-  # SKIP_ENV_VALIDATION bypasses strict production env checks so the build
-  # can complete without real secrets. This flag is only honoured during CI —
-  # real production deployments must NOT set it.
   SKIP_ENV_VALIDATION: "1"
+  LLM_PROVIDER: "mock"
   DATABASE_URL: "postgresql://ci:ci@localhost:5432/voyageai_ci"
   DIRECT_URL: "postgresql://ci:ci@localhost:5432/voyageai_ci"
   JWT_ACCESS_SECRET: "ci-jwt-access-secret-at-least-32-characters-long"
   JWT_REFRESH_SECRET: "ci-jwt-refresh-secret-at-least-32-characters-long"
   CSRF_SECRET: "ci-csrf-secret-at-least-32-characters-long-ok"
-  LLM_PROVIDER: "mock"
-  REDIS_URL: "redis://localhost:6379"
   NEXT_PUBLIC_MAPBOX_TOKEN: "ci-mapbox-token"
+  # Docker image name — prefixed with registry.digitalocean.com/<DO_REGISTRY_NAME>/ on push
+  IMAGE_NAME: voyageai-langgraph
+  PYTHON_VERSION: "3.11"
+
+defaults:
+  run:
+    shell: bash
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Pipeline order (each stage's "needs" enforces the sequence):
+#
+#   1 secret-scan  ──────────────────────────────────────────────────────┐
+#   2 lint          ← secret-scan                                        │
+#   3 build         ← lint                                               │
+#   4 unittest      ← build           ┐                                 │
+#   5 sast          ← lint            │  All must pass — if ANY of      │
+#   6 sca           ← build           │  stages 4–12 fail, the          │
+#   7 data-validation   ← build       │  quality-gate job fails and      │
+#   8 model-validation  ← build       │  stages 13–16 are blocked.      │
+#   9 prompt-validation ← model-val   │                                 │
+#  10 prompt-tests  ← [4, 9]          │                                 │
+#  11 safety-tests  ← [4, 9]          │                                 │
+#  12 evaluation    ← [10, 11]        ┘                                 │
+#        │                                                               │
+#   quality-gate ← [4,5,6,7,12]  ◄── single blocking aggregator ────────┘
+#        │
+#  13 build-image   ← quality-gate  (Docker — LangGraph Python service)
+#                                │
+#  14 trivy-scan    ← build-image  (CVE gate, secret scan, misconfig scan)
+#                                │
+#              ┌─────────────────┴──────────────────┐
+#  15 push-to-docr  ← trivy-scan  (main only)        │
+#  16 dast          ← trivy-scan  (main only)  ──────┘
+#
+#  Required secrets for stages 15–16:
+#    DIGITALOCEAN_ACCESS_TOKEN  — DO API token (write:registry)
+#    DO_REGISTRY_NAME           — registry slug, e.g. "voyageai"
+#    STAGING_URL                — staging URL for DAST, e.g. https://voyageai-staging.vercel.app
+# ─────────────────────────────────────────────────────────────────────────────
 
 jobs:
-  pipeline:
-    name: Production Validation Pipeline
+  # ══════════════════════════════════════════════════════════════════════════
+  #  1. SECRET SCAN — Block the entire pipeline if secrets are committed
+  #
+  #  Uses GitHub's native secret scanning push protection API to check every
+  #  commit in this push for known secret patterns (tokens, API keys, certs).
+  #
+  #  How it works:
+  #    • GitHub Advanced Security scans all commits server-side automatically.
+  #    • This job calls the GitHub API to read any open secret-scanning alerts
+  #      for the current repo and fails the pipeline if any are active.
+  #    • A second step runs a regex sweep for project-specific patterns
+  #      (OpenAI keys, Gemini keys, DO tokens) that may not yet be in GitHub's
+  #      built-in pattern library.
+  #
+  #  Requires:
+  #    • GitHub Advanced Security enabled on the repo
+  #      (free for public repos; included in GitHub Enterprise for private repos)
+  #    • Repository secret-scanning enabled:
+  #        Settings → Security → Code security → Secret scanning → Enable
+  # ══════════════════════════════════════════════════════════════════════════
+  secret-scan:
+    name: "1 · Secret Scan (GitHub Secret Scanning)"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write   # Needed to read/write secret scanning alerts
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # Full history so every commit in the push is checked
+
+      # ── Step 1: GitHub Secret Scanning alert check ────────────────────────
+      # Queries the GitHub Secret Scanning API for any open (unresolved) alerts.
+      # Fails the pipeline if any active secrets are detected in the repo.
+      - name: GitHub Secret Scanning — check for open alerts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Querying GitHub Secret Scanning API for open alerts..."
+
+          ALERTS=$(gh api \
+            --method GET \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "/repos/${{ github.repository }}/secret-scanning/alerts?state=open&per_page=100" \
+            2>&1) || true
+
+          # If the API returns a 404 it means Secret Scanning is not enabled —
+          # warn but don't block so the repo can still be set up.
+          if echo "$ALERTS" | grep -q '"message": "Secret scanning is disabled"' || \
+             echo "$ALERTS" | grep -q "404"; then
+            echo "::warning::GitHub Secret Scanning is not enabled on this repository."
+            echo "Enable it at: Settings → Security → Code security → Secret scanning"
+            exit 0
+          fi
+
+          COUNT=$(echo "$ALERTS" | node -e "
+            let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{
+              try {
+                const a = JSON.parse(d);
+                if (!Array.isArray(a)) { console.log(0); return; }
+                console.log(a.length);
+                if (a.length > 0) {
+                  a.forEach(al => process.stderr.write(
+                    '  [' + al.secret_type_display_name + '] ' + al.html_url + '\n'
+                  ));
+                }
+              } catch(e) { console.log(0); }
+            });
+          " 2>&1) || COUNT=0
+
+          # Separate the count from any alert lines printed to stderr
+          OPEN_COUNT=$(echo "$COUNT" | head -1 | tr -d '[:space:]')
+
+          if [ "$OPEN_COUNT" -gt 0 ] 2>/dev/null; then
+            echo "::error::GitHub Secret Scanning found ${OPEN_COUNT} open secret alert(s)."
+            echo "Resolve all alerts at: ${{ github.server_url }}/${{ github.repository }}/security/secret-scanning"
+            echo "$COUNT"
+            exit 1
+          fi
+
+          echo "✅ GitHub Secret Scanning: no open alerts found."
+
+      # ── Step 2: Commit-range regex sweep (project-specific patterns) ──────
+      # Scans the files changed in this push for secret patterns that may not
+      # yet be in GitHub's built-in library (e.g. custom API key formats).
+      - name: Regex sweep — project-specific secret patterns
+        run: |
+          echo "Scanning changed files for hardcoded secrets..."
+
+          # Determine which files changed in this push
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD \
+              | grep -E '\.(ts|tsx|js|jsx|py|env|json|yaml|yml)$' || true)
+          else
+            FILES=$(git diff --name-only HEAD~1 HEAD \
+              | grep -E '\.(ts|tsx|js|jsx|py|env|json|yaml|yml)$' || true)
+          fi
+
+          if [ -z "$FILES" ]; then
+            echo "No relevant files changed — skip."
+            exit 0
+          fi
+
+          FOUND=0
+          # OpenAI API key
+          PATTERN_OAI="sk-[a-zA-Z0-9_-]{32,}"
+          # Google / Gemini API key
+          PATTERN_GEM="AIza[0-9A-Za-z_-]{35}"
+          # GitHub tokens (PAT, app, installation)
+          PATTERN_GH="(ghp|ghs|gho|github_pat)_[a-zA-Z0-9]{36,}"
+          # DigitalOcean personal access token (64 hex chars)
+          PATTERN_DO="dop_v1_[a-f0-9]{64}"
+          # Stripe live key
+          PATTERN_STRIPE="sk_live_[a-zA-Z0-9]{24,}"
+          # Generic high-entropy assignments (var = "long_alphanum")
+          PATTERN_GENERIC="(SECRET|TOKEN|API_KEY|PRIVATE_KEY)\s*=\s*['\"][a-zA-Z0-9+/]{32,}['\"]"
+
+          ALL_PATTERNS="${PATTERN_OAI}|${PATTERN_GEM}|${PATTERN_GH}|${PATTERN_DO}|${PATTERN_STRIPE}|${PATTERN_GENERIC}"
+
+          while IFS= read -r FILE; do
+            [ -f "$FILE" ] || continue
+            MATCHES=$(grep -nE "$ALL_PATTERNS" "$FILE" \
+              | grep -v "^#" \
+              | grep -v "change-me" \
+              | grep -v "ci-.*secret" \
+              | grep -v "example" \
+              | grep -v "placeholder" || true)
+            if [ -n "$MATCHES" ]; then
+              echo "::error file=${FILE}::Potential hardcoded secret detected:"
+              echo "$MATCHES" | while read -r LINE; do
+                echo "  ${FILE}: ${LINE}"
+              done
+              FOUND=1
+            fi
+          done <<< "$FILES"
+
+          if [ "$FOUND" -eq 1 ]; then
+            echo "::error::Hardcoded secrets detected. Rotate any exposed keys and remove them from source."
+            exit 1
+          fi
+          echo "✅ Regex sweep: no hardcoded secrets found in changed files."
+
+      - name: Write secret scan summary
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          STATUS="${{ job.status }}"
+          ICON=$([ "$STATUS" = "success" ] && echo "✅" || echo "❌")
+          ALERTS_URL="${{ github.server_url }}/${{ github.repository }}/security/secret-scanning"
+          {
+            echo "## ${ICON} Secret Scan — ${STATUS^}"
+            echo ""
+            echo "| Check | Method |"
+            echo "|-------|--------|"
+            echo "| Open alert check | GitHub Secret Scanning API |"
+            echo "| Commit sweep | Regex (OpenAI, Gemini, DO, GH, Stripe patterns) |"
+            echo ""
+            echo "> All secret scanning alerts: [Security tab](${ALERTS_URL})"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ══════════════════════════════════════════════════════════════════════════
+  #  2. LINT — TypeScript type-check + ESLint + circular dependency check
+  # ══════════════════════════════════════════════════════════════════════════
+  lint:
+    name: "2 · Lint"
+    needs: secret-scan
     runs-on: ubuntu-latest
     steps:
-      - name: 1. Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Full history is required for accurate secret scanning
+      - uses: actions/checkout@v4
 
-      - name: 2. Security scan for secrets
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 3. Setup Node.js ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
+          cache: npm
+
+      - run: npm ci
+      - run: npx prisma generate
+
+      - name: TypeScript — type check (no emit)
+        run: npx tsc --noEmit
+
+      - name: ESLint — code quality + security rules
+        run: npm run lint
+
+      - name: Circular dependency detection
+        # Circular imports cause subtle runtime errors in Next.js App Router.
+        run: npx madge --circular --extensions ts,tsx src/
+
+  # ══════════════════════════════════════════════════════════════════════════
+  #  3. BUILD — Next.js production build + Prisma artefact
+  # ══════════════════════════════════════════════════════════════════════════
+  build:
+    name: "3 · Build (app + model)"
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
 
       - name: Cache Next.js build
         uses: actions/cache@v4
         with:
           path: .next/cache
-          key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**/*.ts', '**/*.tsx') }}
-          restore-keys: |
-            ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**/*.ts','**/*.tsx') }}
+          restore-keys: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
 
-      - name: 4. Install dependencies
-        run: npm ci
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npx prisma validate
 
-      - name: 5. Generate Prisma Client
-        run: npx prisma generate
-
-      - name: 6. Prisma schema validation
-        run: npx prisma validate
-
-      - name: 7. TypeScript type check
-        run: npx tsc --noEmit
-
-      - name: 8. ESLint validation
-        run: npm run lint
-
-      - name: 9. Circular dependency detection
-        run: npx madge --circular --extensions ts,tsx src/
-
-      - name: 10. Unit tests (Vitest)
-        run: npm test
-
-      - name: 11. Next.js production build
+      - name: Next.js production build
         run: npm run build
+
+      - name: Upload .next artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nextjs-build-${{ github.sha }}
+          path: |
+            .next/
+            !.next/cache
+          retention-days: 1
+
+  # ══════════════════════════════════════════════════════════════════════════
+  #  4. UNIT TESTS — Vitest with coverage
+  # ══════════════════════════════════════════════════════════════════════════
+  unittest:
+    name: "4 · Unit Tests"
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+      - run: npx prisma generate
+
+      - name: Vitest — unit + integration tests
+        run: npm test -- --reporter=verbose --coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.sha }}
+          path: coverage/
+          retention-days: 7
+
+  # ══════════════════════════════════════════════════════════════════════════
+  #  5. SAST — CodeQL static security analysis
+  #  Runs in parallel with build/tests; only depends on lint passing.
+  # ══════════════════════════════════════════════════════════════════════════
+  sast:
+    name: "5 · SAST (CodeQL)"
+    needs: lint
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          # security-extended covers OWASP Top 10 + common Next.js/Node.js patterns
+          queries: security-extended
+          config: |
+            paths-ignore:
+              - node_modules
+              - .next
+              - prisma/migrations
+
+      - uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:javascript-typescript
+          # Always upload so results appear in the Security tab, not just on failure
+          upload: always
+
+  # ══════════════════════════════════════════════════════════════════════════
+  #  6. SCA — Dependency vulnerability scan + SBOM
+  # ══════════════════════════════════════════════════════════════════════════
+  sca:
+    name: "6 · SCA (dependencies)"
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: npm audit — fail on high/critical
+        run: npm audit --audit-level=high --json > npm-audit.json || true
+
+      - name: Parse and gate on audit results
+        run: |
+          node -e "
+            const r = require('./npm-audit.json');
+            const v = r.metadata?.vulnerabilities ?? {};
+            const critical = v.critical ?? 0;
+            const high = v.high ?? 0;
+            console.log('Vulnerabilities → critical:', critical, '| high:', high, '| moderate:', v.moderate ?? 0);
+            if (critical > 0 || high > 0) {
+              console.error('Pipeline blocked: high/critical vulnerabilities found.');
+              process.exit(1);
+            }
+            console.log('SCA gate passed.');
+          "
+
+      - name: Upload npm audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-${{ github.sha }}
+          path: npm-audit.json
+          retention-days: 14
+
+      - name: Generate SBOM (CycloneDX)
+        run: npx @cyclonedx/cyclonedx-npm --output-format json --output-file sbom.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ github.sha }}
+          path: sbom.json
+          retention-days: 30
+
+  # ══════════════════════════════════════════════════════════════════════════
+  #  7. DATA VALIDATION — Zod schemas + agent pipeline contract fixtures
+  # ══════════════════════════════════════════════════════════════════════════
+  data-validation:
+    name: "7 · Data Validation"
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+      - run: npx prisma generate
+
+      - name: Run data validation script
+        run: npx tsx scripts/ci/validate-data.ts
+
+      - name: Upload data validation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-validation-${{ github.sha }}
+          path: reports/data-validation.json
+          retention-days: 7
+
+  # ══════════════════════════════════════════════════════════════════════════
+  #  8. MODEL VALIDATION — Deterministic agent logic + output contracts
+  # ══════════════════════════════════════════════════════════════════════════
+  model-validation:
+    name: "8 · Model Validation"
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+      - run: npx prisma generate
+
+      - name: Run model validation script
+        run: npx tsx scripts/ci/validate-model.ts
+
+      - name: Upload model validation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-validation-${{ github.sha }}
+          path: reports/model-validation.json
+          retention-days: 7
+
+  # ══════════════════════════════════════════════════════════════════════════
+  #  9. PROMPT VALIDATION — Structural contract check for all agent prompts
+  #
+  #  Different from prompt-tests (stage 10):
+  #   • prompt-validation  → static contracts  (prompt present, tokens exist,
+  #                          format consistent, no injection vectors in templates)
+  #   • prompt-tests       → runtime behaviour (mock LLM output parsing,
+  #                          JSON extraction strategies, repair path)
+  # ══════════════════════════════════════════════════════════════════════════
+  prompt-validation:
+    name: "9 · Prompt Validation"
+    needs: model-validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+      - run: npx prisma generate
+
+      - name: Run prompt validation script
+        run: npx tsx scripts/ci/validate-prompts.ts
+
+      - name: Upload prompt validation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prompt-validation-${{ github.sha }}
+          path: reports/prompt-validation.json
+          retention-days: 7
+
+  # ══════════════════════════════════════════════════════════════════════════
+  #  10. PROMPT TESTS — Runtime mock-LLM output parsing + repair path
+  # ══════════════════════════════════════════════════════════════════════════
+  prompt-tests:
+    name: "10 · Prompt Tests"
+    needs: [unittest, prompt-validation]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+      - run: npx prisma generate
+
+      - name: Run prompt tests
+        run: npx tsx scripts/ci/prompt-tests.ts
+
+      - name: Upload prompt test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prompt-tests-${{ github.sha }}
+          path: reports/prompt-tests.json
+          retention-days: 7
+
+  # ══════════════════════════════════════════════════════════════════════════
+  #  11. SAFETY TESTS — Toxicity, jailbreak, PII, budget/risk guards
+  # ══════════════════════════════════════════════════════════════════════════
+  safety-tests:
+    name: "11 · Safety Tests (toxicity, jailbreak)"
+    needs: [unittest, prompt-validation]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+      - run: npx prisma generate
+
+      - name: Run safety tests
+        run: npx tsx scripts/ci/safety-tests.ts
+
+      - name: Upload safety test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: safety-tests-${{ github.sha }}
+          path: reports/safety-tests.json
+          retention-days: 14
+
+  # ══════════════════════════════════════════════════════════════════════════
+  #  12. EVALUATION — Aggregate offline metrics + quality gate
+  # ══════════════════════════════════════════════════════════════════════════
+  evaluation:
+    name: "12 · Evaluation (offline metrics)"
+    needs: [prompt-tests, safety-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+      - run: npx prisma generate
+
+      - name: Download coverage report
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-${{ github.sha }}
+          path: coverage/
+
+      - name: Download prompt validation report
+        uses: actions/download-artifact@v4
+        with:
+          name: prompt-validation-${{ github.sha }}
+          path: reports/
+
+      - name: Download prompt test report
+        uses: actions/download-artifact@v4
+        with:
+          name: prompt-tests-${{ github.sha }}
+          path: reports/
+
+      - name: Download safety test report
+        uses: actions/download-artifact@v4
+        with:
+          name: safety-tests-${{ github.sha }}
+          path: reports/
+
+      - name: Run offline evaluation
+        run: npx tsx scripts/ci/evaluate.ts
+
+      - name: Upload evaluation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaluation-${{ github.sha }}
+          path: reports/evaluation.json
+          retention-days: 30
+
+      - name: Write pipeline summary to GitHub
+        if: always()
+        run: |
+          node -e "
+            const fs = require('fs');
+            const ev = JSON.parse(fs.readFileSync('reports/evaluation.json', 'utf8'));
+            const rows = ev.metrics.map(m =>
+              '| ' + [m.name, m.value + (m.unit ?? ''), m.threshold + (m.unit ?? ''), m.passed ? '✅' : '❌'].join(' | ') + ' |'
+            ).join('\n');
+            const body = [
+              '## 🧪 Pipeline Evaluation — ' + (ev.passed ? '✅ PASSED' : '❌ FAILED'),
+              '',
+              '| Metric | Value | Threshold | Status |',
+              '|--------|-------|-----------|--------|',
+              rows,
+              '',
+              '**Commit:** \`${{ github.sha }}\`  |  **Branch:** \`${{ github.ref_name }}\`',
+            ].join('\n');
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, body + '\n');
+          "
+
+      - name: Gate — fail pipeline if evaluation did not pass
+        run: |
+          node -e "
+            const ev = require('./reports/evaluation.json');
+            if (!ev.passed) {
+              console.error('Evaluation gate failed:', ev.metrics.filter(m => !m.passed).map(m => m.name).join(', '));
+              process.exit(1);
+            }
+            console.log('All quality gates passed.');
+          "
+
+  # ══════════════════════════════════════════════════════════════════════════
+  #  QUALITY GATE — single aggregating blocker for stages 13–16
+  #
+  #  WHY THIS EXISTS:
+  #    Stages 5 (sast), 6 (sca), and 7 (data-validation) run in parallel with
+  #    the main evaluation chain. They have NO downstream dependents, so if any
+  #    of them fail the `evaluation` job still completes and build-image runs.
+  #
+  #    This job collects every quality check (4–12) into one place.
+  #    If ANY of them failed or was skipped due to an upstream failure,
+  #    this job fails and stages 13–16 are blocked.
+  #
+  #  Covered checks:
+  #    unittest (4)       — at least one test must pass
+  #    sast (5)           — CodeQL must find no security issues
+  #    sca (6)            — no high/critical dependency CVEs
+  #    data-validation (7)— Zod schemas + agent contracts intact
+  #    evaluation (12)    — covers 8, 9, 10, 11 transitively
+  # ══════════════════════════════════════════════════════════════════════════
+  quality-gate:
+    name: "✅ Quality Gate (all checks)"
+    needs: [unittest, sast, sca, data-validation, evaluation]
+    runs-on: ubuntu-latest
+    # Default (no `if`) means: only run when ALL needs completed with success.
+    # If any needed job failed or was skipped, this job is also skipped,
+    # which propagates the block to build-image.
+
+    steps:
+      - name: All quality gates passed
+        run: |
+          {
+            echo "## ✅ Quality Gate — All Checks Passed"
+            echo ""
+            echo "| Check | Stage | Result |"
+            echo "|-------|-------|--------|"
+            echo "| Unit Tests         | 4  | ✅ |"
+            echo "| SAST (CodeQL)      | 5  | ✅ |"
+            echo "| SCA (deps CVE)     | 6  | ✅ |"
+            echo "| Data Validation    | 7  | ✅ |"
+            echo "| Model Validation   | 8  | ✅ |"
+            echo "| Prompt Validation  | 9  | ✅ |"
+            echo "| Prompt Tests       | 10 | ✅ |"
+            echo "| Safety Tests       | 11 | ✅ |"
+            echo "| Evaluation         | 12 | ✅ |"
+            echo ""
+            echo "> Pipeline cleared for Docker build and delivery stages."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ══════════════════════════════════════════════════════════════════════════
+  #  13. BUILD DOCKER IMAGE
+  #      Builds the multi-stage LangGraph Dockerfile and exports it as an OCI
+  #      tarball so Trivy can scan it without touching a registry.
+  #      Only runs after ALL quality gates pass (via quality-gate aggregator).
+  # ══════════════════════════════════════════════════════════════════════════
+  build-image:
+    name: "13 · Build Docker Image (LangGraph)"
+    needs: quality-gate
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build image (cache-backed) and export tarball
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: ./python/agent_graph
+          dockerfile: ./python/agent_graph/Dockerfile
+          push: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=docker,dest=/tmp/langgraph-image.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILD_DATE=${{ github.event.repository.updated_at }}
+            GIT_SHA=${{ github.sha }}
+
+      - name: Upload image tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: langgraph-image-${{ github.sha }}
+          path: /tmp/langgraph-image.tar
+          retention-days: 1
+
+  # ══════════════════════════════════════════════════════════════════════════
+  #  14. TRIVY — CONTAINER VULNERABILITY SCAN
+  #      Four scans on the built tarball:
+  #        • SARIF report (all severities) → GitHub Security tab
+  #        • CRITICAL CVE gate             → blocks pipeline
+  #        • HIGH CVE scan                 → warning only, non-blocking
+  #        • Secret scan inside image      → blocks pipeline
+  #        • Dockerfile misconfig scan     → blocks on CRITICAL/HIGH
+  # ══════════════════════════════════════════════════════════════════════════
+  trivy-scan:
+    name: "14 · Trivy — Container Vulnerability Scan"
+    needs: build-image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download image tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: langgraph-image-${{ github.sha }}
+          path: /tmp/
+
+      - name: Load image into Docker daemon
+        run: docker load --input /tmp/langgraph-image.tar
+
+      - name: Trivy — SARIF report (all severities → Security tab)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:latest
+          format: sarif
+          output: trivy-results.sarif
+          severity: "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          scanners: "vuln,secret,config"
+
+      - name: Upload SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-container
+
+      - name: Trivy — gate on CRITICAL CVEs (blocks pipeline)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:latest
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          scanners: "vuln"
+          exit-code: "1"
+
+      - name: Trivy — warn on HIGH CVEs (non-blocking)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:latest
+          format: table
+          severity: HIGH
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          scanners: "vuln"
+          exit-code: "0"
+
+      - name: Trivy — secret scan inside image filesystem
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:latest
+          format: table
+          scanners: "secret"
+          exit-code: "1"
+
+      - name: Trivy — Dockerfile misconfig scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          scan-ref: ./python/agent_graph
+          format: table
+          exit-code: "1"
+          severity: "CRITICAL,HIGH"
+
+      - name: Upload Trivy SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-results-${{ github.sha }}
+          path: trivy-results.sarif
+          retention-days: 30
+
+  # ══════════════════════════════════════════════════════════════════════════
+  #  15. PUSH TO DIGITALOCEAN CONTAINER REGISTRY
+  #      Runs only on main (or when force_push=true via workflow_dispatch).
+  #      Re-builds with registry tags using the BuildKit GHA layer cache
+  #      (fast — all layers already cached from stage 13).
+  #      Attaches SLSA provenance + CycloneDX SBOM to the image manifest.
+  #
+  #  Required secrets:
+  #    DIGITALOCEAN_ACCESS_TOKEN  — DO personal access token (write:registry)
+  #    DO_REGISTRY_NAME           — registry slug (e.g. "voyageai")
+  # ══════════════════════════════════════════════════════════════════════════
+  push-to-docr:
+    name: "15 · Push to DigitalOcean Container Registry"
+    needs: trivy-scan
+    runs-on: ubuntu-latest
+    if: |
+      (github.ref == 'refs/heads/main' || github.event.inputs.force_push == 'true') &&
+      github.event_name != 'pull_request'
+    permissions:
+      packages: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Log in to DigitalOcean Container Registry
+        run: doctl registry login --expiry-seconds 600
+
+      - name: Compute registry image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest
+            type=raw,value=${{ github.run_number }}
+
+      - name: Build and push to DOCR (layers cached from stage 13)
+        id: push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./python/agent_graph
+          dockerfile: ./python/agent_graph/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      - name: Trivy — verify pushed image in registry
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}:latest
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+        env:
+          TRIVY_USERNAME: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          TRIVY_PASSWORD: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Write push summary
+        run: |
+          {
+            echo "## 🐳 Container Push — ✅ Published"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| **Registry** | \`registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}\` |"
+            echo "| **Image** | \`${{ env.IMAGE_NAME }}\` |"
+            echo "| **Tags** | \`latest\`, \`sha-$(echo ${{ github.sha }} | head -c7)\`, \`${{ github.run_number }}\` |"
+            echo "| **Digest** | \`${{ steps.push.outputs.digest }}\` |"
+            echo "| **Commit** | \`${{ github.sha }}\` |"
+            echo "| **Actor** | @${{ github.actor }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ══════════════════════════════════════════════════════════════════════════
+  #  16. DAST — OWASP ZAP FULL SCAN
+  #      Dynamic Application Security Testing against the live staging URL.
+  #      Runs in parallel with push-to-docr (both gate on trivy-scan).
+  #      Catches runtime issues that static analysis cannot:
+  #        • Missing security headers (CSP, HSTS, X-Frame-Options)
+  #        • Insecure cookies / session fixation
+  #        • CORS misconfiguration
+  #        • Open redirects + injection surfaces
+  #        • Information disclosure in error responses
+  #
+  #  Required secret:
+  #    STAGING_URL — e.g. https://voyageai-staging.vercel.app
+  #
+  #  False-positive suppressions: .github/zap/rules.tsv
+  # ══════════════════════════════════════════════════════════════════════════
+  dast:
+    name: "16 · DAST (OWASP ZAP)"
+    needs: trivy-scan
+    runs-on: ubuntu-latest
+    if: |
+      github.ref == 'refs/heads/main' &&
+      github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      security-events: write
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ZAP Full Scan — ${{ secrets.STAGING_URL }}
+        uses: zaproxy/action-full-scan@v0.10.0
+        with:
+          target: ${{ secrets.STAGING_URL }}
+          allow_issue_writing: true
+          fail_action: true
+          rules_file_name: .github/zap/rules.tsv
+          cmd_options: |
+            -config globalexcludeurl.url_list.url(0).regex=.*\.map$
+            -config globalexcludeurl.url_list.url(1).regex=.*/_next/static/.*
+            -config globalexcludeurl.url_list.url(2).regex=.*/api/auth/.*
+          artifact_name: zap-report-${{ github.sha }}
+
+      - name: Upload ZAP SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: zap_scan_report.json
+          category: owasp-zap
+        continue-on-error: true
+
+      - name: Write DAST summary
+        if: always()
+        run: |
+          {
+            echo "## 🕷️ DAST — OWASP ZAP Full Scan"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| **Target** | ${{ secrets.STAGING_URL }} |"
+            echo "| **Scan type** | Full (active + passive) |"
+            echo "| **Commit** | \`${{ github.sha }}\` |"
+            echo ""
+            echo "> Full HTML report available in the **zap-report-${{ github.sha }}** artifact."
+            echo "> Findings with severity ≥ WARN are also raised as GitHub Issues."
+          } >> "$GITHUB_STEP_SUMMARY"

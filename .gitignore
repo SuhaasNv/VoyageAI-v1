@@ -41,3 +41,22 @@ yarn-error.log*
 next-env.d.ts
 
 /src/generated/prisma
+
+# CI reports (generated at runtime — keep directory but ignore contents)
+/reports/*.json
+!/reports/.gitkeep
+
+# CI audit artefacts
+npm-audit.json
+sbom.json
+
+# Terraform — local state and secrets (never commit)
+infra/.terraform/
+infra/.terraform.lock.hcl
+infra/terraform.tfstate
+infra/terraform.tfstate.backup
+infra/tfplan.binary
+infra/plan.txt
+infra/plan-readable.txt
+infra/terraform.tfvars
+infra/*.auto.tfvars
