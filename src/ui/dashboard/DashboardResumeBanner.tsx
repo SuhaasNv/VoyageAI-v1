@@ -26,12 +26,10 @@ function readMeaningfulSession(): FlowState | null {
 }
 
 export function DashboardResumeBanner({ onResume }: DashboardResumeBannerProps) {
-    const [savedSession, setSavedSession] = useState<FlowState | null>(null);
+    // Lazy initializer reads localStorage only on first render (avoids setState-in-effect).
+    const [savedSession, setSavedSession] = useState<FlowState | null>(() => readMeaningfulSession());
 
     useEffect(() => {
-        // Initial read on mount.
-        setSavedSession(readMeaningfulSession());
-
         // Re-sync when the tab becomes visible again (e.g. after the flow completes
         // in a different context and clears localStorage).
         function handleVisibility() {

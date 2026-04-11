@@ -596,7 +596,7 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
             clearTimeout(resetTimer);
             clearTimeout(navTimer);
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }, [focusedActivity, hasGeocodedPoints, rawItinerary, selectedDay]);
 
     // ─── Redraw when data / day / order changes (debounced 150 ms) ───────────

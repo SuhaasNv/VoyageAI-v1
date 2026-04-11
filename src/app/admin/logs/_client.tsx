@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Search, X, RefreshCw } from "lucide-react";
-import type { LogEntry } from "./page";
+import type { LogEntry } from "./types";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

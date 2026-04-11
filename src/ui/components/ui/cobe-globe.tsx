@@ -143,6 +143,7 @@ export function Globe({
         let globe: ReturnType<typeof createGlobe> | null = null;
         let phi = 0;
         let cancelled = false;
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setCanvasVisible(false);
 
         function measure(node: HTMLCanvasElement) {

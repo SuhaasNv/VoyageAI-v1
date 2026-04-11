@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { PageHero } from "@/ui/components/marketing/PageHero";
 import { PageContent } from "@/ui/components/marketing/PageContent";
 import { FileText } from "lucide-react";
@@ -25,9 +26,9 @@ export default function BlogPage() {
                     </p>
                     <p className="text-sm text-slate-500">
                         We&apos;re working on our first posts. In the meantime, follow us on social or{" "}
-                        <a href="/#contact" className="text-indigo-400 hover:text-indigo-300 transition-colors">
+                        <Link href="/#contact" className="text-indigo-400 hover:text-indigo-300 transition-colors">
                             get in touch
-                        </a>
+                        </Link>
                         {" "}to suggest topics.
                     </p>
                 </div>

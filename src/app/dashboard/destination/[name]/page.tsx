@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Clock, MapPin, Sparkles, Utensils, History, Map } from "lucide-react";
 import Link from "next/link";
@@ -19,7 +19,7 @@ interface DestinationInfo {
 
 const FALLBACK_IMAGE = "https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&w=1200&q=80";
 
-function Section({ icon: Icon, title, children }: { icon: any; title: string; children: React.ReactNode }) {
+function Section({ icon: Icon, title, children }: { icon: React.ElementType; title: string; children: React.ReactNode }) {
     return (
         <div className="bg-white/[0.02] backdrop-blur-xl border border-white/5 rounded-3xl p-6 relative overflow-hidden shadow-xl">
             <div className="flex items-center gap-3 mb-4">
@@ -39,25 +39,25 @@ export default function DestinationPage({ params }: { params: Promise<{ name: st
     // React 19 Next.js params are a Promise
     const resolvedParams = use(params);
     const router = useRouter();
-    const [info, setInfo] = useState<DestinationInfo | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-
     const destinationName = decodeURIComponent(resolvedParams.name);
 
-    useEffect(() => {
-        // Serve from sessionStorage instantly — avoids "Researching..." on back-navigation
-        const sessionKey = `voyage:dest:${destinationName}`;
+    // Lazy initialisers read sessionStorage synchronously on first render so
+    // we avoid setState calls at the top of the effect.
+    const sessionKey = `voyage:dest:${destinationName}`;
+    const [info, setInfo] = useState<DestinationInfo | null>(() => {
         try {
             const cached = sessionStorage.getItem(sessionKey);
-            if (cached) {
-                setInfo(JSON.parse(cached) as DestinationInfo);
-                setIsLoading(false);
-                return;
-            }
-        } catch { /* non-fatal */ }
+            return cached ? (JSON.parse(cached) as DestinationInfo) : null;
+        } catch { return null; }
+    });
+    const [isLoading, setIsLoading] = useState<boolean>(() => {
+        try { return !sessionStorage.getItem(sessionKey); } catch { return true; }
+    });
+    const [error, setError] = useState<string | null>(null);
 
-        setIsLoading(true);
+    useEffect(() => {
+        // If we already have data from sessionStorage cache, nothing to do.
+        if (info) return;
         fetch(`/api/ai/destination-info?name=${encodeURIComponent(destinationName)}`, {
             credentials: "include",
         })
