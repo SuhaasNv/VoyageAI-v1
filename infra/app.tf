@@ -62,9 +62,9 @@ resource "digitalocean_app" "langgraph" {
       # ── Health check ────────────────────────────────────────────────────
       health_check {
         http_path             = "/health"
-        initial_delay_seconds = 15
+        initial_delay_seconds = 30
         period_seconds        = 30
-        timeout_seconds       = 5
+        timeout_seconds       = 10
         success_threshold     = 1
         failure_threshold     = 3
       }
