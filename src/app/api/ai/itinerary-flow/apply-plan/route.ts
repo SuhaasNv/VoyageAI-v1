@@ -25,7 +25,6 @@ const ActivitySchema = z.object({
     shortDescription: z.string().optional(),
     priceLevel: z.enum(["$", "$$", "$$$"]).optional(),
     geoConfidence: z.enum(["high", "medium", "low"]).optional(),
-    restaurantOptions: z.array(z.lazy((): z.ZodTypeAny => ActivitySchema)).optional(),
 });
 
 const ScheduledActivitySchema = ActivitySchema.extend({
@@ -62,20 +61,18 @@ const FoodCostSummarySchema = z.object({
 });
 
 const AdjustmentActionSchema = z.object({
-    type: z.enum(["replace_restaurant", "change_hotel", "remove_activity"]),
+    type: z.enum(["change_hotel", "remove_activity"]),
     payload: z.object({
-        activityId:     z.string().optional(),
-        activityName:   z.string().optional(),
-        day:            z.number().optional(),
-        hotelFrom:      z.string().optional(),
-        hotelTo:        z.string().optional(),
-        restaurantFrom: z.string().optional(),
-        restaurantTo:   z.string().optional(),
+        activityId:   z.string().optional(),
+        activityName: z.string().optional(),
+        day:          z.number().optional(),
+        hotelFrom:    z.string().optional(),
+        hotelTo:      z.string().optional(),
     }),
 });
 
 const BudgetAdjustmentSchema: z.ZodType<BudgetAdjustment> = z.object({
-    type:        z.enum(["restaurant_swap", "hotel_change", "activity_remove"]),
+    type:        z.enum(["hotel_change", "activity_remove"]),
     impact:      z.number().nonnegative(),
     description: z.string(),
     action:      AdjustmentActionSchema,
@@ -155,8 +152,7 @@ export async function POST(req: NextRequest) {
         try {
             const t0 = Date.now();
             // Cast is safe: the Zod schema validates every field present in
-            // OptimizedTripContext. The recursive restaurantOptions type resolves
-            // to unknown[] in Zod's inference but is structurally correct at runtime.
+            // OptimizedTripContext.
             const context = body.data.context as unknown as OptimizedTripContext;
             const result = applyOptimalPlan(context, body.data.plan, flowSessionId);
             const durationMs = Date.now() - t0;

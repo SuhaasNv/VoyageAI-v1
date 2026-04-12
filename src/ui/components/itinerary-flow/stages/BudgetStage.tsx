@@ -17,7 +17,7 @@ import {
 import { AgentThinkingCard } from "../AgentThinkingCard";
 import { BudgetSkeleton } from "../skeletons/StageSkeletons";
 import { stageContentVariants, stageContentTransition } from "../transitions";
-import type { StageProps, BudgetedTripContext } from "../types";
+import type { StageProps, BudgetedTripContext, ApplyChange } from "../types";
 import type { CostLineItem, OptimalPlan, BudgetAdjustment } from "@/agents/budget/budgetAgent";
 
 // ─── Currency ─────────────────────────────────────────────────────────────────
@@ -46,7 +46,6 @@ const CAT_ORDER: CatKey[] = ["hotel", "activity", "food", "other"];
 // ─── Adjustment type display config ──────────────────────────────────────────
 
 const ADJ_META: Record<BudgetAdjustment["type"], { label: string; colorCls: string }> = {
-    restaurant_swap: { label: "Meal swap",       colorCls: "text-amber-400 bg-amber-500/10 border-amber-500/20"  },
     hotel_change:    { label: "Hotel downgrade", colorCls: "text-indigo-400 bg-indigo-500/10 border-indigo-500/20" },
     activity_remove: { label: "Skip activity",   colorCls: "text-rose-400 bg-rose-500/10 border-rose-500/20"     },
 };
@@ -349,30 +348,130 @@ function WarningsBanner({ warnings }: { warnings: string[] }) {
         >
             <p className="text-[10px] font-semibold text-amber-400 uppercase tracking-widest flex items-center gap-1.5">
                 <Info className="w-3 h-3" />
-                Application notes
+                Your assistant noticed
             </p>
             {warnings.map((w, i) => (
-                <p key={i} className="text-xs text-amber-300/80">{w}</p>
+                <p key={i} className="text-xs text-amber-300/80 pl-4">{w}</p>
             ))}
         </motion.div>
     );
 }
 
 // ─── AppliedSuccessBanner ─────────────────────────────────────────────────────
+//
+// Shows a before / after / saved breakdown so the user immediately understands
+// the financial impact of the applied plan.
 
-function AppliedSuccessBanner({ savedAmount, currency }: { savedAmount: number; currency: Currency }) {
+function AppliedSuccessBanner({
+    savedAmount,
+    originalTotal,
+    newTotal,
+    achieved,
+    budgetGap,
+    currency,
+}: {
+    savedAmount: number;
+    originalTotal: number;
+    newTotal: number;
+    achieved: boolean;
+    budgetGap: number;
+    currency: Currency;
+}) {
+    const sym  = currency.symbol;
+    const rate = currency.rate;
+
     return (
         <motion.div
             initial={{ opacity: 0, scale: 0.97 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-emerald-500/[0.06] border border-emerald-500/20 rounded-xl px-4 py-3 flex items-center gap-3"
+            className={`border rounded-xl overflow-hidden ${
+                achieved
+                    ? "bg-emerald-500/[0.06] border-emerald-500/20"
+                    : "bg-amber-500/[0.06] border-amber-500/20"
+            }`}
         >
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-            <div>
-                <p className="text-sm font-semibold text-emerald-300">Plan applied</p>
-                <p className="text-xs text-emerald-400/70">
-                    Itinerary updated — saved {currency.symbol}{Math.round(savedAmount * currency.rate).toLocaleString()}
+            {/* Header row */}
+            <div className={`px-4 pt-3.5 pb-3 flex items-center gap-2 border-b ${
+                achieved ? "border-emerald-500/[0.15]" : "border-amber-500/[0.15]"
+            }`}>
+                {achieved ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                ) : (
+                    <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                )}
+                <p className={`text-sm font-semibold ${achieved ? "text-emerald-300" : "text-amber-300"}`}>
+                    {achieved
+                        ? "We adjusted your trip to fit your budget"
+                        : "We reduced costs as much as we could"}
                 </p>
+            </div>
+
+            {/* Before / After / Saved grid */}
+            <div className="grid grid-cols-3 divide-x divide-white/[0.06]">
+                {[
+                    { label: "Before", value: Math.round(originalTotal * rate), color: "text-slate-400",  prefix: ""   },
+                    { label: "After",  value: Math.round(newTotal      * rate), color: achieved ? "text-emerald-400" : "text-amber-400", prefix: "" },
+                    { label: "Saved",  value: Math.round(savedAmount   * rate), color: "text-emerald-400", prefix: "↓ " },
+                ].map(({ label, value, color, prefix }) => (
+                    <div key={label} className="px-4 py-3 text-center">
+                        <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">{label}</p>
+                        <p className={`text-sm font-bold ${color}`}>
+                            {prefix}{sym}{value.toLocaleString()}
+                        </p>
+                    </div>
+                ))}
+            </div>
+
+            {/* Remaining gap (only when not achieved) */}
+            {!achieved && budgetGap > 0 && (
+                <div className="px-4 py-2.5 bg-amber-500/[0.04] border-t border-amber-500/[0.12]">
+                    <p className="text-xs text-amber-400/80 text-center">
+                        Still {sym}{Math.round(budgetGap * rate).toLocaleString()} over your target
+                    </p>
+                </div>
+            )}
+        </motion.div>
+    );
+}
+
+// ─── ChangeSummaryPanel ───────────────────────────────────────────────────────
+//
+// Lists exactly what the optimizer changed — removed activities + hotel tier
+// drops — so the user understands the trade-offs they just accepted.
+
+function ChangeSummaryPanel({ changes }: { changes: ApplyChange[] }) {
+    if (changes.length === 0) return null;
+    return (
+        <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white/[0.03] border border-white/[0.06] rounded-xl px-4 py-3"
+        >
+            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-2.5">
+                What changed
+            </p>
+            <div className="space-y-1.5">
+                {changes.map((change, i) => (
+                    <div key={i} className="flex items-center gap-2.5 text-xs">
+                        {change.type === "activity_removed" ? (
+                            <>
+                                <span className="w-4 h-4 rounded-full bg-rose-500/10 border border-rose-500/20 flex items-center justify-center flex-shrink-0">
+                                    <span className="text-[8px] font-bold text-rose-400 leading-none">✕</span>
+                                </span>
+                                <span className="text-slate-500">Removed</span>
+                                <span className="text-slate-300 truncate">{change.description}</span>
+                            </>
+                        ) : (
+                            <>
+                                <span className="w-4 h-4 rounded-full bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center flex-shrink-0">
+                                    <span className="text-[9px] font-bold text-indigo-400 leading-none">↓</span>
+                                </span>
+                                <span className="text-slate-500">Hotel</span>
+                                <span className="text-slate-300">{change.description}</span>
+                            </>
+                        )}
+                    </div>
+                ))}
             </div>
         </motion.div>
     );
@@ -385,6 +484,8 @@ export interface BudgetStageProps extends StageProps<BudgetedTripContext> {
     isApplyingPlan: boolean;
     applyPlanWarnings: string[];
     appliedSavings: number;
+    /** What the optimizer changed — derived from plan.appliedAdjustments. */
+    applyChanges: ApplyChange[];
 }
 
 export function BudgetStage({
@@ -401,6 +502,7 @@ export function BudgetStage({
     isApplyingPlan,
     applyPlanWarnings,
     appliedSavings,
+    applyChanges,
 }: BudgetStageProps) {
     const prefersReduced = useReducedMotion();
     const [currency, setCurrency] = useState(CURRENCIES[0]!);
@@ -515,9 +617,19 @@ export function BudgetStage({
                         </div>
                     </div>
 
-                    {/* ── Applied success banner ── */}
+                    {/* ── Applied success: before/after card + change list ── */}
                     {planWasApplied && (
-                        <AppliedSuccessBanner savedAmount={appliedSavings} currency={currency} />
+                        <>
+                            <AppliedSuccessBanner
+                                savedAmount={appliedSavings}
+                                originalTotal={budget.totalEstimatedCost + appliedSavings}
+                                newTotal={budget.totalEstimatedCost}
+                                achieved={!isOver}
+                                budgetGap={budget.budgetGap ?? 0}
+                                currency={currency}
+                            />
+                            <ChangeSummaryPanel changes={applyChanges} />
+                        </>
                     )}
 
                     {/* ── Hero cost ── */}
@@ -546,10 +658,10 @@ export function BudgetStage({
                         <div className="bg-rose-500/[0.06] border border-rose-500/20 rounded-xl px-4 py-3 flex items-center gap-3">
                             <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
                             <div>
-                                <p className="text-sm font-semibold text-rose-300">Over budget</p>
+                                <p className="text-sm font-semibold text-rose-300">You&apos;re over budget</p>
                                 <p className="text-xs text-rose-400/70">
-                                    Your trip exceeds your target by {currency.symbol}{Math.round(budgetGap).toLocaleString()}.
-                                    {" "}Use "Optimize for lower cost" to generate a plan.
+                                    You&apos;re {currency.symbol}{Math.round(budgetGap).toLocaleString()} over your target.
+                                    {" "}Hit &ldquo;Optimize for lower cost&rdquo; and we&apos;ll find savings.
                                 </p>
                             </div>
                         </div>

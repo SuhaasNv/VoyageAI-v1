@@ -27,7 +27,7 @@ import { ResearchStage } from "./stages/ResearchStage";
 import { LogisticsStage } from "./stages/LogisticsStage";
 import { BudgetStage } from "./stages/BudgetStage";
 import { SafetyStage } from "./stages/SafetyStage";
-import type { FlowInput, FlowStage, TripContext, EnrichedTripContext, OptimizedTripContext, BudgetedTripContext } from "./types";
+import type { FlowInput, FlowStage, TripContext, EnrichedTripContext, OptimizedTripContext, BudgetedTripContext, ApplyChange } from "./types";
 import type { CostBreakdown, CostLineItem } from "@/agents/budget/budgetAgent";
 import { ensureCsrfToken } from "@/lib/api";
 
@@ -91,6 +91,7 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
     const [isApplyingPlan, setIsApplyingPlan] = useState(false);
     const [applyPlanWarnings, setApplyPlanWarnings] = useState<string[]>([]);
     const [appliedSavings, setAppliedSavings] = useState(0);
+    const [applyChanges, setApplyChanges] = useState<ApplyChange[]>([]);
     // Becomes true once the CSRF token is confirmed in the ref — gates the auto-start.
     const [csrfReady, setCsrfReady] = useState(false);
 
@@ -340,8 +341,26 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
                 },
             };
 
+            // Build the human-readable change list from the plan adjustments — no
+            // context diffing needed since the plan already describes what changed.
+            const changes: ApplyChange[] = plan.appliedAdjustments.map((adj) => {
+                if (adj.action.type === "change_hotel") {
+                    return {
+                        type: "hotel_downgraded" as const,
+                        description: `${adj.action.payload.hotelFrom ?? "?"} → ${adj.action.payload.hotelTo ?? "?"}`,
+                    };
+                }
+                const name = adj.action.payload.activityName ?? "Activity";
+                const day  = adj.action.payload.day;
+                return {
+                    type: "activity_removed" as const,
+                    description: day ? `${name} · Day ${day}` : name,
+                };
+            });
+
             dispatch({ type: "PATCH_BUDGET", result: updatedBudgetResult });
             setAppliedSavings(Math.max(0, originalTotal - newTotal));
+            setApplyChanges(changes);
             setApplyPlanWarnings(data.warnings);
             showToast(
                 data.warnings.length === 0
@@ -514,6 +533,7 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
                                         isApplyingPlan={isApplyingPlan}
                                         applyPlanWarnings={applyPlanWarnings}
                                         appliedSavings={appliedSavings}
+                                        applyChanges={applyChanges}
                                     />
                                 )}
 

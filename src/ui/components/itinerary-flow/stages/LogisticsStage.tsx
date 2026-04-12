@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { Navigation, Sparkles, Utensils } from "lucide-react";
 import { AgentThinkingCard } from "../AgentThinkingCard";
@@ -9,7 +9,7 @@ import { stageContentVariants, stageContentTransition } from "../transitions";
 import { LogisticsMap } from "./LogisticsMap";
 import { MealCard } from "./MealCard";
 import type { StageProps, OptimizedTripContext } from "../types";
-import type { Activity, ScheduledActivity } from "@/agents/shared/tripPipelineTypes";
+import type { ScheduledActivity } from "@/agents/shared/tripPipelineTypes";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -23,23 +23,6 @@ const SLOT_META: Record<string, { emoji: string; label: string; time: string; co
     afternoon: { emoji: "☀️",  label: "Afternoon", time: "12:00", color: "text-teal-400 bg-teal-500/10 border-teal-500/20" },
     evening:   { emoji: "🌆", label: "Evening",   time: "17:00", color: "text-indigo-400 bg-indigo-500/10 border-indigo-500/20" },
 };
-
-/** Fallback cost when neither estimatedCost nor priceLevel is set. */
-const DEFAULT_MEAL_COST = 20;
-const PRICE_MIDPOINT: Record<string, number> = { "$$$": 75, "$$": 30, "$": 12 };
-
-function resolveMealCost(r: Activity): number {
-    if (typeof r.estimatedCost === "number" && r.estimatedCost >= 0) return r.estimatedCost;
-    if (r.priceLevel && PRICE_MIDPOINT[r.priceLevel] !== undefined) return PRICE_MIDPOINT[r.priceLevel]!;
-    return DEFAULT_MEAL_COST;
-}
-
-// ─── Meal key helpers ─────────────────────────────────────────────────────────
-
-/** Stable key for a meal slot: e.g. "3-dinner" (day 3, dinner). */
-function mealKey(dayNum: number, mealType: string): string {
-    return `${dayNum}-${mealType}`;
-}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -64,57 +47,8 @@ export function LogisticsStage({
     const [note,      setNote]      = useState("");
     const [activeDay, setActiveDay] = useState(1);
 
-    // ── Meal selection state ─────────────────────────────────────────────────
-    // Key: "dayNum-mealType" → currently selected restaurant Activity.
-    // Initialized from the backend-chosen defaults (restaurantOptions[0]).
-    const [mealSelections, setMealSelections] = useState<Record<string, Activity>>(() => {
-        const defaults: Record<string, Activity> = {};
-        if (!result) return defaults;
-        for (const day of result.days) {
-            for (const act of day.activities) {
-                if (act.isMeal && act.mealType) {
-                    defaults[mealKey(day.day, act.mealType)] = act as Activity;
-                }
-            }
-        }
-        return defaults;
-    });
-
-    // ── Open selector state — only one open at a time ────────────────────────
-    const [openSelector, setOpenSelector] = useState<string | null>(null);
-
-    const toggleSelector = useCallback((key: string) => {
-        setOpenSelector((prev) => (prev === key ? null : key));
-    }, []);
-
-    const handleSelectRestaurant = useCallback((key: string, restaurant: Activity) => {
-        setMealSelections((prev) => ({ ...prev, [key]: restaurant }));
-        setOpenSelector(null);
-    }, []);
-
-    // ── Dynamic food cost ────────────────────────────────────────────────────
-    // Recalculates instantly whenever the user swaps a restaurant.
-    const foodCost = useMemo(() => {
-        if (!result) return { perDay: [] as number[], total: 0, avgPerDay: 0 };
-
-        const perDay = result.days.map((day) => {
-            let cost = 0;
-            for (const act of day.activities) {
-                if (!act.isMeal || !act.mealType) continue;
-                const key      = mealKey(day.day, act.mealType);
-                const selected = mealSelections[key] ?? (act as Activity);
-                cost += resolveMealCost(selected);
-            }
-            return cost;
-        });
-
-        const total    = perDay.reduce((s, c) => s + c, 0);
-        const avgPerDay = result.days.length > 0
-            ? parseFloat((total / result.days.length).toFixed(2))
-            : 0;
-
-        return { perDay, total, avgPerDay };
-    }, [result, mealSelections]);
+    // Food cost comes from the Logistics Agent's pre-computed summary.
+    const foodCost = result?.foodCostSummary ?? { perDay: [] as number[], total: 0, avgPerDay: 0 };
 
     // ── Derived counts ───────────────────────────────────────────────────────
     const totalActivities = result?.days.reduce((s, d) => s + d.activities.length, 0) ?? 0;
@@ -285,16 +219,17 @@ export function LogisticsStage({
                                                         {acts.map((act: ScheduledActivity, i: number) => {
                                                             if (act.isMeal && act.mealType) {
                                                                 // ── Meal Card ───────────────────────
-                                                                const key      = mealKey(activeDay, act.mealType);
-                                                                const selected = mealSelections[key] ?? (act as Activity);
+                                                                // "Local Restaurant" is the generic fallback name from
+                                                                // injectMeals(). Substitute a destination-aware label
+                                                                // at render time so users see something meaningful.
+                                                                const displayMeal =
+                                                                    act.name === "Local Restaurant"
+                                                                        ? { ...act, name: `${input.destination} Dining` }
+                                                                        : act;
                                                                 return (
                                                                     <MealCard
-                                                                        key={`meal-${key}-${i}`}
-                                                                        meal={act}
-                                                                        selected={selected}
-                                                                        isOpen={openSelector === key}
-                                                                        onToggle={() => toggleSelector(key)}
-                                                                        onSelect={(r) => handleSelectRestaurant(key, r)}
+                                                                        key={`meal-${activeDay}-${act.mealType}-${i}`}
+                                                                        meal={displayMeal}
                                                                     />
                                                                 );
                                                             }

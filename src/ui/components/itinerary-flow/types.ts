@@ -77,6 +77,19 @@ export interface StageProps<TResult> {
     onRetry: () => void;
 }
 
+// ─── Apply-plan change record ─────────────────────────────────────────────────
+
+/**
+ * A single human-readable record of what the plan changed.
+ * Derived from plan.appliedAdjustments before the API call; passed down to
+ * BudgetStage so the UI can surface exactly what changed.
+ */
+export interface ApplyChange {
+    type: "activity_removed" | "hotel_downgraded";
+    /** Human-readable detail — e.g. "Tokyo Disneyland · Day 3" or "$$$ → $$" */
+    description: string;
+}
+
 // ─── Re-exports for convenience ───────────────────────────────────────────────
 
 export type {

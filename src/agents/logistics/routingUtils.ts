@@ -214,23 +214,18 @@ function hasValidTimes(a: ScheduledActivity): boolean {
  * Auto-injects a lunch and dinner stop into an already-scheduled day.
  *
  * Algorithm (for each meal):
- *  1. Find the non-meal activity whose startTime is closest to the target
- *     (13:00 for lunch, 18:00 for dinner).
- *  2. Take the first entry from that activity's restaurantOptions[].
- *     Skip if none available.
- *  3. Calculate mealStart = anchor.endTime + 10 min buffer.
- *  4. Validate:
- *       a. mealEnd (mealStart + 45 min) must not exceed 23:59.
- *       b. mealEnd must not overlap the next activity's startTime.
- *     → Skip silently if either constraint is violated.
- *  5. Splice the meal into the array immediately after the anchor.
+ *  1. Promote: if a restaurant activity is already scheduled in the appropriate
+ *     time window, mark it isMeal — it IS the meal.
+ *  2. Inject: if no restaurant activity exists at the right time, insert a
+ *     generic "Local Restaurant" after the non-restaurant anchor closest to
+ *     the target time (13:00 lunch / 18:00 dinner).
+ *  3. Relax: if the strict anchor fails, try any activity as an anchor.
  *
  * Guarantees:
  *  - Returns a NEW array — no mutation of input.
  *  - Injected activities always have valid HH:mm startTime / endTime.
- *  - Chronological order is preserved (passes validateOutput).
+ *  - Chronological order is preserved.
  *  - travelTimeFromPrevMs = 15 min (the buffer), within the 240-min cap.
- *  - Restaurants never receive restaurantOptions — they already are one.
  */
 export function injectMeals(activities: ScheduledActivity[]): {
     activities:     ScheduledActivity[];
@@ -245,142 +240,11 @@ export function injectMeals(activities: ScheduledActivity[]): {
     let lunchInserted  = false;
     let dinnerInserted = false;
 
-    /**
-     * Attempts to splice a meal into `result` after the activity at `anchorIdx`.
-     * Returns true + mutates `result` on success; returns false when time
-     * constraints prevent insertion (overflow or overlap with next activity).
-     */
-    const spliceMeal = (
-        anchorIdx:    number,
-        options:      Activity[],
-        mealTypeVal:  "lunch" | "dinner",
-    ): boolean => {
-        const anchor     = result[anchorIdx]!;
-        const restaurant = options[0];
-        if (!restaurant) return false;
-
-        const anchorEndMins = hhmmToMins(anchor.endTime!);
-        const mealStart     = anchorEndMins + MEAL_BUFFER_MINS;
-        const mealEnd       = mealStart + MEAL_DURATION_MINS;
-
-        if (mealEnd > MAX_MEAL_END_MINS) return false;
-
-        // Reject injection outside the acceptable time window for this meal type.
-        // This prevents creating a "dinner" at 11:40 AM or a "lunch" at 20:00.
-        if (mealTypeVal === "lunch" &&
-            (mealStart < MIN_LUNCH_START_MINS || mealStart >= MAX_LUNCH_START_MINS)) return false;
-        if (mealTypeVal === "dinner" && mealStart < MIN_DINNER_START_MINS) return false;
-
-        const nextAct = result[anchorIdx + 1];
-        if (nextAct?.startTime && hhmmToMins(nextAct.startTime) < mealEnd) return false;
-
-        const mealSlot: ScheduledActivity["timeSlot"] =
-            mealStart < 12 * 60 ? "morning" :
-            mealStart < 17 * 60 ? "afternoon" :
-            "evening";
-
-        const meal: ScheduledActivity = {
-            ...restaurant,
-            type:                 "restaurant",
-            timeSlot:             mealSlot,
-            isMeal:               true,
-            mealType:             mealTypeVal,
-            startTime:            toHHMM(mealStart),
-            endTime:              toHHMM(mealEnd),
-            travelTimeFromPrevMs: MEAL_BUFFER_MINS * 60_000,
-            restaurantOptions:    options,
-        };
-
-        result = [
-            ...result.slice(0, anchorIdx + 1),
-            meal,
-            ...result.slice(anchorIdx + 1),
-        ];
-
-        return true;
-    };
-
-    /**
-     * Injects a meal for the given target time.
-     *
-     * Strategy (in order):
-     *  1. Try every non-meal, non-restaurant activity sorted by closeness to
-     *     targetMins. Use that activity's restaurantOptions.
-     *  2. If step 1 fails, relax the anchor restriction: try ANY activity that
-     *     carries restaurantOptions (including already-injected meals whose slot
-     *     has room after them). For lunch this walks closest-to-target first;
-     *     for dinner it walks in reverse (latest slot preferred).
-     *     This covers: tight schedules where the only free 55-min window sits
-     *     after a restaurant activity or an already-injected lunch.
-     */
-    const tryInject = (targetMins: number, mealTypeVal: "lunch" | "dinner"): boolean => {
-        // --- pass 1: non-meal, non-restaurant anchors sorted by closeness ---
-        const pass1Candidates = result
-            .map((act, idx) => ({ act, idx }))
-            .filter(({ act }) =>
-                hasValidTimes(act) &&
-                !act.isMeal &&
-                act.type !== "restaurant" &&
-                (act.restaurantOptions?.length ?? 0) > 0,
-            )
-            .sort((a, b) => {
-                const da = Math.abs(hhmmToMins(a.act.startTime!) - targetMins);
-                const db = Math.abs(hhmmToMins(b.act.startTime!) - targetMins);
-                return da - db;
-            });
-
-        for (const { act, idx } of pass1Candidates) {
-            if (spliceMeal(idx, act.restaurantOptions!, mealTypeVal)) return true;
-        }
-
-        // --- pass 2: relax the anchor restriction for both meal types ----------
-        //
-        // Walk from the activity closest to targetMins outward, allowing ANY
-        // activity that carries restaurantOptions (including already-placed
-        // isMeal cards whose slot happens to have room after them).
-        // For lunch: scan forward from start — first usable slot wins.
-        // For dinner: scan backward from end — latest usable slot wins.
-        {
-            const allCandidates = result
-                .map((act, idx) => ({ act, idx }))
-                .filter(({ act }) =>
-                    hasValidTimes(act) &&
-                    (act.restaurantOptions?.length ?? 0) > 0,
-                )
-                .sort((a, b) => {
-                    const da = Math.abs(hhmmToMins(a.act.startTime!) - targetMins);
-                    const db = Math.abs(hhmmToMins(b.act.startTime!) - targetMins);
-                    return da - db || a.idx - b.idx;
-                });
-
-            const ordered = mealTypeVal === "dinner"
-                ? allCandidates.reverse()
-                : allCandidates;
-
-            for (const { act, idx } of ordered) {
-                if (spliceMeal(idx, act.restaurantOptions!, mealTypeVal)) return true;
-            }
-        }
-
-        return false;
-    };
-
-    lunchInserted  = tryInject(LUNCH_TARGET_MINS,  "lunch");
-    dinnerInserted = tryInject(DINNER_TARGET_MINS, "dinner");
-
-    // ── Fallback: promote standalone restaurant activities at meal times ───────
+    // ── Step 1: Promote existing restaurant activities at meal times ───────────
     //
-    // When injection fails (e.g. all viable anchor activities lack
-    // restaurantOptions, or time constraints block every candidate), a
-    // scheduled restaurant activity that falls within the appropriate time
-    // window is promoted to an isMeal card. This handles cases like:
-    //   • A high-end restaurant (Le Baudelaire, ~16:10) blocking dinner injection
-    //     — the restaurant itself IS the dinner; mark it so the UI shows it.
-    //   • A tea room / café (Ladurée, ~14:29) on a shopping day where no
-    //     activities carry restaurantOptions — treat it as lunch.
-    //
-    // Promotion does NOT add restaurantOptions (there are none), so the MealCard
-    // shows "No alternatives", which is the correct and honest state.
+    // A scheduled restaurant activity that falls within the appropriate time
+    // window is promoted to an isMeal card. This is the preferred path: the
+    // LLM already placed a real restaurant — just mark it as a meal stop.
 
     if (!lunchInserted) {
         for (let i = 0; i < result.length; i++) {
@@ -418,6 +282,117 @@ export function injectMeals(activities: ScheduledActivity[]): {
                 break;
             }
         }
+    }
+
+    // ── Step 2: Inject generic meal when no restaurant activity is available ───
+    //
+    // When no restaurant activity falls within the meal time window, insert a
+    // generic "Local Restaurant" activity at the best available slot.
+
+    /** Generic fallback restaurant used when no real restaurant exists in the day. */
+    const GENERIC_RESTAURANT: Activity = {
+        name:          "Local Restaurant",
+        type:          "restaurant",
+        description:   "A nearby local dining option.",
+        estimatedCost: DEFAULT_MEAL_COST,
+    };
+
+    /**
+     * Attempts to splice `restaurant` into `result` after the activity at
+     * `anchorIdx`. Returns true on success; false when time constraints block.
+     */
+    const spliceMeal = (
+        anchorIdx:   number,
+        restaurant:  Activity,
+        mealTypeVal: "lunch" | "dinner",
+    ): boolean => {
+        const anchor        = result[anchorIdx]!;
+        const anchorEndMins = hhmmToMins(anchor.endTime!);
+        const mealStart     = anchorEndMins + MEAL_BUFFER_MINS;
+        const mealEnd       = mealStart + MEAL_DURATION_MINS;
+
+        if (mealEnd > MAX_MEAL_END_MINS) return false;
+
+        if (mealTypeVal === "lunch" &&
+            (mealStart < MIN_LUNCH_START_MINS || mealStart >= MAX_LUNCH_START_MINS)) return false;
+        if (mealTypeVal === "dinner" && mealStart < MIN_DINNER_START_MINS) return false;
+
+        const nextAct = result[anchorIdx + 1];
+        if (nextAct?.startTime && hhmmToMins(nextAct.startTime) < mealEnd) return false;
+
+        const mealSlot: ScheduledActivity["timeSlot"] =
+            mealStart < 12 * 60 ? "morning" :
+            mealStart < 17 * 60 ? "afternoon" :
+            "evening";
+
+        const meal: ScheduledActivity = {
+            ...restaurant,
+            type:                 "restaurant",
+            timeSlot:             mealSlot,
+            isMeal:               true,
+            mealType:             mealTypeVal,
+            startTime:            toHHMM(mealStart),
+            endTime:              toHHMM(mealEnd),
+            travelTimeFromPrevMs: MEAL_BUFFER_MINS * 60_000,
+        };
+
+        result = [
+            ...result.slice(0, anchorIdx + 1),
+            meal,
+            ...result.slice(anchorIdx + 1),
+        ];
+
+        return true;
+    };
+
+    /**
+     * Tries to inject a generic meal at the given target time.
+     *
+     *  Pass 1 — non-meal, non-restaurant anchor sorted by closeness to target.
+     *  Pass 2 — relax: any activity as anchor (closest-to-target first;
+     *            for dinner, reversed so the latest slot is preferred).
+     */
+    const tryInjectGeneric = (targetMins: number, mealTypeVal: "lunch" | "dinner"): boolean => {
+        const pass1 = result
+            .map((act, idx) => ({ act, idx }))
+            .filter(({ act }) =>
+                hasValidTimes(act) &&
+                !act.isMeal &&
+                act.type !== "restaurant",
+            )
+            .sort((a, b) => {
+                const da = Math.abs(hhmmToMins(a.act.startTime!) - targetMins);
+                const db = Math.abs(hhmmToMins(b.act.startTime!) - targetMins);
+                return da - db;
+            });
+
+        for (const { idx } of pass1) {
+            if (spliceMeal(idx, GENERIC_RESTAURANT, mealTypeVal)) return true;
+        }
+
+        const pass2 = result
+            .map((act, idx) => ({ act, idx }))
+            .filter(({ act }) => hasValidTimes(act) && !act.isMeal)
+            .sort((a, b) => {
+                const da = Math.abs(hhmmToMins(a.act.startTime!) - targetMins);
+                const db = Math.abs(hhmmToMins(b.act.startTime!) - targetMins);
+                return da - db || a.idx - b.idx;
+            });
+
+        const ordered = mealTypeVal === "dinner" ? pass2.reverse() : pass2;
+
+        for (const { idx } of ordered) {
+            if (spliceMeal(idx, GENERIC_RESTAURANT, mealTypeVal)) return true;
+        }
+
+        return false;
+    };
+
+    if (!lunchInserted) {
+        lunchInserted = tryInjectGeneric(LUNCH_TARGET_MINS, "lunch");
+    }
+    if (!dinnerInserted) {
+        dinnerInserted = tryInjectGeneric(DINNER_TARGET_MINS, "dinner");
     }
 
     return { activities: result, lunchInserted, dinnerInserted };

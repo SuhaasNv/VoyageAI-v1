@@ -1,9 +1,7 @@
 import { LLMClientFactory, executeWithRetry, parseJSONResponse } from "@/lib/ai/llm";
 import { selectModelConfig } from "@/lib/ai/modelRouter";
 import { logError, logStructured, trunc } from "@/infrastructure/logger";
-import { computeFoodCost } from "@/agents/logistics/routingUtils";
 import type {
-    Activity,
     HotelOption,
     OptimizedDay,
     OptimizedTripContext,
@@ -61,22 +59,18 @@ export interface CostBreakdown {
  * apply it automatically in the greedy solver without any human in the loop.
  */
 export interface BudgetAdjustmentAction {
-    type: "replace_restaurant" | "change_hotel" | "remove_activity";
+    type: "change_hotel" | "remove_activity";
     payload: {
         /** Stable activity ID — preferred over name for bulletproof matching. */
         activityId?: string;
         /** Human-readable fallback when activityId is absent (remove_activity). */
         activityName?: string;
-        /** Day number the activity lives on (remove_activity / replace_restaurant). */
+        /** Day number the activity lives on (remove_activity). */
         day?: number;
         /** Current hotel price-range tier (change_hotel). */
         hotelFrom?: string;
         /** Target hotel price-range tier to downgrade to (change_hotel). */
         hotelTo?: string;
-        /** Name of the current restaurant being replaced (replace_restaurant). */
-        restaurantFrom?: string;
-        /** Name of the cheaper target restaurant (replace_restaurant). */
-        restaurantTo?: string;
     };
 }
 
@@ -86,7 +80,7 @@ export interface BudgetAdjustmentAction {
  * The `action` field makes every suggestion replayable.
  */
 export interface BudgetAdjustment {
-    type: "restaurant_swap" | "hotel_change" | "activity_remove";
+    type: "hotel_change" | "activity_remove";
     /** Exact dollar saving if this adjustment is applied. Always >= 0. */
     impact: number;
     /** Human-readable explanation of the trade-off shown in the UI. */
@@ -189,9 +183,6 @@ const FOOD_DEFAULT_COST = 20;
 // Thresholds that trigger budget adjustment rules.
 const HOTEL_SHARE_THRESHOLD = 0.50; // hotel > 50% of total → suggest hotel tier drop
 
-/** Stable ordering for restaurant price levels (lower index = cheaper). */
-const PRICE_ORDER: Readonly<Record<string, number>> = { $: 0, $$: 1, $$$: 2 };
-
 /**
  * Minimum non-meal activities that must remain on a day after any removal.
  * Guards against creating empty / narrative-breaking days.
@@ -251,30 +242,6 @@ function resolveActivityCost(activity: ScheduledActivity): {
 
 function hotelNightly(priceRange: HotelOption["priceRange"]): number {
     return HOTEL_NIGHTLY[priceRange] ?? HOTEL_NIGHTLY["$$"];
-}
-
-/**
- * Resolves the cost of a restaurant Activity using the same fallback chain
- * as the food ledger builder — keeps both consistent.
- */
-function resolveRestaurantCost(r: Activity): number {
-    if (typeof r.estimatedCost === "number" && r.estimatedCost >= 0) return r.estimatedCost;
-    if (r.priceLevel && FOOD_PRICE_LEVEL_FALLBACK[r.priceLevel] !== undefined) {
-        return FOOD_PRICE_LEVEL_FALLBACK[r.priceLevel]!;
-    }
-    return FOOD_DEFAULT_COST;
-}
-
-/**
- * Returns true if `candidate` is demonstrably cheaper than `current`.
- * Prefers priceLevel comparison; falls back to estimatedCost.
- */
-function isCheaperRestaurant(candidate: Activity, current: Activity): boolean {
-    if (candidate.name === current.name) return false;
-    const cLevel = current.priceLevel   ? PRICE_ORDER[current.priceLevel]   : undefined;
-    const rLevel = candidate.priceLevel ? PRICE_ORDER[candidate.priceLevel] : undefined;
-    if (rLevel !== undefined && cLevel !== undefined) return rLevel < cLevel;
-    return resolveRestaurantCost(candidate) < resolveRestaurantCost(current);
 }
 
 // ─── Cost Ledger Builder ──────────────────────────────────────────────────────
@@ -396,16 +363,10 @@ function aggregateLedger(
 /**
  * Generates deterministic, executable budget adjustment suggestions.
  *
- * Rule 1 — Per-meal restaurant swap (concrete, not abstract):
- *   Iterates every isMeal activity. When a demonstrably cheaper alternative
- *   exists in the activity's restaurantOptions[], emits a specific
- *   "swap restaurantA → restaurantB" suggestion. Capped at the 3 highest-
- *   impact swaps so the UI is never overwhelming.
- *
- * Rule 2 — Hotel share > 50%: exact saving from one tier downgrade.
+ * Rule 1 — Hotel share > 50%: exact saving from one tier downgrade.
  *   action: change_hotel — changes selectedHotel.priceRange to lowerTier.
  *
- * Rule 3 — Top-3 highest-cost non-meal activities (safe-removal guard):
+ * Rule 2 — Top-3 highest-cost non-meal activities (safe-removal guard):
  *   Skips any activity whose removal would leave the day with fewer than
  *   MIN_NON_MEAL_AFTER_REMOVE non-meal activities — prevents empty days.
  *   action: remove_activity — filters the named activity from that day.
@@ -424,50 +385,7 @@ function generateBudgetAdjustments(
 
     if (total <= 0) return [];
 
-    // ── Rule 1: Per-meal restaurant swap (concrete alternatives only) ─────────
-    const mealSwaps: BudgetAdjustment[] = [];
-    for (const day of context.days) {
-        for (const act of day.activities) {
-            if (!act.isMeal || !act.mealType) continue;
-
-            const options = act.restaurantOptions ?? [];
-            // Need at least one alternative beyond the current pick.
-            if (options.length < 2) continue;
-
-            const current = options[0]!;
-
-            // Find the cheapest option that is demonstrably less expensive.
-            const cheaper = options
-                .filter((r) => isCheaperRestaurant(r, current))
-                .sort((a, b) => resolveRestaurantCost(a) - resolveRestaurantCost(b))[0];
-
-            if (!cheaper) continue;
-
-            const fromCost = resolveRestaurantCost(current);
-            const toCost   = resolveRestaurantCost(cheaper);
-            const impact   = Math.max(0, fromCost - toCost);
-            if (impact <= 0) continue;
-
-            mealSwaps.push({
-                type: "restaurant_swap",
-                impact,
-                description:
-                    `Day ${day.day} ${act.mealType}: swap "${current.name}" → "${cheaper.name}" — saves $${impact}`,
-                action: {
-                    type: "replace_restaurant",
-                    payload: {
-                        day:            day.day,
-                        restaurantFrom: current.name,
-                        restaurantTo:   cheaper.name,
-                    },
-                },
-            });
-        }
-    }
-    // Emit the 3 highest-impact meal swaps only.
-    adjustments.push(...mealSwaps.sort((a, b) => b.impact - a.impact).slice(0, 3));
-
-    // ── Rule 2: Hotel share > 50% and tier can go down ────────────────────────
+    // ── Rule 1: Hotel share > 50% and tier can go down ────────────────────────
     const hotelShare = categories.hotel / total;
     if (hotelShare > HOTEL_SHARE_THRESHOLD && categories.hotel > 0) {
         const currentIdx = HOTEL_TIERS.indexOf(hotel.priceRange);
@@ -586,44 +504,6 @@ export function applyAdjustment(
                     priceRange: hotelTo as HotelOption["priceRange"],
                 },
             };
-        }
-
-        case "replace_restaurant": {
-            const { day, restaurantFrom, restaurantTo } = action.payload;
-
-            const newDays = context.days.map((d) => {
-                if (day !== undefined && d.day !== day) return d;
-                return {
-                    ...d,
-                    activities: d.activities.map((act) => {
-                        // Only touch the matching meal on this day.
-                        if (!act.isMeal || act.name !== restaurantFrom) return act;
-
-                        const options     = act.restaurantOptions ?? [];
-                        const newOption   = options.find((r) => r.name === restaurantTo);
-                        if (!newOption) return act; // target not found — leave unchanged
-
-                        // Swap restaurant content fields; preserve all scheduling +
-                        // meal metadata (isMeal, mealType, timeSlot, times, options).
-                        return {
-                            ...act,
-                            name:             newOption.name,
-                            description:      newOption.description,
-                            estimatedCost:    newOption.estimatedCost,
-                            cuisine:          newOption.cuisine,
-                            shortDescription: newOption.shortDescription,
-                            priceLevel:       newOption.priceLevel,
-                        };
-                    }),
-                };
-            });
-
-            // Recompute foodCostSummary from the updated activities so that
-            // buildCostLedger (which reads foodCostSummary as its source of
-            // truth) will reflect the real new restaurant cost.
-            const newFoodSummary = computeFoodCost(newDays);
-
-            return { ...context, days: newDays, foodCostSummary: newFoodSummary };
         }
 
         default:

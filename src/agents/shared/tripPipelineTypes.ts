@@ -53,12 +53,6 @@ export interface Activity {
     cuisine?: string;
     shortDescription?: string;
     priceLevel?: "$" | "$$" | "$$$";
-    /**
-     * Nearby dining options — populated by attachNearbyRestaurants() after geocoding.
-     * Present only on non-restaurant activities; restaurants themselves never carry this.
-     * Each entry is a restaurant Activity (type === "restaurant") sorted by proximity.
-     */
-    restaurantOptions?: Activity[];
 }
 
 export type PriceRange = "$" | "$$" | "$$$" | "$$$$";
@@ -132,7 +126,7 @@ export type OptimizedTripContext = Omit<EnrichedTripContext, "days"> & {
     warnings?: string[];
     /**
      * Food cost breakdown computed from injected meal activities.
-     * Absent only when no meal activities were produced (e.g. no restaurantOptions).
+     * Absent only when no meal activities were produced.
      */
     foodCostSummary?: FoodCostSummary;
 };
