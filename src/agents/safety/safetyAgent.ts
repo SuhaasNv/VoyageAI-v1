@@ -2,223 +2,249 @@ import { LLMClientFactory, executeWithRetry, parseJSONResponse } from "@/lib/ai/
 import { logError, logStructured, trunc } from "@/infrastructure/logger";
 import type { BudgetedTripContext } from "@/agents/budget/budgetAgent";
 
+// ─── Output Types ─────────────────────────────────────────────────────────────
+
+export interface SafetyWarning {
+    type: "fatigue" | "travel" | "schedule" | "meal";
+    day: number;
+    severity: "medium" | "high";
+    message: string;
+}
+
 export type SafetyResult = {
-  riskLevel: "low" | "medium" | "high";
-  warnings: string[];
-  tips: string[];
+    riskLevel: "low" | "medium" | "high";
+    warnings: SafetyWarning[];
+    tips: string[];
 };
 
 export type SafeTripContext = BudgetedTripContext & {
-  safety: SafetyResult;
+    safety: SafetyResult;
 };
 
-// ─────────────────────────────────────────
-//  Risk Signal Pre-Analysis
-// ─────────────────────────────────────────
+// ─── Rule Constants ───────────────────────────────────────────────────────────
 
-type RiskSignals = {
-  maxActivitiesInDay: number;
-  hasFastPace: boolean;
-  isOverBudget: boolean;
-  hasOutdoorHeavyDay: boolean;
-  hasFamousAttractions: boolean;
-  destination: string;
-};
+/** Non-meal activities per day that triggers high/medium fatigue warnings. */
+const FATIGUE_HIGH_THRESHOLD   = 5;
+const FATIGUE_MEDIUM_THRESHOLD = 4;
 
-const FAMOUS_ATTRACTION_KEYWORDS = [
-  "eiffel", "louvre", "colosseum", "sagrada", "big ben", "times square",
-  "shibuya", "senso", "forbidden city", "taj mahal", "burj", "opera house",
-  "central park", "notre dame", "acropolis", "angkor", "machu picchu",
-  "tower bridge", "versailles", "uffizi", "prado", "hagia sofia",
-];
+/** Travel time thresholds in milliseconds. */
+const TRAVEL_HIGH_MS   = 2 * 60 * 60 * 1000; // 2 hours
+const TRAVEL_MEDIUM_MS = 90 * 60 * 1000;      // 90 minutes
 
-const OUTDOOR_ACTIVITY_KEYWORDS = [
-  "park", "beach", "hike", "trail", "outdoor", "garden", "walk", "tour",
-  "cruise", "market", "square", "promenade", "waterfall", "mountain",
-];
+/** Hour (24h) after which an activity ending is flagged as late-night. */
+const LATE_NIGHT_HOUR = 22;
 
-function analyzeRiskSignals(context: BudgetedTripContext): RiskSignals {
-  const activityCountsPerDay = context.days.map((d) => d.activities.length);
-  const maxActivitiesInDay = Math.max(0, ...activityCountsPerDay);
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-  const allActivities = context.days.flatMap((d) => d.activities);
-
-  const hasOutdoorHeavyDay = context.days.some((day) => {
-    const outdoorCount = day.activities.filter((a) =>
-      OUTDOOR_ACTIVITY_KEYWORDS.some(
-        (kw) =>
-          a.name.toLowerCase().includes(kw) ||
-          a.description.toLowerCase().includes(kw)
-      )
-    ).length;
-    return outdoorCount >= 2;
-  });
-
-  const hasFamousAttractions = allActivities.some((a) =>
-    FAMOUS_ATTRACTION_KEYWORDS.some(
-      (kw) =>
-        a.name.toLowerCase().includes(kw) ||
-        a.description.toLowerCase().includes(kw)
-    )
-  );
-
-  return {
-    maxActivitiesInDay,
-    hasFastPace: context.preferences?.pace?.toLowerCase() === "fast",
-    isOverBudget: context.budget.isOverBudget,
-    hasOutdoorHeavyDay,
-    hasFamousAttractions,
-    destination: context.destination,
-  };
+function parseEndHour(time: string): number | null {
+    const [h] = time.split(":");
+    const hour = parseInt(h, 10);
+    return isNaN(hour) ? null : hour;
 }
 
-// ─────────────────────────────────────────
-//  Prompt Builders
-// ─────────────────────────────────────────
+function formatMs(ms: number): string {
+    const h = Math.floor(ms / 3_600_000);
+    const m = Math.floor((ms % 3_600_000) / 60_000);
+    if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
+    return `${m}m`;
+}
 
-const SYSTEM_PROMPT = `You are a travel safety analyst.
-Your task is to assess a finalized travel itinerary for risks and return a structured safety evaluation.
+// ─── Deterministic Rule Engine ────────────────────────────────────────────────
+
+/**
+ * Runs all safety rules against the finalized itinerary.
+ * No LLM. No heuristics. Only real signals from the Logistics output.
+ */
+function runDeterministicRules(context: BudgetedTripContext): SafetyWarning[] {
+    const warnings: SafetyWarning[] = [];
+
+    for (const day of context.days) {
+        const dayNum = day.day;
+        const nonMeal = day.activities.filter((a) => !a.isMeal);
+
+        // ── Rule 1: Activity fatigue ──────────────────────────────────────────
+        if (nonMeal.length > FATIGUE_HIGH_THRESHOLD) {
+            warnings.push({
+                type: "fatigue",
+                day: dayNum,
+                severity: "high",
+                message: `Day ${dayNum} has ${nonMeal.length} activities — this is a very heavy day and may cause exhaustion.`,
+            });
+        } else if (nonMeal.length > FATIGUE_MEDIUM_THRESHOLD) {
+            warnings.push({
+                type: "fatigue",
+                day: dayNum,
+                severity: "medium",
+                message: `Day ${dayNum} has ${nonMeal.length} activities — consider removing one for a more comfortable pace.`,
+            });
+        }
+
+        // ── Rule 2: Long travel gaps ──────────────────────────────────────────
+        for (const act of day.activities) {
+            const travel = act.travelTimeFromPrevMs;
+            if (travel == null) continue;
+
+            if (travel >= TRAVEL_HIGH_MS) {
+                warnings.push({
+                    type: "travel",
+                    day: dayNum,
+                    severity: "high",
+                    message: `Getting to ${act.name} on Day ${dayNum} takes ~${formatMs(travel)} — a significant transit leg that will consume most of a time slot.`,
+                });
+            } else if (travel >= TRAVEL_MEDIUM_MS) {
+                warnings.push({
+                    type: "travel",
+                    day: dayNum,
+                    severity: "medium",
+                    message: `Travel to ${act.name} on Day ${dayNum} is ~${formatMs(travel)} — factor this into your schedule.`,
+                });
+            }
+        }
+
+        // ── Rule 3: Late-night overflow ───────────────────────────────────────
+        // Flag only the latest-ending activity per day to avoid duplicate warnings.
+        let latestHour = -1;
+        let latestName = "";
+        let latestTime = "";
+        for (const act of day.activities) {
+            if (!act.endTime) continue;
+            const hour = parseEndHour(act.endTime);
+            if (hour !== null && hour >= LATE_NIGHT_HOUR && hour > latestHour) {
+                latestHour = hour;
+                latestName = act.name;
+                latestTime = act.endTime;
+            }
+        }
+        if (latestHour >= LATE_NIGHT_HOUR) {
+            warnings.push({
+                type: "schedule",
+                day: dayNum,
+                severity: "medium",
+                message: `${latestName} on Day ${dayNum} ends at ${latestTime} — an early start the next day will feel rushed.`,
+            });
+        }
+
+        // ── Rule 4: No meals ──────────────────────────────────────────────────
+        const hasMeal = day.activities.some((a) => a.isMeal === true);
+        if (!hasMeal) {
+            warnings.push({
+                type: "meal",
+                day: dayNum,
+                severity: "medium",
+                message: `No meal stop is scheduled on Day ${dayNum}.`,
+            });
+        }
+    }
+
+    return warnings;
+}
+
+function deriveRiskLevel(warnings: SafetyWarning[]): SafetyResult["riskLevel"] {
+    if (warnings.some((w) => w.severity === "high")) return "high";
+    if (warnings.length > 0) return "medium";
+    return "low";
+}
+
+// ─── LLM Tips (optional, gracefully degraded) ────────────────────────────────
+
+const TIPS_SYSTEM_PROMPT = `You are a travel advisor.
+Given a trip's destination, duration, and a list of specific safety warnings, return 2–4 short actionable tips that directly address those warnings.
 
 Rules:
-- Do NOT suggest changes to the itinerary
-- Fatigue risk: >4 activities/day = medium, >5 = high
-- Fast pace elevates fatigue risk by one level
-- Weather risk: flag outdoor-heavy days
-- Crowd risk: flag famous tourist attractions
-- Budget stress: flag if trip is over budget
-- Warnings: max 3, one line each, clear and practical
-- Tips: max 4, actionable, one line each
-- Risk level: low (0 warnings), medium (1-2 warnings), high (3+ warnings OR severe fatigue)
-- Always include a destination-specific crowding tip
+- Each tip must address at least one specific warning from the list
+- Be practical and specific to the destination
+- One sentence each, no markdown, no numbering, no bullet points
+- Return ONLY valid JSON in this exact shape: {"tips":["...","..."]}`;
 
-Return ONLY valid JSON in this exact shape, no markdown, no explanation:
-{"riskLevel":"low|medium|high","warnings":["..."],"tips":["..."]}`;
+async function fetchLLMTips(
+    context: BudgetedTripContext,
+    warnings: SafetyWarning[],
+    requestId?: string,
+): Promise<string[]> {
+    const warningText = warnings
+        .map((w) => `Day ${w.day} (${w.type}): ${w.message}`)
+        .join("\n");
 
-function buildUserPrompt(
-  context: BudgetedTripContext,
-  signals: RiskSignals
-): string {
-  const activitySummary = context.days
-    .map(
-      (d) =>
-        `Day ${d.day} (${d.theme}): ${d.activities.length} activities — ${d.activities
-          .map((a) => a.name)
-          .join(", ")}`
-    )
-    .join("\n");
+    const userMsg = `Trip: ${context.destination} | ${context.durationDays} days | Pace: ${context.preferences?.pace ?? "moderate"}
 
-  return `Trip: ${context.destination} | ${context.durationDays} days | Pace: ${context.preferences?.pace ?? "moderate"}
+Warnings to address:
+${warningText}
 
-Risk signals detected:
-- Max activities in a single day: ${signals.maxActivitiesInDay}
-- Fast pace preference: ${signals.hasFastPace}
-- Over budget: ${signals.isOverBudget}
-- Outdoor-heavy day detected: ${signals.hasOutdoorHeavyDay}
-- Famous tourist attractions present: ${signals.hasFamousAttractions}
+Return tips JSON.`;
 
-Daily breakdown:
-${activitySummary}
+    const llmClient = LLMClientFactory.create({ agent: "safety" });
+    logStructured({
+        layer: "agent", agent: "safety", step: "llm-call", requestId,
+        data: { temperature: 0.2, purpose: "tips-only" },
+    });
 
-Analyze the above and return the SafetyResult JSON.`;
-}
-
-// ─────────────────────────────────────────
-//  Validation
-// ─────────────────────────────────────────
-
-const VALID_RISK_LEVELS = new Set(["low", "medium", "high"]);
-
-function validateAndClamp(raw: unknown): SafetyResult {
-  const fallback: SafetyResult = { riskLevel: "low", warnings: [], tips: [] };
-
-  if (!raw || typeof raw !== "object") return fallback;
-
-  const result = raw as Record<string, unknown>;
-
-  const riskLevel = result.riskLevel;
-  if (typeof riskLevel !== "string" || !VALID_RISK_LEVELS.has(riskLevel)) {
-    return fallback;
-  }
-
-  const warnings = Array.isArray(result.warnings)
-    ? (result.warnings as unknown[])
-        .filter((w): w is string => typeof w === "string")
-        .slice(0, 3)
-    : [];
-
-  const tips = Array.isArray(result.tips)
-    ? (result.tips as unknown[])
-        .filter((t): t is string => typeof t === "string")
-        .slice(0, 4)
-    : [];
-
-  // Re-derive risk level from warning count to ensure internal consistency
-  let derivedRiskLevel = riskLevel as SafetyResult["riskLevel"];
-  if (warnings.length >= 3) {
-    derivedRiskLevel = "high";
-  } else if (warnings.length >= 1 && derivedRiskLevel === "low") {
-    derivedRiskLevel = "medium";
-  }
-
-  return { riskLevel: derivedRiskLevel, warnings, tips };
-}
-
-// ─────────────────────────────────────────
-//  SafetyAgent
-// ─────────────────────────────────────────
-
-export class SafetyAgent {
-  async run(context: BudgetedTripContext, requestId?: string): Promise<SafeTripContext> {
-    const signals = analyzeRiskSignals(context);
-    logStructured({ layer: "agent", agent: "safety", step: "start", requestId });
-    logStructured({ layer: "agent", agent: "safety", step: "input", requestId, data: { destination: context.destination, maxActivitiesInDay: signals.maxActivitiesInDay, hasFastPace: signals.hasFastPace, isOverBudget: signals.isOverBudget, hasOutdoorHeavyDay: signals.hasOutdoorHeavyDay, hasFamousAttractions: signals.hasFamousAttractions } });
-
-    // Short-circuit: skip LLM call when no risk signals are present — saves ~2s per low-risk trip.
-    const hasRiskSignals =
-      signals.isOverBudget ||
-      signals.hasFastPace ||
-      signals.hasOutdoorHeavyDay ||
-      signals.hasFamousAttractions ||
-      signals.maxActivitiesInDay > 4;
-
-    if (!hasRiskSignals) {
-      const safety: SafetyResult = { riskLevel: "low", warnings: [], tips: ["Have a great trip! Stay hydrated and keep copies of important documents."] };
-      const result = { ...context, safety };
-      logStructured({ layer: "agent", agent: "safety", step: "output", requestId, data: { riskLevel: "low", warnings: 0, tips: 1, llmSkipped: true } });
-      logStructured({ layer: "agent", agent: "safety", step: "end", requestId });
-      return result;
-    }
-
-    let safety: SafetyResult = { riskLevel: "low", warnings: [], tips: [] };
-
-    try {
-      const llmClient = LLMClientFactory.create({ agent: "safety" });
-      logStructured({ layer: "agent", agent: "safety", step: "llm-call", requestId, data: { temperature: 0.4 } });
-      const response = await executeWithRetry(
+    const response = await executeWithRetry(
         llmClient,
         [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: buildUserPrompt(context, signals) },
+            { role: "system", content: TIPS_SYSTEM_PROMPT },
+            { role: "user", content: userMsg },
         ],
-        {
-          temperature: 0.4,
-          responseFormat: "json",
-          timeoutMs: 20000,
+        { temperature: 0.2, responseFormat: "json", timeoutMs: 20_000 },
+    );
+
+    logStructured({
+        layer: "agent", agent: "safety", step: "llm-response", requestId,
+        data: { contentLength: response.content.length, latencyMs: response.latencyMs },
+    });
+
+    const parsed = parseJSONResponse<{ tips?: unknown }>(response.content);
+    if (!parsed || !Array.isArray(parsed.tips)) return [];
+
+    return (parsed.tips as unknown[])
+        .filter((t): t is string => typeof t === "string")
+        .slice(0, 4);
+}
+
+// ─── SafetyAgent ──────────────────────────────────────────────────────────────
+
+export class SafetyAgent {
+    async run(context: BudgetedTripContext, requestId?: string): Promise<SafeTripContext> {
+        logStructured({ layer: "agent", agent: "safety", step: "start", requestId });
+        logStructured({
+            layer: "agent", agent: "safety", step: "input", requestId,
+            data: { destination: context.destination, days: context.days.length },
+        });
+
+        // Deterministic rules always run — no short-circuit bypass.
+        const warnings = runDeterministicRules(context);
+        const riskLevel = deriveRiskLevel(warnings);
+
+        logStructured({
+            layer: "agent", agent: "safety", step: "rules_applied", requestId,
+            data: { warnings: warnings.length, riskLevel },
+        });
+
+        // LLM for tips only — skipped when no warnings, degraded gracefully on failure.
+        let tips: string[] = [];
+        if (warnings.length > 0) {
+            try {
+                tips = await fetchLLMTips(context, warnings, requestId);
+            } catch (err) {
+                // Non-fatal: warnings are deterministic and correct regardless.
+                logError("[SafetyAgent] LLM tips call failed — proceeding without tips", err);
+                logStructured({
+                    layer: "agent", agent: "safety", step: "error", requestId,
+                    data: { error: trunc((err as Error).message), phase: "tips" },
+                });
+            }
+        } else {
+            tips = ["Have a great trip! Stay hydrated and keep copies of important documents."];
         }
-      );
 
-      const parsed = parseJSONResponse<unknown>(response.content);
-      logStructured({ layer: "agent", agent: "safety", step: "llm-response", requestId, data: { contentLength: response.content.length, latencyMs: response.latencyMs } });
-      safety = validateAndClamp(parsed);
-    } catch (err) {
-      logStructured({ layer: "agent", agent: "safety", step: "error", requestId, data: { error: trunc((err as Error).message) } });
-      logError("[SafetyAgent] LLM call failed", err);
-      throw err;
+        const safety: SafetyResult = { riskLevel, warnings, tips };
+        const result: SafeTripContext = { ...context, safety };
+
+        logStructured({
+            layer: "agent", agent: "safety", step: "output", requestId,
+            data: { riskLevel, warnings: warnings.length, tips: tips.length },
+        });
+        logStructured({ layer: "agent", agent: "safety", step: "end", requestId });
+
+        return result;
     }
-
-    const result = { ...context, safety };
-    logStructured({ layer: "agent", agent: "safety", step: "output", requestId, data: { riskLevel: safety.riskLevel, warnings: safety.warnings.length, tips: safety.tips.length } });
-    logStructured({ layer: "agent", agent: "safety", step: "end", requestId });
-    return result;
-  }
 }

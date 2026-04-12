@@ -8,7 +8,7 @@ import {
 import { AgentThinkingCard } from "../AgentThinkingCard";
 import { SafetySkeleton } from "../skeletons/StageSkeletons";
 import { stageContentVariants, stageContentTransition } from "../transitions";
-import type { StageProps, SafeTripContext } from "../types";
+import type { StageProps, SafeTripContext, SafetyWarning } from "../types";
 
 interface SafetyStageProps extends StageProps<SafeTripContext> {
     onSave: () => void;
@@ -50,6 +50,18 @@ const TYPE_COLORS: Record<string, string> = {
     attraction: "text-indigo-400 bg-indigo-500/10 border-indigo-500/20",
     experience: "text-teal-400 bg-teal-500/10 border-teal-500/20",
     restaurant: "text-amber-400 bg-amber-500/10 border-amber-500/20",
+};
+
+const WARNING_TYPE_LABEL: Record<SafetyWarning["type"], string> = {
+    fatigue:  "Fatigue",
+    travel:   "Transit",
+    schedule: "Late Night",
+    meal:     "No Meal",
+};
+
+const WARNING_SEVERITY_STYLE: Record<SafetyWarning["severity"], string> = {
+    high:   "bg-rose-500/[0.06] border-rose-500/20 text-rose-300",
+    medium: "bg-amber-500/[0.06] border-amber-500/20 text-amber-300",
 };
 
 const SCORE_CATEGORIES = [
@@ -211,9 +223,17 @@ export function SafetyStage({
                     className="space-y-2"
                 >
                     {safety.warnings.map((w, i) => (
-                        <div key={i} className="bg-amber-500/[0.06] border border-amber-500/20 rounded-xl px-3 py-2.5 flex items-start gap-2.5 text-sm text-amber-300">
+                        <div
+                            key={i}
+                            className={`border rounded-xl px-3 py-2.5 flex items-start gap-2.5 text-sm ${WARNING_SEVERITY_STYLE[w.severity]}`}
+                        >
                             <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                            <span>{w}</span>
+                            <div className="flex flex-col gap-0.5 min-w-0">
+                                <span className="text-[10px] font-semibold uppercase tracking-wider opacity-60">
+                                    Day {w.day} · {WARNING_TYPE_LABEL[w.type]}
+                                </span>
+                                <span>{w.message}</span>
+                            </div>
                         </div>
                     ))}
                 </motion.div>

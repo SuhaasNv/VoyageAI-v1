@@ -83,7 +83,8 @@ export type LogStep =
     | "budget_optimization"
     | "adjustment_applied"
     | "optimization_complete"
-    | "plan_applied";
+    | "plan_applied"
+    | "rules_applied";
 
 export type StructuredLogEntry = {
     layer: "agent" | "orchestrator" | "llm" | "service";

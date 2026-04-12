@@ -25,7 +25,12 @@ const Schema = z.object({
         }),
         safety: z.object({
             riskLevel: z.enum(["low", "medium", "high"]),
-            warnings: z.array(z.string()),
+            warnings: z.array(z.object({
+                type:     z.enum(["fatigue", "travel", "schedule", "meal"]),
+                day:      z.number(),
+                severity: z.enum(["medium", "high"]),
+                message:  z.string(),
+            })),
             tips: z.array(z.string()),
         }),
     }),
@@ -57,7 +62,7 @@ export async function POST(req: NextRequest) {
             // This ensures TripViewPage / TripMap can always parse rawJson correctly.
             const itineraryData = safeTripContextToItinerary(
                 body.data.tripId,
-                body.data.safetyResult as SafeTripContext,
+                body.data.safetyResult as unknown as SafeTripContext,
             );
 
             const itinerary = await prisma.itinerary.create({

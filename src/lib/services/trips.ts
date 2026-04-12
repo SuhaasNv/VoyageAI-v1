@@ -293,7 +293,7 @@ export function safeTripContextToItinerary(
         aiInsights: result.safety?.tips ?? [],
         pacingAnalysis: {
             overallScore: 5,
-            warnings: result.safety?.warnings ?? [],
+            warnings: result.safety?.warnings.map((w) => w.message) ?? [],
             suggestions: [],
         },
         generatedAt: new Date().toISOString(),

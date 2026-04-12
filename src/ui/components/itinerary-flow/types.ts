@@ -10,7 +10,7 @@ import type { TripContext } from "@/agents/planner/plannerAgent";
 import type { EnrichedTripContext } from "@/agents/research/researchAgent";
 import type { OptimizedTripContext } from "@/agents/logistics/logisticsAgent";
 import type { BudgetedTripContext } from "@/agents/budget/budgetAgent";
-import type { SafeTripContext } from "@/agents/safety/safetyAgent";
+import type { SafeTripContext, SafetyWarning } from "@/agents/safety/safetyAgent";
 
 // ─── Flow stages ─────────────────────────────────────────────────────────────
 
@@ -98,4 +98,5 @@ export type {
     OptimizedTripContext,
     BudgetedTripContext,
     SafeTripContext,
+    SafetyWarning,
 };
