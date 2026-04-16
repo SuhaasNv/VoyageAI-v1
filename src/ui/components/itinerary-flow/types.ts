@@ -32,8 +32,8 @@ export interface FlowInput {
 export interface FlowMetadata {
     /** Wall-clock duration the API call took (ms). */
     durationMs: number;
-    /** 0–1 confidence estimate from the agent layer. */
-    confidence: number;
+    /** 0–1 confidence estimate from the agent layer. Omitted when not measured. */
+    confidence?: number;
     /** Human-readable list of data sources used by this agent. */
     dataSources: string[];
     /** Chronological log lines with optional "+Xs" time offsets. */

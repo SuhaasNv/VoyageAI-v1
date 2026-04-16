@@ -50,7 +50,6 @@ export async function POST(req: NextRequest) {
                 ...result,
                 _meta: {
                     durationMs,
-                    confidence: 0.85,
                     dataSources: [
                         "Bright Data web search",
                         "Mapbox Geocoding",
@@ -58,9 +57,9 @@ export async function POST(req: NextRequest) {
                         "Review aggregators",
                     ],
                     decisionsLog: [
-                        `+0ms Starting research for ${body.data.destination}`,
+                        `Starting research for ${body.data.destination}`,
                         `Found ${result.hotels.length} hotels and ${totalActivities} activities`,
-                        `+${durationMs}ms Research complete`,
+                        `Research complete`,
                     ],
                 },
             });

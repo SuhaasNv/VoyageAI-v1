@@ -204,7 +204,7 @@ export class AgentOrchestrator {
         } catch (err) {
             this.logAgent("safety", "error", (err as Error).message);
             logStructured({ layer: "orchestrator", step: "error", requestId, data: { agent: "safety", error: (err as Error).message } });
-            return { ...budgeted, safety: { riskLevel: "low" as const, warnings: [], tips: [] } } as SafeTripContext;
+            return { ...budgeted, safety: { riskLevel: "high" as const, warnings: [{ type: "travel" as const, day: 0, severity: "high" as const, message: "Safety analysis failed — this itinerary may contain risks." }], tips: [] } };
         }
     }
 

@@ -104,7 +104,6 @@ export async function POST(req: NextRequest) {
                 ...result,
                 _meta: {
                     durationMs,
-                    confidence: 0.95,
                     dataSources: [
                         body.data.foodCostSummary
                             ? "Logistics food cost summary"
@@ -113,15 +112,15 @@ export async function POST(req: NextRequest) {
                         "Activity cost estimates",
                     ],
                     decisionsLog: [
-                        `+0ms Hotel: ${body.data.selectedHotel.priceRange} tier × ${Math.max(0, body.data.durationDays - 1)} nights = $${hotel}`,
-                        `+5ms Food: $${food} (${body.data.foodCostSummary ? "Logistics source" : "activity fallback"})`,
-                        `+10ms Activities: $${activity} across ${result.budget.ledger.filter((l) => l.category === "activity").length} items`,
-                        `+20ms Total: $${result.budget.totalEstimatedCost}`,
-                        `+25ms Budget check: ${result.budget.isOverBudget ? "OVER" : "within"} budget`,
+                        `Hotel: ${body.data.selectedHotel.priceRange} tier × ${Math.max(0, body.data.durationDays - 1)} nights = $${hotel}`,
+                        `Food: $${food} (${body.data.foodCostSummary ? "Logistics source" : "activity fallback"})`,
+                        `Activities: $${activity} across ${result.budget.ledger.filter((l) => l.category === "activity").length} items`,
+                        `Total: $${result.budget.totalEstimatedCost}`,
+                        `Budget check: ${result.budget.isOverBudget ? "OVER" : "within"} budget`,
                         ...(result.budget.isOverBudget
-                            ? [`+50ms Generating saving suggestions (gap: $${result.budget.budgetGap})`]
+                            ? [`Generating saving suggestions (gap: $${result.budget.budgetGap})`]
                             : []),
-                        `+${durationMs}ms Budget analysis complete`,
+                        `Budget analysis complete`,
                     ],
                 },
             });

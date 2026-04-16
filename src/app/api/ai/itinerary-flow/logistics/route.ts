@@ -74,18 +74,17 @@ export async function POST(req: NextRequest) {
                 ...result,
                 _meta: {
                     durationMs,
-                    confidence: 0.90,
                     dataSources: [
                         "Activity coordinates",
                         "Geographic clustering",
                         "Time-slot heuristics",
                     ],
                     decisionsLog: [
-                        `+0ms Grouping ${body.data.days.length} days by geography`,
-                        `+50ms Assigning morning / afternoon / evening slots`,
-                        `+100ms Selecting hotel: ${result.selectedHotel?.name ?? "TBD"}`,
-                        `+150ms Computing route efficiency`,
-                        `+${durationMs}ms Logistics optimized`,
+                        `Grouped ${body.data.days.length} days by geography`,
+                        `Assigned morning / afternoon / evening slots`,
+                        `Selected hotel: ${result.selectedHotel?.name ?? "TBD"}`,
+                        `Computed route efficiency`,
+                        `Logistics optimized`,
                     ],
                 },
             });

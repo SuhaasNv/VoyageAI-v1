@@ -337,12 +337,12 @@ function validateAndSanitize(
     const inputDays = new Map(context.days.map((d) => [d.day, d.theme]));
     const rawDays = Array.isArray(obj.days) ? (obj.days as unknown[]) : [];
 
-    const seenActivities = new Set<string>();
     let restaurantEnrichedCount = 0;
 
     const days: EnrichedDay[] = rawDays
         .filter((d): d is Record<string, unknown> => typeof d === "object" && d !== null)
         .map((d) => {
+            const seenActivities = new Map<string, { lat?: number; lng?: number }>();
             const dayNum = typeof d.day === "number" ? d.day : 0;
             const theme = (inputDays.get(dayNum) ?? (typeof d.theme === "string" ? d.theme : "")).trim();
 
@@ -365,8 +365,28 @@ function validateAndSanitize(
                 .reduce<Activity[]>((acc, a) => {
                     if (acc.length >= 8) return acc;
                     const key = normaliseName((a.name as string) ?? "");
-                    if (seenActivities.has(key)) return acc;
-                    seenActivities.add(key);
+                    const aLat = typeof a.lat === "number" ? a.lat : undefined;
+                    const aLng = typeof a.lng === "number" ? a.lng : undefined;
+                    if (seenActivities.has(key)) {
+                        const prev = seenActivities.get(key)!;
+                        // Both entries have coordinates — only dedupe when they are spatially close.
+                        // ~111 m threshold at equator; sufficient to distinguish nearby same-named places.
+                        if (
+                            aLat !== undefined && aLng !== undefined &&
+                            prev.lat !== undefined && prev.lng !== undefined
+                        ) {
+                            const COORD_THRESHOLD = 0.001;
+                            const isClose =
+                                Math.abs(aLat - prev.lat) < COORD_THRESHOLD &&
+                                Math.abs(aLng - prev.lng) < COORD_THRESHOLD;
+                            if (isClose) return acc; // same place — true duplicate
+                            // Different coords → distinct place with same name, allow through
+                        } else {
+                            return acc; // no coords to distinguish — name-only fallback
+                        }
+                    } else {
+                        seenActivities.set(key, { lat: aLat, lng: aLng });
+                    }
 
                     const validTypes: ActivityType[] = ["attraction", "experience", "restaurant"];
                     const type: ActivityType = validTypes.includes(a.type as ActivityType)

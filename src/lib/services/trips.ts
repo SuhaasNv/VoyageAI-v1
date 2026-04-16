@@ -247,12 +247,14 @@ export function safeTripContextToItinerary(
                 id: `d${day.day}-a${i}-${slug}`,
                 name: act.name,
                 type,
-                startTime: slot.start,
-                endTime: slot.end,
+                startTime: act.startTime ?? slot.start,
+                endTime: act.endTime ?? slot.end,
                 duration_minutes: 90,
                 location: {
                     name: act.name,
-                    // No lat/lng from pipeline — TripMap will geocode via activity name
+                    ...(typeof act.lat === "number" && typeof act.lng === "number"
+                        ? { lat: act.lat, lng: act.lng }
+                        : {}),
                 },
                 estimatedCost: { amount: costAmt, currency: "USD" },
                 notes: act.description,

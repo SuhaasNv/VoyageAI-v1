@@ -590,13 +590,14 @@ export function applyOptimalPlan(
     let current = context;
 
     for (const adjustment of plan.appliedAdjustments) {
-        const before = current;
+        const totalBefore = aggregateLedger(buildCostLedger(current), current.durationDays).total;
         current = applyAdjustment(current, adjustment);
+        const totalAfter = aggregateLedger(buildCostLedger(current), current.durationDays).total;
 
-        // Detect no-op: if context reference is unchanged the adjustment found
-        // nothing to modify (e.g. restaurant target not in options). Warn but
-        // continue — don't abort the whole plan for one miss.
-        if (current === before) {
+        // Detect no-op: if total cost is unchanged the adjustment found nothing
+        // to modify (e.g. activity already removed, hotel tier already matched).
+        // Warn but continue — don't abort the whole plan for one miss.
+        if (totalAfter === totalBefore) {
             warnings.push(
                 `Adjustment "${adjustment.description}" had no effect — target not found, skipped.`,
             );

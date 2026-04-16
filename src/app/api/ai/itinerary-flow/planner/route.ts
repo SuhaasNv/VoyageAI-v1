@@ -33,14 +33,13 @@ export async function POST(req: NextRequest) {
                 ...result,
                 _meta: {
                     durationMs,
-                    confidence: 0.92,
                     dataSources: ["Travel preferences", "Date & duration analysis", "Style heuristics"],
                     decisionsLog: [
-                        `+0ms Received trip input: "${body.data.input.slice(0, 60)}..."`,
-                        `+10ms Parsed destination and date range`,
-                        `+20ms Inferred travel style from preferences`,
-                        `+30ms Assigned themes to ${result.durationDays} days`,
-                        `+${durationMs}ms Blueprint complete`,
+                        `Received trip input: "${body.data.input.slice(0, 60)}..."`,
+                        `Parsed destination and date range`,
+                        `Inferred travel style from preferences`,
+                        `Assigned themes to ${result.durationDays} days`,
+                        `Blueprint complete`,
                     ],
                 },
             });
