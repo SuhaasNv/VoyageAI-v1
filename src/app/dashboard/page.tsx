@@ -84,7 +84,7 @@ export default function DashboardPage() {
 
     return (
         <div className="h-full overflow-y-auto scroll-smooth hide-scrollbar">
-            <div className="min-h-full p-6 md:p-8 lg:p-10 max-w-[1440px] mx-auto space-y-8 relative mobile-container">
+            <div className="min-h-full p-6 md:p-8 lg:p-10 space-y-8 relative">
                 {/* ── Top bar ───────────────────────────────────────────────── */}
                 <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-2">
                     <div className="flex items-center gap-4 flex-1 justify-end">
@@ -132,18 +132,15 @@ export default function DashboardPage() {
                     isSearching={debouncedQuery.trim().length > 0}
                 />
 
-                {/* ── Row 2: Trip Intelligence + Budget ────────────────────── */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* ── Rows 2–3: 4 info cards ───────────────────────────────
+                     md: 2×2 grid  |  2xl: single row of 4 columns        */}
+                <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4 gap-6 items-start">
                     <TripIntelligencePanel trips={trips} isLoading={isLoading} />
                     <BudgetOverviewCard
                         totalBudget={totalBudget}
                         totalSpent={totalSpent}
                         currency={budgetCurrency}
                     />
-                </div>
-
-                {/* ── Row 3: Calendar + Suggestions ────────────────────────── */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <CalendarWidget trips={trips} />
                     <AISuggestionsCard />
                 </div>

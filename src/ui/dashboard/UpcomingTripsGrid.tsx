@@ -302,13 +302,13 @@ export function UpcomingTripsGrid({ trips, isLoading, onTripsChange, onNewTripCl
                 )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                 {isLoading ? (
-                    <div className="md:col-span-2 flex flex-col items-center justify-center py-16 px-8 text-center relative overflow-hidden rounded-[1.5rem] bg-white/[0.02] border border-white/5 min-h-[280px]">
+                    <div className="md:col-span-2 xl:col-span-3 flex flex-col items-center justify-center py-16 px-8 text-center relative overflow-hidden rounded-[1.5rem] bg-white/[0.02] border border-white/5 min-h-[280px]">
                         <p className="text-sm text-zinc-500 font-medium">Loading trips…</p>
                     </div>
                 ) : trips.length === 0 ? (
-                    <div className="md:col-span-2 flex flex-col items-center justify-center py-16 px-8 text-center relative overflow-hidden rounded-[1.5rem] bg-white/[0.02] border border-white/5">
+                    <div className="md:col-span-2 xl:col-span-3 flex flex-col items-center justify-center py-16 px-8 text-center relative overflow-hidden rounded-[1.5rem] bg-white/[0.02] border border-white/5">
                         <div className="absolute inset-0 bg-gradient-to-b from-[#10B981]/5 via-transparent to-indigo-500/5 pointer-events-none" />
                         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] h-[350px] rounded-full bg-[#10B981]/5 blur-[60px] pointer-events-none" />
                         <div className="relative z-10 flex flex-col items-center gap-6">
