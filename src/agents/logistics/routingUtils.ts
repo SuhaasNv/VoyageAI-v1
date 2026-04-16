@@ -312,7 +312,7 @@ export function injectMeals(activities: ScheduledActivity[]): {
         const mealStart     = anchorEndMins + MEAL_BUFFER_MINS;
         const mealEnd       = mealStart + MEAL_DURATION_MINS;
 
-        if (mealEnd > MAX_MEAL_END_MINS) return false;
+        if (mealEnd > DAY_END_MINS) return false;
 
         if (mealTypeVal === "lunch" &&
             (mealStart < MIN_LUNCH_START_MINS || mealStart >= MAX_LUNCH_START_MINS)) return false;

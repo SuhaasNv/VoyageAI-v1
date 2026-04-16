@@ -122,6 +122,24 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
         return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
     }, []);
 
+    // Close handler — deletes the stub trip when the user abandons the flow.
+    // The trip record is created in the DB the moment the flow starts, so we
+    // must clean it up on cancel.  Fire-and-forget: don't block the UI close.
+    const handleClose = useCallback(() => {
+        if (state.stage !== "saved") {
+            ensureCsrfToken()
+                .then((token) =>
+                    fetch(`/api/trips/${tripId}`, {
+                        method: "DELETE",
+                        credentials: "include",
+                        headers: { "X-CSRF-Token": token },
+                    })
+                )
+                .catch(() => {});
+        }
+        onClose();
+    }, [state.stage, tripId, onClose]);
+
     // Global keyboard shortcuts
     useEffect(() => {
         function handler(e: KeyboardEvent) {
@@ -132,13 +150,13 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
             if (e.key === "Escape" && !explainOpen) {
                 // Esc closes only if not in a text field
                 if (document.activeElement?.tagName !== "TEXTAREA" && document.activeElement?.tagName !== "INPUT") {
-                    onClose();
+                    handleClose();
                 }
             }
         }
         document.addEventListener("keydown", handler);
         return () => document.removeEventListener("keydown", handler);
-    }, [explainOpen, onClose]);
+    }, [explainOpen, handleClose]);
 
     function showToast(message: string, variant?: "success" | "error" | "info") {
         setToast({ message, variant });
@@ -415,7 +433,7 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
             />
 
             {/* ── System header (replaces old top bar) ──────────────────── */}
-            <SystemHeader state={state} isLoading={isLoading} onClose={onClose}>
+            <SystemHeader state={state} isLoading={isLoading} onClose={handleClose}>
                 {/* Mobile-only pipeline header + DNA strip */}
                 <div className="lg:hidden">
                     <AgentPipelineHeader

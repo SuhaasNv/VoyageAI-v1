@@ -29,6 +29,7 @@ const CURRENCIES = [
     { code: "JPY", symbol: "¥",  flag: "🇯🇵", rate: 150   },
     { code: "INR", symbol: "₹",  flag: "🇮🇳", rate: 83    },
     { code: "AUD", symbol: "A$", flag: "🇦🇺", rate: 1.53  },
+    { code: "CNY", symbol: "¥",  flag: "🇨🇳", rate: 7.25  },
 ];
 type Currency = (typeof CURRENCIES)[number];
 

@@ -270,6 +270,9 @@ export class LogisticsAgent {
 
         // ── 1. Hotel selection ───────────────────────────────────────────────
         const baseHotel = selectHotel(context);
+        if (context.hotels.length === 0) {
+            warnings.push("No hotel data available — placeholder used");
+        }
 
         // ── 2. Hotel coordinate fallback (no hardcodes) ──────────────────────
         // If the Research Agent was unable to geocode the hotel (Mapbox
@@ -366,8 +369,9 @@ export class LogisticsAgent {
         // Using Promise.allSettled so a matrix failure on one day does not
         // prevent routing on other days.
         let usedHaversineFallback = false;
+        let usedMapboxFallback = false;
 
-        type DayResult = { optimizedDay: OptimizedDay; droppedCount: number };
+        type DayResult = { optimizedDay: OptimizedDay; droppedCount: number; usedFallback: boolean };
 
         const dayResults = await Promise.allSettled(
             validatedDays.map(async (day): Promise<DayResult> => {
@@ -390,7 +394,7 @@ export class LogisticsAgent {
                     data: { day: day.day, points: points.length },
                 });
 
-                const matrix = await getTravelTimeMatrix(points);
+                const { matrix, usedFallback } = await getTravelTimeMatrix(points);
                 const indexMap = new Map(points.map((p, i) => [p.id, i]));
 
                 const { scheduled, droppedCount } = buildScheduledDay(
@@ -402,6 +406,7 @@ export class LogisticsAgent {
                 return {
                     optimizedDay: { day: day.day, theme: day.theme, activities: scheduled },
                     droppedCount,
+                    usedFallback,
                 };
             })
         );
@@ -411,7 +416,8 @@ export class LogisticsAgent {
             const originalDay = validatedDays[i]!;
 
             if (settled.status === "fulfilled") {
-                const { optimizedDay, droppedCount } = settled.value;
+                const { optimizedDay, droppedCount, usedFallback: dayFallback } = settled.value;
+                if (dayFallback) usedMapboxFallback = true;
                 if (droppedCount > 0) {
                     warnings.push(
                         `Day ${originalDay.day}: ${droppedCount} ${droppedCount === 1 ? "activity was" : "activities were"} removed due to time constraints`,
@@ -439,6 +445,9 @@ export class LogisticsAgent {
         if (usedHaversineFallback) {
             warnings.push("One or more days used slot-assignment fallback (Mapbox Matrix unavailable)");
         }
+        if (usedMapboxFallback) {
+            warnings.push("Travel times are estimated (fallback routing used)");
+        }
 
         // ── 7. Inject meals (lunch + dinner) per day ─────────────────────────
         // Runs after routing so meal times are anchored to real schedule slots.
@@ -462,6 +471,13 @@ export class LogisticsAgent {
                 totalDays:      daysWithMeals.length,
             },
         });
+
+        if (totalLunch < daysWithMeals.length) {
+            warnings.push("Lunch could not be scheduled on some days");
+        }
+        if (totalDinner < daysWithMeals.length) {
+            warnings.push("Dinner could not be scheduled on some days");
+        }
 
         // ── 8. Compute food cost ─────────────────────────────────────────────
         // Pure pass over injected meal activities — no API calls, no mutation.

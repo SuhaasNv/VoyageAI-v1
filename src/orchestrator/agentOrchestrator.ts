@@ -229,6 +229,9 @@ export class AgentOrchestrator {
             });
             this.logAgent("planner", "success");
             logStructured({ layer: "orchestrator", step: "output", requestId, data: { agent: "planner", destination: trip.destination, durationDays: trip.durationDays } });
+            if (trip.destination === "Top Travel Destination") {
+                return { ok: false, stage: "planner", executionLog: this.executionLog, error: "Destination is too vague — please specify a city or region." };
+            }
         } catch (err) {
             this.logAgent("planner", "error", (err as Error).message);
             logStructured({ layer: "orchestrator", step: "error", requestId, data: { agent: "planner", error: (err as Error).message } });

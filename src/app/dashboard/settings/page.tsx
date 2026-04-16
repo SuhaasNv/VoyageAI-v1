@@ -157,13 +157,15 @@ export default function SettingsPage() {
 
     return (
         <div className="h-full overflow-y-auto scroll-smooth hide-scrollbar">
-            <div className="min-h-full p-6 md:p-8 lg:p-10 max-w-3xl mx-auto space-y-8 relative">
+            <div className="min-h-full p-6 md:p-8 lg:p-10 space-y-8 relative">
                 <header className="pb-2">
                     <p className="text-xs text-zinc-500 font-medium uppercase tracking-widest mb-0.5">Manage Account</p>
                     <h1 className="text-2xl font-bold text-white tracking-tight">Settings</h1>
                 </header>
 
-                <div className="space-y-6">
+                <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-6 items-start">
+                    {/* ── Left column: Profile ── */}
+                    <div className="space-y-6">
                     <motion.section {...fadeIn} className="bg-white/[0.02] border border-white/[0.05] rounded-2xl p-6 shadow-sm backdrop-blur-sm">
                         <div className="flex items-center gap-2 mb-6">
                             <User className="w-5 h-5 text-emerald-500" />
@@ -311,7 +313,10 @@ export default function SettingsPage() {
                             )}
                         </div>
                     </motion.section>
+                    </div>
 
+                    {/* ── Right column: Travel DNA, Notifications, Security, Subscription ── */}
+                    <div className="space-y-6">
                     <motion.section {...fadeIn} transition={{ ...fadeIn.transition, delay: 0.02 }} className="bg-white/[0.02] border border-white/[0.05] rounded-2xl p-6 shadow-sm backdrop-blur-sm">
                         <div className="flex items-center gap-2 mb-6">
                             <Sparkles className="w-5 h-5 text-emerald-500" />
@@ -506,7 +511,10 @@ export default function SettingsPage() {
                             </div>
                         </div>
                     </motion.section>
+                    </div>
+                    {/* ── End right column ── */}
                 </div>
+                {/* ── End grid ── */}
             </div>
         </div>
     );
