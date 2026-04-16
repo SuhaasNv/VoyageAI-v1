@@ -44,21 +44,22 @@ export async function POST(req: NextRequest) {
             const result = await agent.run(body.data, flowSessionId);
             const durationMs = Date.now() - t0;
 
-            const totalActivities = result.days.reduce((s, d) => s + d.activities.length, 0);
+            const totalActivitiesCount = result.days.reduce((s, d) => s + d.activities.length, 0);
+            const usedBrightData = result._dataSource === "brightdata";
 
             return successResponse({
                 ...result,
                 _meta: {
                     durationMs,
                     dataSources: [
-                        "Bright Data web search",
+                        usedBrightData ? "Bright Data web search" : "LLM (unverified)",
                         "Mapbox Geocoding",
-                        "Hotel directories",
-                        "Review aggregators",
                     ],
+                    groundedActivitiesCount: usedBrightData ? totalActivitiesCount : 0,
+                    totalActivitiesCount,
                     decisionsLog: [
                         `Starting research for ${body.data.destination}`,
-                        `Found ${result.hotels.length} hotels and ${totalActivities} activities`,
+                        `Found ${result.hotels.length} hotels and ${totalActivitiesCount} activities`,
                         `Research complete`,
                     ],
                 },

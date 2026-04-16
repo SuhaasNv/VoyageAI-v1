@@ -357,11 +357,6 @@ function validateAndSanitize(
                     const name = (a.name as string | undefined) ?? "";
                     return name.trim().length > 0;
                 })
-                .filter((a) => {
-                    // For relaxed-only style, deprioritise adventure activities
-                    if (isRelaxedStyle && !isAdventureStyle && a.type === "adventure") return false;
-                    return true;
-                })
                 .reduce<Activity[]>((acc, a) => {
                     if (acc.length >= 8) return acc;
                     const key = normaliseName((a.name as string) ?? "");
@@ -609,6 +604,27 @@ async function attachCoordinates(
     return { ...result, days, hotels };
 }
 
+// ─── Geo-warning helper ───────────────────────────────────────────────────────
+
+/**
+ * Derives geocoding-degradation warnings from an enriched day list.
+ * Called on both fresh runs and cache hits so behaviour is consistent.
+ */
+function computeGeoWarnings(days: EnrichedDay[]): string[] {
+    const activities = days.flatMap((d) => d.activities);
+    if (activities.length === 0) return [];
+    if (activities.every((a) => a.geoConfidence === undefined)) {
+        return ["Unable to resolve locations accurately for this destination."];
+    }
+    const lowCount = activities.filter(
+        (a) => a.geoConfidence === "low" || a.lat === undefined
+    ).length;
+    if (lowCount / activities.length > 0.3) {
+        return ["Location accuracy is reduced for some activities. Distances may be approximate."];
+    }
+    return [];
+}
+
 // ─── ResearchAgent ────────────────────────────────────────────────────────────
 
 export class ResearchAgent {
@@ -618,7 +634,7 @@ export class ResearchAgent {
      *
      * @throws if hotels cannot be populated after one retry
      */
-    async run(context: TripContext, requestId?: string): Promise<EnrichedTripContext> {
+    async run(context: TripContext, requestId?: string): Promise<EnrichedTripContext & { _dataSource: "brightdata" | "unverified" }> {
         logStructured({ layer: "agent", agent: "research", step: "start", requestId });
         logStructured({
             layer: "agent", agent: "research", step: "input", requestId,
@@ -640,6 +656,7 @@ export class ResearchAgent {
             dayThemes:    context.days.map((d) => d.theme),
             style:        context.preferences?.style,
             pace:         context.preferences?.pace,
+            budget:       context.preferences?.budget,
         });
 
         const cached = await getResearchCached(cacheKey);
@@ -649,7 +666,27 @@ export class ResearchAgent {
                 data: { destination: context.destination, source: "research_result_cache" },
             });
             logInfo("[ResearchAgent] returning cached result — skipping LLM call");
-            return cached as EnrichedTripContext;
+            // Read groundingMode stored with the payload; fall back to "brightdata"
+            // for old cache entries that predate this field.
+            const cachedGroundingMode =
+                (cached as { groundingMode?: string }).groundingMode === "unverified"
+                    ? "unverified"
+                    : "brightdata";
+            const { groundingMode: _gm, ...cachedResult } =
+                cached as EnrichedTripContext & { groundingMode?: string };
+            const cachedGeoWarnings = computeGeoWarnings(cachedResult.days);
+            const cachedWarnings = [
+                ...(cachedResult.warnings ?? []),
+                ...(cachedGroundingMode === "unverified"
+                    ? ["Some activities are AI-generated and may not reflect real-world data."]
+                    : []),
+                ...cachedGeoWarnings,
+            ];
+            return {
+                ...cachedResult,
+                _dataSource: cachedGroundingMode,
+                ...(cachedWarnings.length > 0 ? { warnings: cachedWarnings } : {}),
+            };
         }
 
         logStructured({
@@ -686,13 +723,13 @@ export class ResearchAgent {
             restaurants  = getRes(restaurantsRes);
 
             const allFailed = [attractions, hotels, restaurants].every(
-                (r) => !r || r.status === "failed"
+                (r) => !r?.data?.length
             );
             if (allFailed) {
                 dataSource = "unverified";
                 logError("brightdata.all_searches_failed", {
                     destination: context.destination,
-                    message: "All Bright Data searches returned failed status. Operating in LLM-only mode.",
+                    message: "All Bright Data searches returned no usable data. Operating in LLM-only mode.",
                 });
             }
         }
@@ -731,7 +768,7 @@ export class ResearchAgent {
 
         const prefSummary = context.preferences
             ? [
-                context.preferences.budget != null ? `Budget: $${context.preferences.budget}/day` : null,
+                context.preferences.budget != null ? `Budget: $${context.preferences.budget} total (~$${Math.round(context.preferences.budget / context.durationDays)}/day)` : null,
                 context.preferences.style  ? `Style: ${context.preferences.style}` : null,
                 context.preferences.pace   ? `Pace: ${context.preferences.pace}` : null,
               ]
@@ -769,7 +806,6 @@ ${daysList}
 
 Instructions:
 - Use the web search results above as your primary source of places.
-- Provide 3–5 activities per day matching each day's theme.
 - Provide exactly 3–5 hotel options total (shared across all days).
 - Hotels are MANDATORY — you must include them.
 - Return ONLY the JSON object. No markdown, no commentary.${hotelOverride}
@@ -811,29 +847,43 @@ Instructions:
             return result;
         };
 
-        const runWithGeocode = async (enforceHotelCount = false): Promise<EnrichedTripContext> => {
+        const runWithGeocode = async (enforceHotelCount = false): Promise<EnrichedTripContext & { _dataSource: "brightdata" | "unverified" }> => {
             const result   = await attempt(enforceHotelCount);
             const enriched = await attachCoordinates(result, requestId);
 
-            // Store the geocoded result so the next identical request is instant
-            await setResearchCached(cacheKey, enriched);
+            // Store the geocoded result so the next identical request is instant.
+            // groundingMode is persisted so cache hits don't need to infer provenance.
+            await setResearchCached(cacheKey, { ...enriched, groundingMode: dataSource });
             logStructured({
                 layer: "agent", agent: "research", step: "end", requestId,
                 data: { destination: context.destination, cached: true },
             });
 
-            // Warning is run-specific (Bright Data may be available on next request)
-            // so it is added after caching to avoid polluting cached results.
-            if (dataSource === "unverified") {
-                return {
-                    ...enriched,
-                    warnings: [
-                        ...(enriched.warnings ?? []),
-                        "Some activities are AI-generated and may not reflect real-world data.",
-                    ],
-                };
-            }
-            return enriched;
+            // Warnings are run-specific (Bright Data / geocoding may be available on next request)
+            // so they are added after caching to avoid polluting cached results.
+            const geoWarnings = computeGeoWarnings(enriched.days);
+            const allActivities = enriched.days.flatMap((d) => d.activities);
+            logStructured({
+                layer: "agent", agent: "research", step: "geocoding_complete", requestId,
+                data: {
+                    totalActivities: allActivities.length,
+                    lowConfidenceCount: allActivities.filter((a) => a.geoConfidence === "low").length,
+                    missingCoordCount: allActivities.filter((a) => a.lat === undefined).length,
+                    geoWarnings: geoWarnings.length,
+                },
+            });
+            const allWarnings = [
+                ...(enriched.warnings ?? []),
+                ...(dataSource === "unverified"
+                    ? ["Some activities are AI-generated and may not reflect real-world data."]
+                    : []),
+                ...geoWarnings,
+            ];
+            return {
+                ...enriched,
+                _dataSource: dataSource,
+                ...(allWarnings.length > 0 ? { warnings: allWarnings } : {}),
+            };
         };
 
         try {
