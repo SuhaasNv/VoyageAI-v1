@@ -1,7 +1,5 @@
 import { PieChart, TrendingUp, DollarSign } from "lucide-react";
-
 import { CurrencyService, type CurrencyCode } from "@/lib/services/currency.service";
-import { Info } from "lucide-react";
 
 interface BudgetOverviewCardProps {
     totalBudget: number;
@@ -28,7 +26,7 @@ export function BudgetOverviewCard({ totalBudget, totalSpent = 0, currency = "US
                     Budget Overview
                 </h2>
                 <span className="text-xs font-bold text-white bg-[#10B981] px-2.5 py-1 rounded-lg">
-                    YTD
+                    All Trips
                 </span>
             </div>
 
@@ -40,9 +38,6 @@ export function BudgetOverviewCard({ totalBudget, totalSpent = 0, currency = "US
                         </span>
                         {totalBudget > 0 && (
                             <div className="flex flex-col gap-0 mb-1">
-                                <span className="text-[10px] text-[#10B981] font-bold uppercase tracking-tighter flex items-center gap-1">
-                                    <Info className="w-2.5 h-2.5" /> Direct Conversion
-                                </span>
                                 <span className="text-sm text-zinc-500 font-medium leading-none">planned</span>
                             </div>
                         )}

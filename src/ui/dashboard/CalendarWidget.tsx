@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { createPortal } from "react-dom";
+import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, MapPin, Calendar } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Trip } from "@/lib/api";
@@ -66,11 +67,31 @@ interface CalendarWidgetProps {
 }
 
 export function CalendarWidget({ trips }: CalendarWidgetProps) {
+    const router = useRouter();
     const [viewDate,    setViewDate]    = useState(() => new Date());
     const [hovered,     setHovered]     = useState<HoveredInfo | null>(null);
     const [mounted,     setMounted]     = useState(false);
 
     useEffect(() => setMounted(true), []);
+
+    const nextTripLabel = useMemo(() => {
+        const today = new Date();
+        const now   = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+        let minDays = Infinity;
+        let dest    = "";
+        for (const trip of trips) {
+            const [sy, sm, sd] = trip.startDate.split("-").map(Number);
+            const start = Date.UTC(sy!, sm! - 1, sd!);
+            if (start >= now) {
+                const d = Math.round((start - now) / 86_400_000);
+                if (d < minDays) { minDays = d; dest = trip.destination; }
+            }
+        }
+        if (minDays === Infinity) return null;
+        if (minDays === 0) return `${dest} is active now`;
+        if (minDays === 1) return "Next trip departs tomorrow";
+        return `Next trip in ${minDays} days`;
+    }, [trips]);
 
     const { year, month, days, startOffset } = useMemo(() => {
         const y    = viewDate.getFullYear();
@@ -169,8 +190,11 @@ export function CalendarWidget({ trips }: CalendarWidgetProps) {
                 >
                     <ChevronLeft className="w-4 h-4" />
                 </button>
-                <div className="text-white font-bold tracking-wide">
-                    {MONTH_NAMES[month]} {year}
+                <div className="flex flex-col items-center gap-0.5">
+                    <div className="text-white font-bold tracking-wide">{MONTH_NAMES[month]} {year}</div>
+                    {nextTripLabel && (
+                        <span className="text-[10px] text-[#10B981] font-medium">{nextTripLabel}</span>
+                    )}
                 </div>
                 <button
                     type="button"
@@ -198,7 +222,8 @@ export function CalendarWidget({ trips }: CalendarWidgetProps) {
                 {days.map(({ date, trip, isBoundary }) => (
                     <div
                         key={date}
-                        className="flex items-center justify-center relative"
+                        className={`flex items-center justify-center relative ${trip ? "cursor-pointer" : ""}`}
+                        onClick={() => { if (trip) router.push(`/dashboard/trip/${trip.id}`); }}
                         onMouseEnter={(e) => {
                             if (trip) {
                                 const rect = e.currentTarget.getBoundingClientRect();

@@ -29,6 +29,8 @@ export default function DashboardPage() {
     const [debouncedQuery, setDebouncedQuery] = useState("");
     /** Active flow session — when set, the full-screen pipeline overlay renders. */
     const [flowSession, setFlowSession] = useState<{ tripId: string; input: FlowInput } | null>(null);
+    const [mounted, setMounted] = useState(false);
+    useEffect(() => setMounted(true), []);
 
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -75,6 +77,29 @@ export default function DashboardPage() {
         };
     }, [trips]);
 
+    const aiStatusMessage = useMemo(() => {
+        if (trips.length === 0) return null;
+        const today = new Date();
+        const now   = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+        const next  = [...trips]
+            .filter(t => {
+                const [ey, em, ed] = t.endDate.split("-").map(Number);
+                return Date.UTC(ey!, em! - 1, ed!) >= now;
+            })
+            .sort((a, b) => a.startDate.localeCompare(b.startDate))[0];
+        if (!next) return null;
+        const [sy, sm, sd] = next.startDate.split("-").map(Number);
+        const start = Date.UTC(sy!, sm! - 1, sd!);
+        const daysUntil = Math.round((start - now) / 86_400_000);
+        const pct = next.budget.total > 0 ? Math.round((next.budget.spent / next.budget.total) * 100) : 0;
+        if (daysUntil < 0)  return `✦ ${next.destination} trip is underway`;
+        if (daysUntil === 0) return `✦ ${next.destination} starts today`;
+        if (daysUntil === 1) return `✦ ${next.destination} departs tomorrow — confirm your bookings`;
+        if (daysUntil <= 7)  return pct > 0 ? `✦ ${next.destination} in ${daysUntil} days — ${pct}% of budget used` : `✦ ${next.destination} departs in ${daysUntil} days`;
+        if (pct > 75)        return `✦ ${next.destination} budget ${pct}% used — review spending`;
+        return `✦ ${next.destination} in ${daysUntil} days`;
+    }, [trips]);
+
     const handleTripCreated = (newTrip: Trip) =>
         setTrips(prev =>
             [...prev, newTrip].sort(
@@ -86,9 +111,17 @@ export default function DashboardPage() {
         <div className="h-full overflow-y-auto scroll-smooth hide-scrollbar">
             <div className="min-h-full p-6 md:p-8 lg:p-10 space-y-8 relative">
                 {/* ── Top bar ───────────────────────────────────────────────── */}
-                <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-2">
-                    <div className="flex items-center gap-4 flex-1 justify-end">
-                        <div className="relative max-w-xs w-full ml-8 hidden lg:block">
+                <header className="flex items-center justify-between gap-4 pb-2">
+                    {/* AI Status Strip — left, shown when trips are loaded */}
+                    {mounted && !isLoading && aiStatusMessage && (
+                        <div className="hidden md:flex items-center gap-2.5 bg-[#10B981]/[0.06] border border-[#10B981]/[0.12] rounded-full px-4 py-2 min-w-0 max-w-sm lg:max-w-lg xl:max-w-2xl">
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] animate-pulse shrink-0" />
+                            <span className="text-xs text-zinc-300 font-medium truncate">{aiStatusMessage}</span>
+                        </div>
+                    )}
+                    {/* Right: search + action buttons */}
+                    <div className="flex items-center gap-4 ml-auto">
+                        <div className="relative max-w-xs w-full hidden lg:block">
                             <input
                                 type="text"
                                 value={searchQuery}
@@ -101,7 +134,6 @@ export default function DashboardPage() {
                             </svg>
                         </div>
                         <div className="flex items-center gap-2">
-                            {/* Flight ticket import — magic feature */}
                             <button
                                 onClick={() => setShowTicketWizard(true)}
                                 title="Import from flight ticket"
@@ -142,7 +174,7 @@ export default function DashboardPage() {
                         currency={budgetCurrency}
                     />
                     <CalendarWidget trips={trips} />
-                    <AISuggestionsCard />
+                    <AISuggestionsCard onPlanTrip={(dest) => { setInitialDestination(dest); setIsModalOpen(true); }} />
                 </div>
             </div>
 

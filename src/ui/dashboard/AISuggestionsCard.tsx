@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Sparkles, MapPin, RefreshCw, Info } from "lucide-react";
+import { Sparkles, RefreshCw } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface DestinationSuggestion {
@@ -53,7 +53,11 @@ function writeSessionCache(data: DestinationSuggestion[]) {
     } catch { /* non-fatal */ }
 }
 
-export function AISuggestionsCard() {
+interface AISuggestionsCardProps {
+    onPlanTrip?: (destination: string) => void;
+}
+
+export function AISuggestionsCard({ onPlanTrip }: AISuggestionsCardProps = {}) {
     const [destinations, setDestinations] = useState<DestinationSuggestion[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
@@ -134,44 +138,53 @@ export function AISuggestionsCard() {
                                 exit={{ opacity: 0, x: 10 }}
                                 transition={{ delay: idx * 0.05 }}
                             >
-                                <Link
-                                    href={`/dashboard/destination/${encodeURIComponent(`${s.city}, ${s.country}`)}`}
-                                    className="group flex items-center gap-4 cursor-pointer"
-                                >
-                                    <div className="relative w-20 h-16 rounded-xl overflow-hidden shrink-0">
-                                        <img
-                                            src={s.imageUrl ?? FALLBACK_IMAGE}
-                                            className="object-cover w-full h-full group-hover:scale-110 transition-transform duration-500"
-                                            alt={`${s.city}, ${s.country}`}
-                                            onError={(e) => {
-                                                (e.currentTarget as HTMLImageElement).src = FALLBACK_IMAGE;
-                                            }}
-                                        />
-                                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                                    </div>
-                                    <div className="flex flex-col justify-center overflow-hidden flex-1">
-                                        <div className="flex items-center justify-between gap-2">
-                                            <h4 className="text-sm font-bold text-white truncate transition-colors group-hover:text-[#10B981]">
-                                                {s.city}, {s.country}
-                                            </h4>
-                                            <div className="flex items-center gap-1 shrink-0 px-1.5 py-0.5 rounded-full bg-[#10B981]/10 border border-[#10B981]/20">
-                                                <Info className="w-2.5 h-2.5 text-[#10B981]" />
-                                                <span className="text-[9px] font-bold text-[#10B981] uppercase tracking-tighter">Personalised</span>
+                                <div className="group flex items-center gap-3">
+                                    <Link
+                                        href={`/dashboard/destination/${encodeURIComponent(`${s.city}, ${s.country}`)}`}
+                                        className="flex items-center gap-4 flex-1 min-w-0"
+                                    >
+                                        <div className="relative w-20 h-16 rounded-xl overflow-hidden shrink-0">
+                                            <img
+                                                src={s.imageUrl ?? FALLBACK_IMAGE}
+                                                className="object-cover w-full h-full group-hover:scale-110 transition-transform duration-500"
+                                                alt={`${s.city}, ${s.country}`}
+                                                onError={(e) => {
+                                                    (e.currentTarget as HTMLImageElement).src = FALLBACK_IMAGE;
+                                                }}
+                                            />
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                                        </div>
+                                        <div className="flex flex-col justify-center overflow-hidden flex-1">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <h4 className="text-sm font-bold text-white truncate transition-colors group-hover:text-[#10B981]">
+                                                    {s.city}, {s.country}
+                                                </h4>
+                                                <div className="shrink-0 px-1.5 py-0.5 rounded-full bg-[#10B981]/10 border border-[#10B981]/20">
+                                                    <span className="text-[9px] font-bold text-[#10B981] tabular-nums">{Math.round(s.score)}% match</span>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-1 text-xs text-zinc-500 font-medium mt-0.5">
+                                                <span className="truncate">{s.tagline}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2 mt-1.5">
+                                                <span className="text-[10px] font-bold text-white bg-white/5 border border-white/5 px-1.5 py-0.5 rounded-sm uppercase tracking-wider">
+                                                    {s.tag}
+                                                </span>
+                                                <span className="text-[10px] text-[#10B981] font-bold italic truncate">
+                                                    {s.reason}
+                                                </span>
                                             </div>
                                         </div>
-                                        <div className="flex items-center gap-1 text-xs text-zinc-500 font-medium mt-0.5">
-                                            <span className="truncate">{s.tagline}</span>
-                                        </div>
-                                        <div className="flex items-center gap-2 mt-1.5">
-                                            <span className="text-[10px] font-bold text-white bg-white/5 border border-white/5 px-1.5 py-0.5 rounded-sm uppercase tracking-wider">
-                                                {s.tag}
-                                            </span>
-                                            <span className="text-[10px] text-[#10B981] font-bold italic truncate">
-                                                {s.reason}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </Link>
+                                    </Link>
+                                    {onPlanTrip && (
+                                        <button
+                                            onClick={() => onPlanTrip(`${s.city}, ${s.country}`)}
+                                            className="opacity-0 group-hover:opacity-100 transition-all duration-200 shrink-0 flex items-center gap-1 text-[11px] font-semibold text-[#10B981] bg-[#10B981]/10 border border-[#10B981]/20 hover:bg-[#10B981]/20 px-2.5 py-1.5 rounded-lg whitespace-nowrap"
+                                        >
+                                            Plan this →
+                                        </button>
+                                    )}
+                                </div>
                             </motion.div>
                         ))}
                     </AnimatePresence>
