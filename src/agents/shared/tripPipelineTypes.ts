@@ -78,6 +78,7 @@ export interface EnrichedDay {
 export type EnrichedTripContext = Omit<TripContext, "days"> & {
     days: EnrichedDay[];
     hotels: HotelOption[];
+    warnings?: string[];
 };
 
 // ─── Logistics output ─────────────────────────────────────────────────────────

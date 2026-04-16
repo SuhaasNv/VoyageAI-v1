@@ -367,8 +367,10 @@ export class LogisticsAgent {
         // prevent routing on other days.
         let usedHaversineFallback = false;
 
+        type DayResult = { optimizedDay: OptimizedDay; droppedCount: number };
+
         const dayResults = await Promise.allSettled(
-            validatedDays.map(async (day): Promise<OptimizedDay> => {
+            validatedDays.map(async (day): Promise<DayResult> => {
                 // Build typed activity list with guaranteed valid coords
                 const dayActivities = day.activities.map((act, i) => ({
                     ...act,
@@ -391,14 +393,15 @@ export class LogisticsAgent {
                 const matrix = await getTravelTimeMatrix(points);
                 const indexMap = new Map(points.map((p, i) => [p.id, i]));
 
+                const { scheduled, droppedCount } = buildScheduledDay(
+                    hotelCoord,
+                    dayActivities,
+                    { matrix, indexMap },
+                );
+
                 return {
-                    day:   day.day,
-                    theme: day.theme,
-                    activities: buildScheduledDay(
-                        hotelCoord,
-                        dayActivities,
-                        { matrix, indexMap },
-                    ),
+                    optimizedDay: { day: day.day, theme: day.theme, activities: scheduled },
+                    droppedCount,
                 };
             })
         );
@@ -408,10 +411,17 @@ export class LogisticsAgent {
             const originalDay = validatedDays[i]!;
 
             if (settled.status === "fulfilled") {
-                return settled.value;
+                const { optimizedDay, droppedCount } = settled.value;
+                if (droppedCount > 0) {
+                    warnings.push(
+                        `Day ${originalDay.day}: ${droppedCount} ${droppedCount === 1 ? "activity was" : "activities were"} removed due to time constraints`,
+                    );
+                }
+                return optimizedDay;
             }
 
             // Matrix or routing threw — fall back to slot-assignment only
+            // (slot assignment keeps all activities, so droppedCount is 0)
             usedHaversineFallback = true;
             logError(`[Logistics] day ${originalDay.day} matrix failed — using deterministic fallback`, settled.reason);
             logStructured({

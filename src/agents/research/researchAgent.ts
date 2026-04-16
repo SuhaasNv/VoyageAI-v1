@@ -802,6 +802,17 @@ Instructions:
                 data: { destination: context.destination, cached: true },
             });
 
+            // Warning is run-specific (Bright Data may be available on next request)
+            // so it is added after caching to avoid polluting cached results.
+            if (dataSource === "unverified") {
+                return {
+                    ...enriched,
+                    warnings: [
+                        ...(enriched.warnings ?? []),
+                        "Some activities are AI-generated and may not reflect real-world data.",
+                    ],
+                };
+            }
             return enriched;
         };
 

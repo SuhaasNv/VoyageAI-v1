@@ -72,8 +72,8 @@ export function buildScheduledDay(
     hotel:      GeoCoordinate & { id: string },
     activities: Array<Activity & { id: string; lat: number; lng: number }>,
     matrixData: MatrixLookup,
-): ScheduledActivity[] {
-    if (activities.length === 0) return [];
+): { scheduled: ScheduledActivity[]; droppedCount: number } {
+    if (activities.length === 0) return { scheduled: [], droppedCount: 0 };
 
     const scheduled: ScheduledActivity[] = [];
     const unvisited = new Set(activities);
@@ -172,12 +172,13 @@ export function buildScheduledDay(
         void usedHaversineForNearest; // used only for logging above
     }
 
+const droppedCount = unvisited.size;
 logStructured({
     layer: "service", service: "routing", step: "route_built",
-    data: { totalScheduled: scheduled.length, remainingDropped: unvisited.size },
+    data: { totalScheduled: scheduled.length, remainingDropped: droppedCount },
 });
 
-return scheduled;
+return { scheduled, droppedCount };
 }
 
 // ─── Meal injection ───────────────────────────────────────────────────────────

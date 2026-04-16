@@ -497,11 +497,19 @@ export function applyAdjustment(
         case "change_hotel": {
             const { hotelTo } = action.payload;
             if (!hotelTo) return context;
+            const tier = hotelTo as HotelOption["priceRange"];
+            const TIER_LABEL: Record<HotelOption["priceRange"], string> = {
+                "$":    "Budget Hotel",
+                "$$":   "Standard Hotel",
+                "$$$":  "Mid-range Hotel",
+                "$$$$": "Upscale Hotel",
+            };
             return {
                 ...context,
                 selectedHotel: {
                     ...context.selectedHotel,
-                    priceRange: hotelTo as HotelOption["priceRange"],
+                    name:       `${TIER_LABEL[tier]} (${tier})`,
+                    priceRange: tier,
                 },
             };
         }
