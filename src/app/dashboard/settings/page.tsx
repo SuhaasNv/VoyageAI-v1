@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { motion } from "framer-motion";
-import { User, Bell, Shield, CreditCard, Loader2, CheckCircle, Sparkles, AlertCircle } from "lucide-react";
+import { User, Bell, Shield, CreditCard, Loader2, CheckCircle, Sparkles, AlertCircle, Brain, RotateCcw } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { getCsrfToken } from "@/lib/api";
 
@@ -14,6 +14,102 @@ const TRAVEL_STYLES = ["Relaxing/Wellness", "Adventure/Outdoors", "Culture/Histo
 const TRAVEL_PACES = ["Slow/Relaxed", "Moderate", "Fast/Packed"];
 const INTERESTS = ["Beaches", "Mountains", "Cities", "Nature", "Museums", "Shopping", "Festivals", "Architecture"];
 const REGIONS = ["North America", "South America", "Europe", "Asia", "Africa", "Middle East", "Oceania"];
+
+function computeProfileCompletion(budget: string, style: string, pace: string, interests: string[], regions: string[]): number {
+    let score = 0;
+    if (budget) score += 20;
+    if (style) score += 20;
+    if (pace) score += 20;
+    if (interests.length >= 2) score += 20;
+    if (regions.length >= 1) score += 20;
+    return score;
+}
+
+function getAIExplanationText(style: string, pace: string, interests: string[]): string {
+    const styleMap: Record<string, string> = {
+        "Culture/History": "cultural destinations",
+        "Adventure/Outdoors": "outdoor adventures",
+        "Relaxing/Wellness": "wellness retreats",
+        "Food & Drink": "culinary experiences",
+        "Nightlife": "vibrant city nights",
+    };
+    const paceMap: Record<string, string> = {
+        "Fast/Packed": "fast-paced schedules",
+        "Slow/Relaxed": "relaxed itineraries",
+        "Moderate": "balanced daily plans",
+    };
+    const styleText = styleMap[style] ?? "curated destinations";
+    const paceText = paceMap[pace] ?? "balanced plans";
+    const topInterests = interests.slice(0, 2).map(i => i.toLowerCase());
+    if (topInterests.length >= 2) {
+        return `Expect ${styleText}, ${topInterests.join(' & ')}-focused activities, and ${paceText}.`;
+    } else if (topInterests.length === 1) {
+        return `Expect ${styleText}, ${topInterests[0]}-focused activities, and ${paceText}.`;
+    }
+    return `Expect ${styleText} and ${paceText}.`;
+}
+
+interface PersonalizationPreview {
+    tripType: string;
+    hotelTier: string;
+    dailyPace: string;
+}
+
+function getPersonalizationPreview(style: string, budget: string, pace: string): PersonalizationPreview {
+    const tripTypeMap: Record<string, string> = {
+        "Culture/History": "Cultural city exploration",
+        "Adventure/Outdoors": "Outdoor adventure",
+        "Relaxing/Wellness": "Wellness & spa retreat",
+        "Food & Drink": "Culinary journey",
+        "Nightlife": "Urban nightlife tour",
+    };
+    const hotelTierMap: Record<string, string> = {
+        "Budget ($)": "Hostels & budget hotels ($)",
+        "Moderate ($$)": "Mid-range hotels ($$)",
+        "Luxury ($$$)": "Luxury hotels ($$$)",
+    };
+    const dailyPaceMap: Record<string, string> = {
+        "Slow/Relaxed": "2–3 activities/day",
+        "Moderate": "3–4 activities/day",
+        "Fast/Packed": "5–6 activities/day",
+    };
+    return {
+        tripType: tripTypeMap[style] ?? "Curated travel experience",
+        hotelTier: hotelTierMap[budget] ?? "Mid-range hotels",
+        dailyPace: dailyPaceMap[pace] ?? "Balanced activities",
+    };
+}
+
+function getBehavioralInsights(style: string, pace: string, budget: string, interests: string[]): string[] {
+    const insights: string[] = [];
+    if (interests.includes("Museums") || style === "Culture/History") {
+        insights.push("You prefer cultural and historical activities");
+    }
+    if (style === "Adventure/Outdoors" || interests.includes("Mountains") || interests.includes("Nature")) {
+        insights.push("You're drawn to outdoor and nature experiences");
+    }
+    if (pace === "Fast/Packed") {
+        insights.push("You travel at a fast pace with packed schedules");
+    } else if (pace === "Slow/Relaxed") {
+        insights.push("You prefer slow, immersive travel experiences");
+    } else {
+        insights.push("You maintain a balanced, moderate travel pace");
+    }
+    if (budget === "Luxury ($$$)") {
+        insights.push("You prioritize premium experiences and comfort");
+    } else if (budget === "Budget ($)") {
+        insights.push("You maximize value and seek budget-friendly options");
+    } else {
+        insights.push("You balance quality and value in your trips");
+    }
+    if (interests.includes("Beaches")) {
+        insights.push("Coastal and beachfront stays are a top preference");
+    }
+    if (style === "Food & Drink") {
+        insights.push("You spend more on culinary experiences than average");
+    }
+    return insights.slice(0, 3);
+}
 
 export default function SettingsPage() {
     const { user, accessToken, updateUser, hydrateUser } = useAuthStore();
@@ -38,6 +134,12 @@ export default function SettingsPage() {
 
     const saveSuccessTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const dnaSuccessTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // Computed values — no network calls, pure derivations from state
+    const profileCompletion = computeProfileCompletion(dnaBudget, dnaStyle, dnaPace, dnaInterests, dnaRegions);
+    const aiExplanation = getAIExplanationText(dnaStyle, dnaPace, dnaInterests);
+    const preview = getPersonalizationPreview(dnaStyle, dnaBudget, dnaPace);
+    const behavioralInsights = getBehavioralInsights(dnaStyle, dnaPace, dnaBudget, dnaInterests);
 
     useEffect(() => {
         return () => {
@@ -111,6 +213,16 @@ export default function SettingsPage() {
         } else {
             setList([...list, item]);
         }
+    };
+
+    const handleResetDNA = () => {
+        setDnaBudget(BUDGET_RANGES[1]);
+        setDnaStyle(TRAVEL_STYLES[0]);
+        setDnaPace(TRAVEL_PACES[1]);
+        setDnaInterests([]);
+        setDnaRegions([]);
+        setDnaSaveSuccess(false);
+        setDnaSaveError(null);
     };
 
     const handleSaveDNA = async () => {
@@ -313,15 +425,118 @@ export default function SettingsPage() {
                             )}
                         </div>
                     </motion.section>
+
+                    {/* Notifications */}
+                    <motion.section {...fadeIn} transition={{ ...fadeIn.transition, delay: 0.05 }} className="bg-white/[0.02] border border-white/[0.05] rounded-2xl p-6 shadow-sm backdrop-blur-sm">
+                        <div className="flex items-center gap-2 mb-6">
+                            <Bell className="w-5 h-5 text-emerald-500" />
+                            <h2 className="text-lg font-bold text-white">Notifications</h2>
+                        </div>
+                        <div className="space-y-3">
+                            <label className="flex items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/[0.05] cursor-pointer hover:bg-white/[0.04] transition-all">
+                                <span className="text-sm font-medium text-slate-200">Send me travel insights &amp; updates</span>
+                                <input
+                                    type="checkbox"
+                                    checked={emailNotifications}
+                                    onChange={(e) => setEmailNotifications(e.target.checked)}
+                                    className="w-4 h-4 rounded border-white/20 bg-white/5 text-emerald-500 focus:ring-emerald-500/50"
+                                />
+                            </label>
+                            <label className="flex items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/[0.05] cursor-pointer hover:bg-white/[0.04] transition-all">
+                                <span className="text-sm font-medium text-slate-200">Remind me about upcoming trips and bookings</span>
+                                <input
+                                    type="checkbox"
+                                    checked={tripReminders}
+                                    onChange={(e) => setTripReminders(e.target.checked)}
+                                    className="w-4 h-4 rounded border-white/20 bg-white/5 text-emerald-500 focus:ring-emerald-500/50"
+                                />
+                            </label>
+                        </div>
+                    </motion.section>
+
+                    {/* Security */}
+                    <motion.section {...fadeIn} transition={{ ...fadeIn.transition, delay: 0.1 }} className="bg-white/[0.02] border border-white/[0.05] rounded-2xl p-6 shadow-sm backdrop-blur-sm">
+                        <div className="flex items-center gap-2 mb-6">
+                            <Shield className="w-5 h-5 text-emerald-500" />
+                            <h2 className="text-lg font-bold text-white">Security</h2>
+                        </div>
+                        <div className="space-y-3">
+                            <button className="w-full flex items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/[0.05] hover:bg-white/[0.04] transition-all text-left">
+                                <span className="text-sm font-medium text-slate-200">Change password</span>
+                                <span className="text-xs text-slate-500">→</span>
+                            </button>
+                            <div className="w-full flex items-center justify-between p-4 rounded-xl bg-white/[0.01] border border-white/[0.04] opacity-50 cursor-not-allowed">
+                                <span className="text-sm font-medium text-slate-400">Two-factor authentication</span>
+                                <span className="text-xs text-slate-600">Not available</span>
+                            </div>
+                        </div>
+                    </motion.section>
+
+                    {/* Subscription */}
+                    <motion.section {...fadeIn} transition={{ ...fadeIn.transition, delay: 0.15 }} className="bg-white/[0.02] border border-white/[0.05] rounded-2xl p-6 shadow-sm backdrop-blur-sm">
+                        <div className="flex items-center gap-2 mb-6">
+                            <CreditCard className="w-5 h-5 text-emerald-500" />
+                            <h2 className="text-lg font-bold text-white">Subscription</h2>
+                        </div>
+                        <div className="p-5 rounded-xl bg-white/[0.02] border border-white/[0.05]">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm font-medium text-slate-200">Free Plan</p>
+                                    <p className="text-xs text-slate-400 mt-1">Upgrade to Pro for premium features and unlimited AI planning.</p>
+                                </div>
+                                <button className="px-4 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-sm font-medium text-emerald-400 transition-all shadow-[0_0_12px_rgba(16,185,129,0.1)]">
+                                    Upgrade to Pro
+                                </button>
+                            </div>
+                        </div>
+                    </motion.section>
                     </div>
 
-                    {/* ── Right column: Travel DNA, Notifications, Security, Subscription ── */}
+                    {/* ── Right column: Travel DNA + Behavioral Learning ── */}
                     <div className="space-y-6">
                     <motion.section {...fadeIn} transition={{ ...fadeIn.transition, delay: 0.02 }} className="bg-white/[0.02] border border-white/[0.05] rounded-2xl p-6 shadow-sm backdrop-blur-sm">
-                        <div className="flex items-center gap-2 mb-6">
-                            <Sparkles className="w-5 h-5 text-emerald-500" />
-                            <h2 className="text-lg font-bold text-white">Travel DNA</h2>
+                        {/* Travel DNA header */}
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                            <div className="flex items-center gap-2">
+                                <Sparkles className="w-5 h-5 text-emerald-500 shrink-0" />
+                                <h2 className="text-lg font-bold text-white">Travel DNA</h2>
+                            </div>
+                            <span className="text-[10px] text-emerald-400/70 font-medium mt-0.5 shrink-0">✦ Used by your AI to plan better trips</span>
                         </div>
+
+                        {/* AI explanation */}
+                        <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+                            These preferences help us personalize your destinations, hotels, and itineraries.{" "}
+                            {dnaInterests.length > 0 && (
+                                <span className="text-slate-400">{aiExplanation}</span>
+                            )}
+                        </p>
+
+                        {/* Profile completeness bar */}
+                        <div className="mb-6 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-xs font-medium text-slate-400">Travel Profile Completeness</span>
+                                <span className={`text-xs font-semibold ${profileCompletion === 100 ? "text-emerald-400" : "text-slate-300"}`}>
+                                    {profileCompletion}%
+                                </span>
+                            </div>
+                            <div className="h-1.5 w-full bg-white/[0.06] rounded-full overflow-hidden">
+                                <motion.div
+                                    className="h-full rounded-full bg-gradient-to-r from-emerald-600 to-emerald-400"
+                                    initial={{ width: 0 }}
+                                    animate={{ width: `${profileCompletion}%` }}
+                                    transition={{ duration: 0.6, ease: "easeOut" }}
+                                />
+                            </div>
+                            {profileCompletion < 100 && (
+                                <p className="text-[10px] text-slate-600 mt-1.5">
+                                    {profileCompletion === 0
+                                        ? "Select your preferences below to complete your profile"
+                                        : "Select more preferences to improve your AI recommendations"}
+                                </p>
+                            )}
+                        </div>
+
                         <div className="space-y-6">
                             {!profileLoaded ? (
                                 <div className="space-y-4">
@@ -381,40 +596,79 @@ export default function SettingsPage() {
                                     </div>
 
                                     <div className="space-y-3">
-                                        <label className="text-sm font-semibold text-slate-300">Interests</label>
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-sm font-semibold text-slate-300">Interests</label>
+                                            <span className="text-[10px] text-slate-600">Used to personalize activities</span>
+                                        </div>
                                         <div className="flex flex-wrap gap-2">
-                                            {INTERESTS.map(interest => (
-                                                <button
-                                                    key={interest}
-                                                    onClick={() => toggleSelection(interest, dnaInterests, setDnaInterests)}
-                                                    disabled={dnaSaving}
-                                                    className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-all duration-200 ease-out disabled:opacity-50 ${dnaInterests.includes(interest)
-                                                        ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-400"
-                                                        : "bg-white/[0.04] border-white/[0.08] text-slate-300 hover:bg-white/[0.08] hover:text-white"
-                                                        }`}
-                                                >
-                                                    {interest}
-                                                </button>
-                                            ))}
+                                            {INTERESTS.map(interest => {
+                                                const selected = dnaInterests.includes(interest);
+                                                return (
+                                                    <button
+                                                        key={interest}
+                                                        onClick={() => toggleSelection(interest, dnaInterests, setDnaInterests)}
+                                                        disabled={dnaSaving}
+                                                        className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-all duration-200 ease-out disabled:opacity-50 ${selected
+                                                            ? "bg-emerald-500/20 border-emerald-500/60 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.2)]"
+                                                            : "bg-white/[0.03] border-white/[0.07] text-slate-400 hover:bg-white/[0.08] hover:text-white hover:border-white/[0.15]"
+                                                            }`}
+                                                    >
+                                                        {interest}
+                                                    </button>
+                                                );
+                                            })}
                                         </div>
                                     </div>
 
                                     <div className="space-y-3">
-                                        <label className="text-sm font-semibold text-slate-300">Preferred Regions</label>
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-sm font-semibold text-slate-300">Preferred Regions</label>
+                                            {dnaRegions.length > 0 && (
+                                                <span className="text-[10px] text-slate-600">First selected = primary</span>
+                                            )}
+                                        </div>
                                         <div className="flex flex-wrap gap-2">
-                                            {REGIONS.map(region => (
-                                                <button
-                                                    key={region}
-                                                    onClick={() => toggleSelection(region, dnaRegions, setDnaRegions)}
-                                                    disabled={dnaSaving}
-                                                    className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-all duration-200 ease-out disabled:opacity-50 ${dnaRegions.includes(region)
-                                                        ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-400"
-                                                        : "bg-white/[0.04] border-white/[0.08] text-slate-300 hover:bg-white/[0.08] hover:text-white"
-                                                        }`}
-                                                >
-                                                    {region}
-                                                </button>
-                                            ))}
+                                            {REGIONS.map(region => {
+                                                const selected = dnaRegions.includes(region);
+                                                const isPrimary = dnaRegions[0] === region;
+                                                return (
+                                                    <button
+                                                        key={region}
+                                                        onClick={() => toggleSelection(region, dnaRegions, setDnaRegions)}
+                                                        disabled={dnaSaving}
+                                                        className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-all duration-200 ease-out disabled:opacity-50 relative ${isPrimary
+                                                            ? "bg-amber-500/15 border-amber-500/50 text-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.15)]"
+                                                            : selected
+                                                                ? "bg-emerald-500/20 border-emerald-500/60 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.2)]"
+                                                                : "bg-white/[0.03] border-white/[0.07] text-slate-400 hover:bg-white/[0.08] hover:text-white hover:border-white/[0.15]"
+                                                            }`}
+                                                    >
+                                                        {region}
+                                                        {isPrimary && (
+                                                            <span className="ml-1.5 text-[9px] text-amber-400/80 font-semibold uppercase tracking-wide">Primary</span>
+                                                        )}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* Live personalization preview */}
+                                    <div className="rounded-xl bg-white/[0.02] border border-white/[0.05] p-4">
+                                        <p className="text-xs font-semibold text-slate-400 mb-3 uppercase tracking-wider">Your travel style generates</p>
+                                        <div className="space-y-2">
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-xs text-slate-500">Trip Type</span>
+                                                <span className="text-xs font-medium text-slate-200">{preview.tripType}</span>
+                                            </div>
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-xs text-slate-500">Hotel Tier</span>
+                                                <span className="text-xs font-medium text-slate-200">{preview.hotelTier}</span>
+                                            </div>
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-xs text-slate-500">Daily Pace</span>
+                                                <span className="text-xs font-medium text-slate-200">{preview.dailyPace}</span>
+                                            </div>
                                         </div>
                                     </div>
 
@@ -431,86 +685,52 @@ export default function SettingsPage() {
                                         </p>
                                     )}
 
-                                    <button
-                                        onClick={handleSaveDNA}
-                                        disabled={dnaSaving}
-                                        className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold transition-all duration-200 flex items-center gap-2"
-                                    >
-                                        {dnaSaving ? (
-                                            <>
-                                                <Loader2 className="w-4 h-4 animate-spin" />
-                                                Saving...
-                                            </>
-                                        ) : (
-                                            "Save Travel DNA"
-                                        )}
-                                    </button>
+                                    <div className="flex items-center gap-3">
+                                        <button
+                                            onClick={handleSaveDNA}
+                                            disabled={dnaSaving}
+                                            className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold transition-all duration-200 flex items-center gap-2"
+                                        >
+                                            {dnaSaving ? (
+                                                <>
+                                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                                    Saving...
+                                                </>
+                                            ) : (
+                                                "Save Travel DNA"
+                                            )}
+                                        </button>
+                                        <button
+                                            onClick={handleResetDNA}
+                                            disabled={dnaSaving}
+                                            className="px-4 py-2.5 rounded-xl bg-white/[0.03] border border-white/[0.07] hover:bg-white/[0.07] hover:border-white/[0.12] disabled:opacity-50 disabled:cursor-not-allowed text-slate-400 hover:text-slate-300 text-sm font-medium transition-all duration-200 flex items-center gap-2"
+                                        >
+                                            <RotateCcw className="w-3.5 h-3.5" />
+                                            Reset
+                                        </button>
+                                    </div>
                                 </motion.div>
                             )}
                         </div>
                     </motion.section>
 
-                    <motion.section {...fadeIn} transition={{ ...fadeIn.transition, delay: 0.05 }} className="bg-white/[0.02] border border-white/[0.05] rounded-2xl p-6 shadow-sm backdrop-blur-sm">
-                        <div className="flex items-center gap-2 mb-6">
-                            <Bell className="w-5 h-5 text-emerald-500" />
-                            <h2 className="text-lg font-bold text-white">Notifications</h2>
+                    {/* ── Behavioral Learning card ── */}
+                    <motion.section {...fadeIn} transition={{ ...fadeIn.transition, delay: 0.04 }} className="bg-white/[0.02] border border-white/[0.05] rounded-2xl p-6 shadow-sm backdrop-blur-sm">
+                        <div className="flex items-center gap-2 mb-4">
+                            <Brain className="w-5 h-5 text-emerald-500" />
+                            <h2 className="text-lg font-bold text-white">Learning from your trips</h2>
                         </div>
-                        <div className="space-y-3">
-                            <label className="flex items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/[0.05] cursor-pointer hover:bg-white/[0.04] transition-all">
-                                <span className="text-sm font-medium text-slate-200">Email notifications</span>
-                                <input
-                                    type="checkbox"
-                                    checked={emailNotifications}
-                                    onChange={(e) => setEmailNotifications(e.target.checked)}
-                                    className="w-4 h-4 rounded border-white/20 bg-white/5 text-emerald-500 focus:ring-emerald-500/50"
-                                />
-                            </label>
-                            <label className="flex items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/[0.05] cursor-pointer hover:bg-white/[0.04] transition-all">
-                                <span className="text-sm font-medium text-slate-200">Trip reminders</span>
-                                <input
-                                    type="checkbox"
-                                    checked={tripReminders}
-                                    onChange={(e) => setTripReminders(e.target.checked)}
-                                    className="w-4 h-4 rounded border-white/20 bg-white/5 text-emerald-500 focus:ring-emerald-500/50"
-                                />
-                            </label>
-                        </div>
-                    </motion.section>
-
-                    <motion.section {...fadeIn} transition={{ ...fadeIn.transition, delay: 0.1 }} className="bg-white/[0.02] border border-white/[0.05] rounded-2xl p-6 shadow-sm backdrop-blur-sm">
-                        <div className="flex items-center gap-2 mb-6">
-                            <Shield className="w-5 h-5 text-emerald-500" />
-                            <h2 className="text-lg font-bold text-white">Security</h2>
-                        </div>
-                        <div className="space-y-3">
-                            <button className="w-full flex items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/[0.05] hover:bg-white/[0.04] transition-all text-left">
-                                <span className="text-sm font-medium text-slate-200">Change password</span>
-                                <span className="text-xs text-slate-500">→</span>
-                            </button>
-                            <button className="w-full flex items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/[0.05] hover:bg-white/[0.04] transition-all text-left cursor-not-allowed opacity-80">
-                                <span className="text-sm font-medium text-slate-200">Two-factor authentication</span>
-                                <span className="text-xs text-emerald-500/80 bg-emerald-500/10 px-2 py-0.5 rounded-full">Coming soon</span>
-                            </button>
-                        </div>
-                    </motion.section>
-
-                    <motion.section {...fadeIn} transition={{ ...fadeIn.transition, delay: 0.15 }} className="bg-white/[0.02] border border-white/[0.05] rounded-2xl p-6 shadow-sm backdrop-blur-sm">
-                        <div className="flex items-center gap-2 mb-6">
-                            <CreditCard className="w-5 h-5 text-emerald-500" />
-                            <h2 className="text-lg font-bold text-white">Subscription</h2>
-                        </div>
-                        <div className="p-5 rounded-xl bg-white/[0.02] border border-white/[0.05]">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm font-medium text-slate-200">Free Plan</p>
-                                    <p className="text-xs text-slate-400 mt-1">Upgrade to Pro for premium features and unlimited AI planning.</p>
+                        <p className="text-xs text-slate-500 mb-4">Patterns your AI has identified from your preferences.</p>
+                        <div className="space-y-2">
+                            {behavioralInsights.map((insight, i) => (
+                                <div key={i} className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+                                    <span className="text-emerald-500/60 text-xs mt-0.5 shrink-0">✦</span>
+                                    <span className="text-sm text-slate-300 leading-snug">{insight}</span>
                                 </div>
-                                <button className="px-4 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-sm font-medium text-emerald-400 transition-all shadow-[0_0_12px_rgba(16,185,129,0.1)]">
-                                    Upgrade to Pro
-                                </button>
-                            </div>
+                            ))}
                         </div>
                     </motion.section>
+
                     </div>
                     {/* ── End right column ── */}
                 </div>
