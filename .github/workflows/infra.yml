@@ -173,11 +173,20 @@ jobs:
       - name: terraform init
         id: init
         run: |
-          terraform init \
-            -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
-            -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
-            -reconfigure \
-            -input=false
+          # Provider install hits registry.terraform.io → GitHub checksums; 504s are transient.
+          for attempt in 1 2 3 4 5 6; do
+            echo "::notice::terraform init attempt ${attempt}/6..."
+            if terraform init \
+              -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
+              -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
+              -reconfigure \
+              -input=false; then
+              exit 0
+            fi
+            echo "::warning::terraform init failed (registry timeout/network); retrying in 30s..."
+            [ "$attempt" = "6" ] && { echo "::error::terraform init failed after 6 attempts"; exit 1; }
+            sleep 30
+          done
 
       - name: terraform validate
         id: validate
@@ -257,11 +266,20 @@ jobs:
 
       - name: terraform init
         run: |
-          terraform init \
-            -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
-            -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
-            -reconfigure \
-            -input=false
+          # Provider install hits registry.terraform.io → GitHub checksums; 504s are transient.
+          for attempt in 1 2 3 4 5 6; do
+            echo "::notice::terraform init attempt ${attempt}/6..."
+            if terraform init \
+              -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
+              -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
+              -reconfigure \
+              -input=false; then
+              exit 0
+            fi
+            echo "::warning::terraform init failed (registry timeout/network); retrying in 30s..."
+            [ "$attempt" = "6" ] && { echo "::error::terraform init failed after 6 attempts"; exit 1; }
+            sleep 30
+          done
 
       - name: terraform plan
         id: plan
@@ -416,11 +434,20 @@ jobs:
 
       - name: terraform init
         run: |
-          terraform init \
-            -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
-            -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
-            -reconfigure \
-            -input=false
+          # Provider install hits registry.terraform.io → GitHub checksums; 504s are transient.
+          for attempt in 1 2 3 4 5 6; do
+            echo "::notice::terraform init attempt ${attempt}/6..."
+            if terraform init \
+              -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
+              -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
+              -reconfigure \
+              -input=false; then
+              exit 0
+            fi
+            echo "::warning::terraform init failed (registry timeout/network); retrying in 30s..."
+            [ "$attempt" = "6" ] && { echo "::error::terraform init failed after 6 attempts"; exit 1; }
+            sleep 30
+          done
 
       # Always push the placeholder to :placeholder tag before terraform apply.
       # Using a dedicated tag keeps :latest untouched so the real CI image
@@ -542,11 +569,20 @@ jobs:
 
       - name: terraform init
         run: |
-          terraform init \
-            -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
-            -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
-            -reconfigure \
-            -input=false
+          # Provider install hits registry.terraform.io → GitHub checksums; 504s are transient.
+          for attempt in 1 2 3 4 5 6; do
+            echo "::notice::terraform init attempt ${attempt}/6..."
+            if terraform init \
+              -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
+              -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
+              -reconfigure \
+              -input=false; then
+              exit 0
+            fi
+            echo "::warning::terraform init failed (registry timeout/network); retrying in 30s..."
+            [ "$attempt" = "6" ] && { echo "::error::terraform init failed after 6 attempts"; exit 1; }
+            sleep 30
+          done
 
       # Temporarily remove prevent_destroy from the registry before destroying.
       # The lifecycle block is a Terraform meta-argument — it cannot be overridden

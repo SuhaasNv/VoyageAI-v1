@@ -375,11 +375,19 @@ jobs:
       - name: terraform init
         if: steps.infra-changed.outputs.changed != '0'
         run: |
-          terraform init \
-            -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
-            -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
-            -reconfigure \
-            -input=false
+          for attempt in 1 2 3 4 5 6; do
+            echo "::notice::terraform init attempt ${attempt}/6..."
+            if terraform init \
+              -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
+              -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
+              -reconfigure \
+              -input=false; then
+              exit 0
+            fi
+            echo "::warning::terraform init failed (registry timeout/network); retrying in 30s..."
+            [ "$attempt" = "6" ] && { echo "::error::terraform init failed after 6 attempts"; exit 1; }
+            sleep 30
+          done
 
       # Always push both placeholder images before terraform apply.
       # Using :placeholder keeps :latest untouched so real CI images
