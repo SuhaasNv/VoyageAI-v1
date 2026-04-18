@@ -31,7 +31,7 @@ variable "region" {
 # ── Project ───────────────────────────────────────────────────────────────────
 
 variable "project_name" {
-  description = "DigitalOcean project name. Leave unset for VoyageAI-<environment>. Set explicitly (e.g. VoyageAI) when importing an existing project."
+  description = "DigitalOcean project name. Leave unset for a single shared project named \"VoyageAI\" (all environments). Override when importing a different existing project."
   type        = string
   nullable    = true
   default     = null

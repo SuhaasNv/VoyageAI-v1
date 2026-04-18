@@ -27,7 +27,7 @@ resource "digitalocean_project" "voyageai" {
   name        = local.project_name
   description = "VoyageAI — AI-powered travel planning app"
   purpose     = "Web Application"
-  environment = title(var.environment) # "Staging" | "Production"
+  # No environment: one DO project "VoyageAI" holds every deployment; App Platform apps are still suffixed with var.environment.
 }
 
 # ── App Platform — LangGraph service ─────────────────────────────────────────
