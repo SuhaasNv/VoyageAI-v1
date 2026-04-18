@@ -880,11 +880,12 @@ jobs:
           scanners: "vuln,secret,config"
 
       - name: Upload SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy-results.sarif
           category: trivy-container
+        continue-on-error: true
 
       - name: Trivy — gate on CRITICAL CVEs (blocks pipeline)
         # Non-blocking when skip_tests or ignore_test_failures is active
@@ -1099,11 +1100,12 @@ jobs:
           scanners: "vuln,secret,config"
 
       - name: Upload SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy-nextjs.sarif
           category: trivy-nextjs
+        continue-on-error: true
 
       - name: Trivy — gate on CRITICAL CVEs
         uses: aquasecurity/trivy-action@master
@@ -1294,7 +1296,7 @@ jobs:
           artifact_name: zap-report-${{ github.sha }}
 
       - name: Upload ZAP SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: zap_scan_report.json
