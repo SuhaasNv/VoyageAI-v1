@@ -64,7 +64,8 @@ env:
   PYTHON_VERSION: "3.11"
   # Registry slug — must match Terraform (default voyageai-docr unless REGISTRY_NAME / DO_REGISTRY_NAME is set).
   DOCR_REGISTRY_NAME: ${{ secrets.DO_REGISTRY_NAME || vars.REGISTRY_NAME || 'voyageai-docr' }}
-  DOCR_DOCKER_USERNAME: ${{ secrets.DIGITALOCEAN_REGISTRY_USER || vars.DIGITALOCEAN_EMAIL }}
+  # Default username "token" + PAT matches DO `docker login -u token` (avoids 401 if email unset or wrong account).
+  DOCR_DOCKER_USERNAME: ${{ secrets.DIGITALOCEAN_REGISTRY_USER || vars.DIGITALOCEAN_EMAIL || 'token' }}
 
 defaults:
   run:
@@ -97,8 +98,8 @@ defaults:
 #  16 dast          ← trivy-scan  (main only)  ──────┘
 #
 #  Required secrets for stages 15–16:
-#    DIGITALOCEAN_ACCESS_TOKEN  — DO API token (write:registry)
-#    DIGITALOCEAN_EMAIL         — Repo Variable — DO login email (DOCR docker login + Trivy registry scan)
+#    DIGITALOCEAN_ACCESS_TOKEN  — DO API token (write:registry; rotate on 401 from registry auth)
+#    DIGITALOCEAN_EMAIL         — Optional — DO account email for docker login; if unset, workflows use username "token" + PAT
 #    DO_REGISTRY_NAME           — registry slug (overrides vars.REGISTRY_NAME; default voyageai-docr)
 #    PRODUCTION_URL             — public Railway app URL for DAST (main only), e.g. https://xxx.up.railway.app
 #
@@ -944,8 +945,8 @@ jobs:
   #      Attaches SLSA provenance + CycloneDX SBOM to the image manifest.
   #
   #  Required secrets:
-  #    DIGITALOCEAN_ACCESS_TOKEN  — DO personal access token (write:registry)
-  #    DIGITALOCEAN_EMAIL         — Repo Variable — DO login email (for DOCR docker/buildx + Trivy pull)
+#    DIGITALOCEAN_ACCESS_TOKEN  — DO personal access token (write:registry)
+#    DIGITALOCEAN_EMAIL         — Optional — DO login email for DOCR; else username "token" + PAT
   #    DO_REGISTRY_NAME           — registry slug (overrides vars; default voyageai-docr)
   # ══════════════════════════════════════════════════════════════════════════
   push-to-docr:
@@ -968,13 +969,6 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      - name: Require DO account email for DOCR
-        run: |
-          if [ -z "${{ env.DOCR_DOCKER_USERNAME }}" ]; then
-            echo "::error::Set Variable DIGITALOCEAN_EMAIL or Secret DIGITALOCEAN_REGISTRY_USER (your DO login email) for docker push to registry.digitalocean.com."
-            exit 1
-          fi
 
       - name: Log in to DigitalOcean Container Registry
         uses: docker/login-action@v3
@@ -1169,8 +1163,8 @@ jobs:
   #       Re-builds with DOCR registry tags using the GHA layer cache.
   #
   #  Required secrets:
-  #    DIGITALOCEAN_ACCESS_TOKEN  — DO personal access token (write:registry)
-  #    DIGITALOCEAN_EMAIL         — Repo Variable — DO login email (for DOCR docker/buildx + Trivy pull)
+#    DIGITALOCEAN_ACCESS_TOKEN  — DO personal access token (write:registry)
+#    DIGITALOCEAN_EMAIL         — Optional — DO login email for DOCR; else username "token" + PAT
   #    DO_REGISTRY_NAME           — registry slug (overrides vars; default voyageai-docr)
   # ══════════════════════════════════════════════════════════════════════════
   push-nextjs-to-docr:
@@ -1193,13 +1187,6 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      - name: Require DO account email for DOCR
-        run: |
-          if [ -z "${{ env.DOCR_DOCKER_USERNAME }}" ]; then
-            echo "::error::Set Variable DIGITALOCEAN_EMAIL or Secret DIGITALOCEAN_REGISTRY_USER (your DO login email) for docker push to registry.digitalocean.com."
-            exit 1
-          fi
 
       - name: Log in to DigitalOcean Container Registry
         uses: docker/login-action@v3
