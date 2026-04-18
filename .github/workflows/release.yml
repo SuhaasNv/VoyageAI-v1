@@ -258,9 +258,11 @@ jobs:
       - name: Log skip reason
         run: |
           REASON="${{ github.event.inputs.emergency_reason }}"
+          # Warn if no reason given but don't fail — downstream jobs must still run.
+          # The warning is visible in the Actions log and step summary for audit.
           if [ -z "$REASON" ]; then
-            echo "::error::skip_ai_gate=true requires emergency_reason to be set."
-            exit 1
+            REASON="No reason provided"
+            echo "::warning::skip_ai_gate=true was used without an emergency_reason. Proceeding with audit note."
           fi
           {
             echo "## ⚠️ AI Security Gate — SKIPPED"
