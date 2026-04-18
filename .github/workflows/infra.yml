@@ -388,7 +388,8 @@ jobs:
 
   # ════════════════════════════════════════════════════════════════════════════
   #  APPLY
-  #  Applies the exact binary plan from the plan job — no second plan run.
+  #  Creates DOCR via targeted apply, pushes placeholders, re-plans, then applies
+  #  (plan job artifact is not used here — state changes after registry bootstrap).
   #  Only runs on push to main or manual workflow_dispatch with action=apply.
   #  Posts the Terraform outputs (registry URL, app URL) to the step summary.
   # ════════════════════════════════════════════════════════════════════════════
@@ -453,20 +454,20 @@ jobs:
             sleep 30
           done
 
-      # Always push the placeholder to :placeholder tag before terraform apply.
-      # Using a dedicated tag keeps :latest untouched so the real CI image
-      # is never overwritten by infra runs.  The app is created with
-      # tag="placeholder"; the docker-push job later triggers a redeployment
-      # to :latest via doctl.
-      # Always push both placeholder images before terraform apply.
-      # Using :placeholder keeps :latest untouched so the real CI image
-      # is never overwritten by infra runs.  Both apps are created with
-      # tag="placeholder"; docker-push jobs later trigger redeployments.
+      # DOCR must exist before docker push (cannot push to a registry Terraform has not created yet).
+      - name: Terraform apply — container registry only (before DOCR push)
+        run: |
+          terraform apply -input=false -no-color -auto-approve \
+            -target=digitalocean_container_registry.voyageai \
+            -target=digitalocean_container_registry_docker_credentials.app_platform
+
+      # Always push both placeholder images before full apply (App Platform validates image refs).
       - name: Push placeholder images to DOCR
         run: |
           REGISTRY="${DOCR_REGISTRY}"
           echo "$DIGITALOCEAN_ACCESS_TOKEN" | \
             docker login registry.digitalocean.com --username token --password-stdin
+          echo "::notice::If push fails with unauthorized, ensure DIGITALOCEAN_ACCESS_TOKEN has write:registry (or Full Access)."
           # LangGraph placeholder
           LG_IMAGE="${REGISTRY}/voyageai-langgraph:placeholder"
           docker build -t "$LG_IMAGE" placeholder/
@@ -476,14 +477,28 @@ jobs:
           docker build -t "$NX_IMAGE" placeholder/nextjs/
           docker push "$NX_IMAGE"
 
-      - name: Download plan artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: tfplan-${{ github.sha }}
-          path: infra/
+      # Re-plan after registry exists + placeholders are pushed — plan job artifact is stale after -target apply + push.
+      - name: terraform plan (post-registry, for apply)
+        id: replan
+        run: |
+          set +e
+          terraform plan \
+            -out=tfplan.binary \
+            -input=false \
+            -no-color \
+            -detailed-exitcode > replan.txt 2>&1
+          EC=$?
+          echo "exitcode=${EC}" >> "$GITHUB_OUTPUT"
+          cat replan.txt
+          if [ "$EC" -eq 1 ]; then
+            echo "::error::terraform plan failed (see replan.txt)"
+            exit 1
+          fi
+          exit 0
 
       - name: terraform apply (saved plan)
         id: apply
+        if: steps.replan.outputs.exitcode != '1'
         run: terraform apply -input=false -no-color tfplan.binary
 
       # Capture outputs so they can be shown in the summary + used downstream

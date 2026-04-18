@@ -392,7 +392,15 @@ jobs:
             sleep 30
           done
 
-      # Always push both placeholder images before terraform apply.
+      # DOCR must exist before docker push — App spec references :placeholder images.
+      - name: Terraform apply — container registry only (before DOCR push)
+        if: steps.infra-changed.outputs.changed != '0'
+        run: |
+          terraform apply -input=false -no-color -auto-approve \
+            -target=digitalocean_container_registry.voyageai \
+            -target=digitalocean_container_registry_docker_credentials.app_platform
+
+      # Always push both placeholder images before full terraform apply.
       # Using :placeholder keeps :latest untouched so real CI images
       # are never overwritten by infra runs.  docker-push jobs later
       # trigger redeployments to :latest via doctl.
@@ -403,6 +411,7 @@ jobs:
           REGISTRY="registry.digitalocean.com/${{ vars.REGISTRY_NAME || format('voyageai-{0}', (github.event_name == 'workflow_dispatch' && github.event.inputs.environment) || 'production') }}"
           echo "$DIGITALOCEAN_ACCESS_TOKEN" | \
             docker login registry.digitalocean.com --username token --password-stdin
+          echo "::notice::If push fails with unauthorized, ensure DIGITALOCEAN_ACCESS_TOKEN has write:registry (or Full Access)."
           # LangGraph placeholder
           docker build -t "${REGISTRY}/voyageai-langgraph:placeholder" placeholder/
           docker push "${REGISTRY}/voyageai-langgraph:placeholder"
