@@ -568,7 +568,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./python/agent_graph
-          dockerfile: ./python/agent_graph/Dockerfile
+          file: Dockerfile
           push: false
           tags: ${{ steps.meta-local.outputs.tags }}
           outputs: type=docker,dest=/tmp/langgraph-image.tar
@@ -681,7 +681,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./python/agent_graph
-          dockerfile: ./python/agent_graph/Dockerfile
+          file: Dockerfile
           push: true
           tags: ${{ steps.meta-docr.outputs.tags }}
           labels: ${{ steps.meta-docr.outputs.labels }}
@@ -802,7 +802,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          dockerfile: Dockerfile.app
+          file: Dockerfile.app
           push: false
           tags: ${{ steps.meta-local.outputs.tags }}
           outputs: type=docker,dest=/tmp/nextjs-image.tar
@@ -912,7 +912,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          dockerfile: Dockerfile.app
+          file: Dockerfile.app
           push: true
           tags: ${{ steps.meta-docr.outputs.tags }}
           labels: ${{ steps.meta-docr.outputs.labels }}
