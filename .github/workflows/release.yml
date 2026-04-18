@@ -511,8 +511,10 @@ jobs:
       (needs.ai-gate.result == 'success' || needs.ai-gate-skipped.result == 'success')
     runs-on: ubuntu-latest
     outputs:
-      nextjs_url:    ${{ steps.fetch.outputs.nextjs_url }}
-      langgraph_url: ${{ steps.fetch.outputs.langgraph_url }}
+      nextjs_url:       ${{ steps.fetch.outputs.nextjs_url }}
+      langgraph_url:    ${{ steps.fetch.outputs.langgraph_url }}
+      nextjs_app_id:    ${{ steps.fetch.outputs.nextjs_app_id }}
+      langgraph_app_id: ${{ steps.fetch.outputs.langgraph_app_id }}
 
     steps:
       - name: Install doctl
@@ -523,26 +525,43 @@ jobs:
       - name: Fetch App URLs from DigitalOcean
         id: fetch
         run: |
+          set -euo pipefail
           ENV="${{ github.event.inputs.environment || 'production' }}"
+          APPS_JSON=$(doctl apps list --output json 2>/dev/null || echo '[]')
 
-          NEXTJS_URL=$(doctl apps list --output json 2>/dev/null \
-            | jq -r --arg n "voyageai-nextjs-${ENV}" \
-              '.[] | select(.spec.name == $n) | .default_ingress // .live_url // ""' \
-            | head -1)
-
-          LG_URL=$(doctl apps list --output json 2>/dev/null \
-            | jq -r --arg n "voyageai-langgraph-${ENV}" \
-              '.[] | select(.spec.name == $n) | .default_ingress // .live_url // ""' \
-            | head -1)
+          # doctl may return a bare array or { "apps": [...] }; list payloads may omit spec.name (use active_deployment.spec.name).
+          LINE=$(echo "$APPS_JSON" | jq -r --arg nxs "voyageai-nextjs-${ENV}" --arg nlg "voyageai-langgraph-${ENV}" '
+            def applist:
+              if type == "object" and (.apps | type == "array") then .apps
+              elif type == "array" then .
+              else [] end;
+            def appname:
+              ((.spec // {}) | .name // "") as $sn
+              | if $sn != "" then $sn
+                else (((.active_deployment // {}) | .spec // {}) | .name // "")
+                end;
+            def row($w):
+              ((applist | map(select(appname == $w)) | .[0]) // null)
+              | if . == null then ["",""]
+                else [(.id // ""), (.live_url // .default_ingress // "")]
+                end;
+            (row($nxs) + row($nlg)) | @tsv
+          ')
+          [ -z "$LINE" ] && LINE=$'\t\t\t'
+          IFS=$'\t' read -r NEXTJS_ID NEXTJS_URL LG_ID LG_URL <<< "$LINE"
 
           # Fall back to Terraform outputs if doctl returned nothing
           [ -z "$NEXTJS_URL" ] && NEXTJS_URL="${{ needs.infra-apply.outputs.nextjs_app_url }}"
           [ -z "$LG_URL" ]     && LG_URL="${{ needs.infra-apply.outputs.app_url }}"
+          [ -z "$NEXTJS_ID" ] && NEXTJS_ID="${{ needs.infra-apply.outputs.nextjs_app_id }}"
+          [ -z "$LG_ID" ]     && LG_ID="${{ needs.infra-apply.outputs.app_id }}"
 
-          echo "nextjs_url=${NEXTJS_URL}"    >> "$GITHUB_OUTPUT"
-          echo "langgraph_url=${LG_URL}"     >> "$GITHUB_OUTPUT"
-          echo "✅ Next.js URL:   ${NEXTJS_URL}"
-          echo "✅ LangGraph URL: ${LG_URL}"
+          echo "nextjs_url=${NEXTJS_URL}"       >> "$GITHUB_OUTPUT"
+          echo "langgraph_url=${LG_URL}"        >> "$GITHUB_OUTPUT"
+          echo "nextjs_app_id=${NEXTJS_ID}"     >> "$GITHUB_OUTPUT"
+          echo "langgraph_app_id=${LG_ID}"      >> "$GITHUB_OUTPUT"
+          echo "✅ Next.js URL:   ${NEXTJS_URL} (id=${NEXTJS_ID:-none})"
+          echo "✅ LangGraph URL: ${LG_URL} (id=${LG_ID:-none})"
 
   # ════════════════════════════════════════════════════════════════════════════
   #  STAGE 2b — DOCKER: BUILD → TRIVY SCAN → PUSH TO DOCR
@@ -561,11 +580,12 @@ jobs:
   # ════════════════════════════════════════════════════════════════════════════
   docker-push:
     name: "2b · Docker — Build · Trivy · Push to DOCR"
-    needs: [ai-gate, ai-gate-skipped, infra-apply]
+    needs: [ai-gate, ai-gate-skipped, infra-apply, resolve-urls]
     if: |
       always() &&
       (needs.ai-gate.result == 'success' || needs.ai-gate-skipped.result == 'success') &&
-      (needs.infra-apply.result == 'success' || needs.infra-apply.result == 'skipped')
+      (needs.infra-apply.result == 'success' || needs.infra-apply.result == 'skipped') &&
+      (needs.resolve-urls.result == 'success' || needs.resolve-urls.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -758,13 +778,24 @@ jobs:
       # picks up the real image.  Skipped if infra-apply did not surface an ID.
       - name: Redeploy LangGraph App Platform with real image
         run: |
+          set -euo pipefail
           APP_ID="${{ needs.infra-apply.outputs.app_id }}"
+          if [ -z "$APP_ID" ]; then APP_ID="${{ needs.resolve-urls.outputs.langgraph_app_id }}"; fi
           if [ -z "$APP_ID" ]; then
             ENV="${{ github.event.inputs.environment || 'production' }}"
-            APP_ID=$(doctl apps list --output json 2>/dev/null \
-              | jq -r --arg n "voyageai-langgraph-${ENV}" \
-                '.[] | select(.spec.name == $n) | .id // ""' \
-              | head -1)
+            APPS_JSON=$(doctl apps list --output json 2>/dev/null || echo '[]')
+            APP_ID=$(echo "$APPS_JSON" | jq -r --arg n "voyageai-langgraph-${ENV}" '
+              def applist:
+                if type == "object" and (.apps | type == "array") then .apps
+                elif type == "array" then .
+                else [] end;
+              def appname:
+                ((.spec // {}) | .name // "") as $sn
+                | if $sn != "" then $sn
+                  else (((.active_deployment // {}) | .spec // {}) | .name // "")
+                  end;
+              (applist | map(select(appname == $n)) | .[0] // empty) | (.id // empty)
+            ')
           fi
           if [ -z "$APP_ID" ]; then
             echo "⚠️ Could not find LangGraph app ID — skipping redeploy trigger"
@@ -793,11 +824,12 @@ jobs:
   # ════════════════════════════════════════════════════════════════════════════
   docker-push-nextjs:
     name: "2b-NX · Docker — Next.js Build · Trivy · Push to DOCR"
-    needs: [ai-gate, ai-gate-skipped, infra-apply]
+    needs: [ai-gate, ai-gate-skipped, infra-apply, resolve-urls]
     if: |
       always() &&
       (needs.ai-gate.result == 'success' || needs.ai-gate-skipped.result == 'success') &&
-      (needs.infra-apply.result == 'success' || needs.infra-apply.result == 'skipped')
+      (needs.infra-apply.result == 'success' || needs.infra-apply.result == 'skipped') &&
+      (needs.resolve-urls.result == 'success' || needs.resolve-urls.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -974,14 +1006,25 @@ jobs:
 
       - name: Redeploy Next.js App Platform with real image
         run: |
-          # Prefer app ID from infra-apply; fall back to doctl lookup by app name.
+          set -euo pipefail
+          # Prefer Terraform output, then resolve-urls (same doctl+jq as 2d), then raw doctl list.
           APP_ID="${{ needs.infra-apply.outputs.nextjs_app_id }}"
+          if [ -z "$APP_ID" ]; then APP_ID="${{ needs.resolve-urls.outputs.nextjs_app_id }}"; fi
           if [ -z "$APP_ID" ]; then
             ENV="${{ github.event.inputs.environment || 'production' }}"
-            APP_ID=$(doctl apps list --output json 2>/dev/null \
-              | jq -r --arg n "voyageai-nextjs-${ENV}" \
-                '.[] | select(.spec.name == $n) | .id // ""' \
-              | head -1)
+            APPS_JSON=$(doctl apps list --output json 2>/dev/null || echo '[]')
+            APP_ID=$(echo "$APPS_JSON" | jq -r --arg n "voyageai-nextjs-${ENV}" '
+              def applist:
+                if type == "object" and (.apps | type == "array") then .apps
+                elif type == "array" then .
+                else [] end;
+              def appname:
+                ((.spec // {}) | .name // "") as $sn
+                | if $sn != "" then $sn
+                  else (((.active_deployment // {}) | .spec // {}) | .name // "")
+                  end;
+              (applist | map(select(appname == $n)) | .[0] // empty) | (.id // empty)
+            ')
           fi
           if [ -z "$APP_ID" ]; then
             echo "⚠️ Could not find Next.js app ID — skipping redeploy trigger"
