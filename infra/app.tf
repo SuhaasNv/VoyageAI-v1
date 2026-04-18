@@ -170,12 +170,12 @@ resource "digitalocean_app" "nextjs" {
 
       # ── Health check ────────────────────────────────────────────────────
       health_check {
-        http_path             = "/api/auth/csrf"
-        initial_delay_seconds = 60
+        http_path             = "/api/health"
+        initial_delay_seconds = 90
         period_seconds        = 30
-        timeout_seconds       = 10
+        timeout_seconds       = 15
         success_threshold     = 1
-        failure_threshold     = 3
+        failure_threshold     = 5
       }
 
       # ── Non-sensitive environment variables ─────────────────────────────
