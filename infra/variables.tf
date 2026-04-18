@@ -20,10 +20,10 @@ variable "do_token" {
 variable "region" {
   description = "DigitalOcean region slug for all resources (registry, app platform)"
   type        = string
-  default     = "nyc3"
+  default     = "sgp"
 
   validation {
-    condition     = contains(["nyc1", "nyc3", "ams3", "sfo3", "sgp1", "lon1", "fra1", "tor1", "blr1", "syd1"], var.region)
+    condition     = contains(["nyc", "nyc1", "nyc3", "ams", "ams3", "sfo", "sfo3", "sgp", "sgp1", "lon", "lon1", "fra", "fra1", "tor", "tor1", "blr", "blr1", "syd", "syd1"], var.region)
     error_message = "Must be a valid DigitalOcean region slug."
   }
 }
