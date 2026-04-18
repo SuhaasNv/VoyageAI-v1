@@ -51,7 +51,7 @@ variable "environment" {
 # ── Container Registry ────────────────────────────────────────────────────────
 
 variable "registry_name" {
-  description = "Container registry slug. Leave unset for voyageai-<environment>. Set explicitly (e.g. voyageai) when importing an existing registry."
+  description = "Container registry slug. Leave unset for voyageai-docr. Override via REGISTRY_NAME / TF_VAR_registry_name when importing another registry."
   type        = string
   nullable    = true
   default     = null
