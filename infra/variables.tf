@@ -18,7 +18,7 @@ variable "do_token" {
 # ── Region ────────────────────────────────────────────────────────────────────
 
 variable "region" {
-  description = "DigitalOcean region slug for all resources (registry, app platform)"
+  description = "Region for App Platform (e.g. sgp). Container Registry uses local.registry_region (maps sgp→sgp1) because DOCR requires datacenter slugs."
   type        = string
   default     = "sgp"
 

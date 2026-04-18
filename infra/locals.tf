@@ -18,4 +18,31 @@ locals {
     ? trimspace(var.registry_name)
     : "voyageai-docr"
   )
+
+  # DOCR / Spaces use datacenter slugs (e.g. sgp1). App Platform accepts shorter slugs (e.g. sgp).
+  registry_region = lookup(
+    {
+      nyc  = "nyc3"
+      nyc1 = "nyc1"
+      nyc3 = "nyc3"
+      ams  = "ams3"
+      ams3 = "ams3"
+      sfo  = "sfo3"
+      sfo3 = "sfo3"
+      sgp  = "sgp1"
+      sgp1 = "sgp1"
+      lon  = "lon1"
+      lon1 = "lon1"
+      fra  = "fra1"
+      fra1 = "fra1"
+      tor  = "tor1"
+      tor1 = "tor1"
+      blr  = "blr1"
+      blr1 = "blr1"
+      syd  = "syd1"
+      syd1 = "syd1"
+    },
+    var.region,
+    var.region
+  )
 }

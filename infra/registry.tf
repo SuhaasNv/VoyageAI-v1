@@ -14,7 +14,7 @@
 resource "digitalocean_container_registry" "voyageai" {
   name                   = local.registry_name
   subscription_tier_slug = var.registry_tier
-  region                 = var.region
+  region                 = local.registry_region
 
   lifecycle {
     # Prevent accidental deletion — destroying the registry also deletes all images.
