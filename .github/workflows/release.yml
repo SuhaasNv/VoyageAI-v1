@@ -101,6 +101,11 @@ on:
         required: false
         default: "false"
         type: boolean
+      skip_trivy:
+        description: "Skip all Trivy security scans (use only for emergency hotfixes)"
+        required: false
+        default: "false"
+        type: boolean
       image_tag:
         description: "Existing DOCR image tag to deploy without rebuilding (e.g. sha-abc1234, 42, latest). Leave empty to build fresh from source."
         required: false
@@ -546,6 +551,7 @@ jobs:
 
       # ── Trivy scans ───────────────────────────────────────────────────────
       - name: Trivy — SARIF report (all severities → Security tab)
+        if: github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.IMAGE_NAME }}:latest
@@ -558,13 +564,14 @@ jobs:
 
       - name: Upload SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
+        if: always() && github.event.inputs.skip_trivy != 'true'
         with:
           sarif_file: trivy-results.sarif
           category: trivy-release
         continue-on-error: true
 
       - name: Trivy — gate on CRITICAL CVEs
+        if: github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.IMAGE_NAME }}:latest
@@ -576,6 +583,7 @@ jobs:
           exit-code: "1"
 
       - name: Trivy — warn on HIGH CVEs
+        if: github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.IMAGE_NAME }}:latest
@@ -587,6 +595,7 @@ jobs:
           exit-code: "0"
 
       - name: Trivy — secret scan inside image
+        if: github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.IMAGE_NAME }}:latest
@@ -595,6 +604,7 @@ jobs:
           exit-code: "1"
 
       - name: Trivy — Dockerfile misconfig scan
+        if: github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: config
@@ -651,6 +661,7 @@ jobs:
           docker push "${REGISTRY}:${{ github.run_number }}"
 
       - name: Trivy — verify pushed registry image
+        if: github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}:latest
@@ -760,6 +771,7 @@ jobs:
 
       # ── Trivy scans ───────────────────────────────────────────────────────
       - name: Trivy — SARIF report (all severities → Security tab)
+        if: github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.NEXTJS_IMAGE_NAME }}:latest
@@ -772,13 +784,14 @@ jobs:
 
       - name: Upload SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
+        if: always() && github.event.inputs.skip_trivy != 'true'
         with:
           sarif_file: trivy-nextjs-results.sarif
           category: trivy-nextjs-release
         continue-on-error: true
 
       - name: Trivy — gate on CRITICAL CVEs
+        if: github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.NEXTJS_IMAGE_NAME }}:latest
@@ -790,6 +803,7 @@ jobs:
           exit-code: "1"
 
       - name: Trivy — warn on HIGH CVEs
+        if: github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.NEXTJS_IMAGE_NAME }}:latest
@@ -801,6 +815,7 @@ jobs:
           exit-code: "0"
 
       - name: Trivy — secret scan inside image
+        if: github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.NEXTJS_IMAGE_NAME }}:latest
@@ -809,6 +824,7 @@ jobs:
           exit-code: "1"
 
       - name: Trivy — Dockerfile misconfig scan
+        if: github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: config
@@ -863,6 +879,7 @@ jobs:
           docker push "${REGISTRY}:${{ github.run_number }}"
 
       - name: Trivy — verify pushed Next.js registry image
+        if: github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.NEXTJS_IMAGE_NAME }}:latest
