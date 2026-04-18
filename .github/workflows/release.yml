@@ -356,7 +356,8 @@ jobs:
           aws s3api head-bucket --bucket voyageai-tfstate \
             --endpoint-url "$AWS_ENDPOINT_URL_S3" 2>/dev/null \
             || aws s3api create-bucket --bucket voyageai-tfstate \
-                 --endpoint-url "$AWS_ENDPOINT_URL_S3"
+                 --endpoint-url "$AWS_ENDPOINT_URL_S3" 2>/dev/null \
+            || true  # bucket already exists — that is fine
 
       - name: terraform init
         if: steps.infra-changed.outputs.changed != '0'
