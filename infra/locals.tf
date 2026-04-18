@@ -46,4 +46,11 @@ locals {
     var.region,
     var.region
   )
+
+  # Resolved project id for digitalocean_project_resources (create vs existing project).
+  voyageai_project_id = (
+    var.manage_digitalocean_project
+    ? digitalocean_project.voyageai[0].id
+    : data.digitalocean_project.voyageai[0].id
+  )
 }

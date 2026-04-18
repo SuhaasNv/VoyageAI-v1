@@ -32,7 +32,8 @@ name: Infrastructure — DigitalOcean (Terraform)
 #  Optional GitHub Secrets / Variables:
 #    DO_SPACES_REGION           — Spaces region (default: sgp1)
 #    REGISTRY_NAME              — DOCR slug (default voyageai-docr; set explicitly when importing another registry)
-#    DO_PROJECT_NAME            — DO project display name; set to "VoyageAI" if importing an existing project
+#    DO_PROJECT_NAME            — DO project display name (default VoyageAI via Terraform locals)
+#    DO_TF_MANAGE_PROJECT       — Set to false if that project already exists in DO (avoids POST /projects 409); omit or true to create via Terraform
 #    TF_VAR_alert_email         — Email for infrastructure alerts
 #    TF_VAR_region              — DO region (default: sgp1)
 #    TF_VAR_environment         — staging | production (default: production)
@@ -94,6 +95,7 @@ env:
   TF_VAR_environment: ${{ github.event.inputs.environment || 'production' }}
   TF_VAR_registry_name: ${{ vars.REGISTRY_NAME }}
   TF_VAR_project_name: ${{ vars.DO_PROJECT_NAME }}
+  TF_VAR_manage_digitalocean_project: ${{ vars.DO_TF_MANAGE_PROJECT == 'false' && 'false' || 'true' }}
   # ── Next.js runtime secrets — injected into the App Platform Next.js service ─
   TF_VAR_database_url: ${{ secrets.DATABASE_URL || '' }}
   TF_VAR_direct_url: ${{ secrets.DIRECT_URL || '' }}
@@ -388,7 +390,7 @@ jobs:
 
   # ════════════════════════════════════════════════════════════════════════════
   #  APPLY
-  #  Creates DOCR via targeted apply, pushes placeholders, re-plans, then applies
+  #  Creates DOCR via targeted apply, pushes placeholders only if DOCR has no repos yet, re-plans, then applies
   #  (plan job artifact is not used here — state changes after registry bootstrap).
   #  Only runs on push to main or manual workflow_dispatch with action=apply.
   #  Posts the Terraform outputs (registry URL, app URL) to the step summary.
@@ -461,23 +463,38 @@ jobs:
             -target=digitalocean_container_registry.voyageai \
             -target=digitalocean_container_registry_docker_credentials.app_platform
 
-      # Always push both placeholder images before full apply (App Platform validates image refs).
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      # Placeholders are only needed for a brand-new empty DOCR. Skip if any repository already exists.
       - name: Push placeholder images to DOCR
         run: |
+          set -euo pipefail
           REGISTRY="${DOCR_REGISTRY}"
+          REPO_COUNT=0
+          if REPOS_OUT=$(doctl registry repository list --format Name --no-header 2>/dev/null); then
+            REPO_COUNT=$(printf '%s\n' "$REPOS_OUT" | sed '/^[[:space:]]*$/d' | wc -l | tr -d ' \n')
+            REPO_COUNT=${REPO_COUNT:-0}
+          else
+            echo "::warning::Could not list DOCR repositories; pushing placeholders to be safe."
+          fi
+          if [ "${REPO_COUNT:-0}" -gt 0 ]; then
+            echo "::notice::DOCR already has ${REPO_COUNT} repository(ies) — skipping placeholder image push."
+            exit 0
+          fi
           echo "$DIGITALOCEAN_ACCESS_TOKEN" | \
             docker login registry.digitalocean.com --username token --password-stdin
           echo "::notice::If push fails with unauthorized, ensure DIGITALOCEAN_ACCESS_TOKEN has write:registry (or Full Access)."
-          # LangGraph placeholder
           LG_IMAGE="${REGISTRY}/voyageai-langgraph:placeholder"
           docker build -t "$LG_IMAGE" placeholder/
           docker push "$LG_IMAGE"
-          # Next.js placeholder
           NX_IMAGE="${REGISTRY}/voyageai-nextjs:placeholder"
           docker build -t "$NX_IMAGE" placeholder/nextjs/
           docker push "$NX_IMAGE"
 
-      # Re-plan after registry exists + placeholders are pushed — plan job artifact is stale after -target apply + push.
+      # Re-plan after registry exists (and placeholders if pushed) — plan job artifact is stale after -target apply + push.
       - name: terraform plan (post-registry, for apply)
         id: replan
         run: |

@@ -17,17 +17,24 @@
 #    • Health checks ensure zero-downtime deployments
 #
 #  Also contains:
-#    • digitalocean_project resource  (groups all DO resources for billing)
+#    • digitalocean_project resource OR data source (groups all DO resources for billing)
 #    • App Platform alert policies    (CPU spike, memory, deploy failures)
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── DigitalOcean Project ──────────────────────────────────────────────────────
+# manage_digitalocean_project=false when the name already exists (manual UI or prior account setup).
 
 resource "digitalocean_project" "voyageai" {
+  count = var.manage_digitalocean_project ? 1 : 0
+
   name        = local.project_name
   description = "VoyageAI — AI-powered travel planning app"
   purpose     = "Web Application"
-  # No environment: one DO project "VoyageAI" holds every deployment; App Platform apps are still suffixed with var.environment.
+}
+
+data "digitalocean_project" "voyageai" {
+  count = var.manage_digitalocean_project ? 0 : 1
+  name  = local.project_name
 }
 
 # ── App Platform — LangGraph service ─────────────────────────────────────────
@@ -340,7 +347,7 @@ resource "digitalocean_app" "nextjs" {
 # ── Assign apps to project ────────────────────────────────────────────────────
 
 resource "digitalocean_project_resources" "app" {
-  project = digitalocean_project.voyageai.id
+  project = local.voyageai_project_id
   resources = [
     digitalocean_app.langgraph.urn,
     digitalocean_app.nextjs.urn,

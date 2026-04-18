@@ -80,7 +80,7 @@ output "nextjs_default_ingress" {
 
 output "project_id" {
   description = "DigitalOcean project ID"
-  value       = digitalocean_project.voyageai.id
+  value       = local.voyageai_project_id
 }
 
 # ── Post-deploy configuration hints ──────────────────────────────────────────
