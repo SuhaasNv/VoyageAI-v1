@@ -1056,6 +1056,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=nextjs
           build-args: |
             NEXT_PUBLIC_MAPBOX_TOKEN=${{ env.NEXT_PUBLIC_MAPBOX_TOKEN }}
+            DATABASE_URL=${{ secrets.DATABASE_URL || 'postgresql://prisma:prisma@127.0.0.1:5432/prisma' }}
 
       - name: Upload image tarball
         uses: actions/upload-artifact@v4
@@ -1215,6 +1216,7 @@ jobs:
           sbom: true
           build-args: |
             NEXT_PUBLIC_MAPBOX_TOKEN=${{ secrets.NEXT_PUBLIC_MAPBOX_TOKEN || env.NEXT_PUBLIC_MAPBOX_TOKEN }}
+            DATABASE_URL=${{ secrets.DATABASE_URL || 'postgresql://prisma:prisma@127.0.0.1:5432/prisma' }}
 
       - name: Trivy — verify pushed Next.js image in registry
         uses: aquasecurity/trivy-action@master

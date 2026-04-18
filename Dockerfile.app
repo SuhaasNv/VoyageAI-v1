@@ -11,11 +11,15 @@
 #    next.config.ts must have  output: 'standalone'
 #    Prisma schema lives at    prisma/schema.prisma
 #
-#  Build args (baked into the client bundle — public only):
-#    NEXT_PUBLIC_MAPBOX_TOKEN  Mapbox public token (default: empty)
+#  Build args:
+#    NEXT_PUBLIC_MAPBOX_TOKEN — public; baked into the client bundle (default: empty)
+#    DATABASE_URL — passed in CI from GitHub Actions secrets for prisma.config.ts
+#      during `prisma generate` only (no DB connection). Default is a harmless
+#      placeholder for local builds. A real URL may appear in image layer metadata;
+#      prefer the placeholder unless you need an exact connection string at build time.
 #
-#  All server-only secrets are injected at runtime via App Platform env vars
-#  or docker-compose environment blocks — never baked into the image.
+#  Runtime secrets are still injected via App Platform / docker-compose — not required
+#  in the final image ENV for a typical deploy.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Stage 1: install dependencies ────────────────────────────────────────────
@@ -36,6 +40,11 @@ WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+# prisma.config.ts requires a URL; .env is not in the build context.
+# CI passes DATABASE_URL from secrets; local/docker uses the default below.
+ARG DATABASE_URL="postgresql://prisma:prisma@127.0.0.1:5432/prisma"
+ENV DATABASE_URL=$DATABASE_URL
 
 # Generate Prisma client (schema-only; no DB connection required)
 RUN npx prisma generate
