@@ -650,20 +650,14 @@ jobs:
         id: retag
         if: github.event.inputs.image_tag != ''
         run: |
-          REGISTRY="registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}"
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          docker tag "${REGISTRY}:${{ github.event.inputs.image_tag }}" "${REGISTRY}:latest"
-          docker tag "${REGISTRY}:${{ github.event.inputs.image_tag }}" "${REGISTRY}:sha-${SHORT_SHA}"
-          docker tag "${REGISTRY}:${{ github.event.inputs.image_tag }}" "${REGISTRY}:${{ github.run_number }}"
-          docker push "${REGISTRY}:latest"
-          docker push "${REGISTRY}:sha-${SHORT_SHA}"
-          docker push "${REGISTRY}:${{ github.run_number }}"
+          echo "ℹ️ Using existing DOCR tag '${{ github.event.inputs.image_tag }}' — skipping re-tag/push"
+          echo "  App Platform spec will be updated to use this tag directly."
 
       - name: Trivy — verify pushed registry image
         if: github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}:latest
+          image-ref: registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.image_tag || 'latest' }}
           format: table
           severity: CRITICAL
           ignore-unfixed: true
@@ -675,7 +669,7 @@ jobs:
       - name: Write Docker summary
         run: |
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          MODE=$([ -n "${{ github.event.inputs.image_tag }}" ] && echo "Re-tagged from \`${{ github.event.inputs.image_tag }}\`" || echo "Built from source")
+          MODE=$([ -n "${{ github.event.inputs.image_tag }}" ] && echo "Deployed existing tag \`${{ github.event.inputs.image_tag }}\` (no re-tag)" || echo "Built from source")
           {
             echo "## 🐳 Docker — ✅ Pushed to DOCR"
             echo ""
@@ -706,7 +700,18 @@ jobs:
             echo "⚠️ Could not find LangGraph app ID — skipping redeploy trigger"
             exit 0
           fi
-          echo "Triggering App Platform deployment for LangGraph app ${APP_ID}"
+          IMAGE_TAG="${{ github.event.inputs.image_tag }}"
+          if [ -n "$IMAGE_TAG" ]; then
+            echo "📌 Updating App Platform spec to use existing tag: ${IMAGE_TAG}"
+            TMPSPEC=$(mktemp)
+            doctl apps get "$APP_ID" --output json \
+              | jq --arg t "$IMAGE_TAG" \
+                '.[0].spec.services = (.[0].spec.services | map(if .image then .image.tag = $t else . end))
+                 | .[0].spec' > "$TMPSPEC"
+            doctl apps update "$APP_ID" --spec "$TMPSPEC"
+            rm -f "$TMPSPEC"
+          fi
+          echo "🚀 Triggering App Platform deployment for LangGraph app ${APP_ID}"
           doctl auth init --access-token "$DIGITALOCEAN_ACCESS_TOKEN"
           doctl apps create-deployment "$APP_ID" --wait
 
@@ -878,20 +883,14 @@ jobs:
         id: retag
         if: github.event.inputs.image_tag != ''
         run: |
-          REGISTRY="registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.NEXTJS_IMAGE_NAME }}"
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          docker tag "${REGISTRY}:${{ github.event.inputs.image_tag }}" "${REGISTRY}:latest"
-          docker tag "${REGISTRY}:${{ github.event.inputs.image_tag }}" "${REGISTRY}:sha-${SHORT_SHA}"
-          docker tag "${REGISTRY}:${{ github.event.inputs.image_tag }}" "${REGISTRY}:${{ github.run_number }}"
-          docker push "${REGISTRY}:latest"
-          docker push "${REGISTRY}:sha-${SHORT_SHA}"
-          docker push "${REGISTRY}:${{ github.run_number }}"
+          echo "ℹ️ Using existing DOCR tag '${{ github.event.inputs.image_tag }}' — skipping re-tag/push"
+          echo "  App Platform spec will be updated to use this tag directly."
 
       - name: Trivy — verify pushed Next.js registry image
         if: github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.NEXTJS_IMAGE_NAME }}:latest
+          image-ref: registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.NEXTJS_IMAGE_NAME }}:${{ github.event.inputs.image_tag || 'latest' }}
           format: table
           severity: CRITICAL
           ignore-unfixed: true
@@ -915,14 +914,25 @@ jobs:
             echo "⚠️ Could not find Next.js app ID — skipping redeploy trigger"
             exit 0
           fi
-          echo "Triggering App Platform deployment for Next.js app ${APP_ID}"
+          IMAGE_TAG="${{ github.event.inputs.image_tag }}"
+          if [ -n "$IMAGE_TAG" ]; then
+            echo "📌 Updating App Platform spec to use existing tag: ${IMAGE_TAG}"
+            TMPSPEC=$(mktemp)
+            doctl apps get "$APP_ID" --output json \
+              | jq --arg t "$IMAGE_TAG" \
+                '.[0].spec.services = (.[0].spec.services | map(if .image then .image.tag = $t else . end))
+                 | .[0].spec' > "$TMPSPEC"
+            doctl apps update "$APP_ID" --spec "$TMPSPEC"
+            rm -f "$TMPSPEC"
+          fi
+          echo "🚀 Triggering App Platform deployment for Next.js app ${APP_ID}"
           doctl auth init --access-token "$DIGITALOCEAN_ACCESS_TOKEN"
           doctl apps create-deployment "$APP_ID" --wait
 
       - name: Write Next.js Docker summary
         run: |
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          MODE=$([ -n "${{ github.event.inputs.image_tag }}" ] && echo "Re-tagged from \`${{ github.event.inputs.image_tag }}\`" || echo "Built from source")
+          MODE=$([ -n "${{ github.event.inputs.image_tag }}" ] && echo "Deployed existing tag \`${{ github.event.inputs.image_tag }}\` (no re-tag)" || echo "Built from source")
           {
             echo "## 🐳 Next.js Container — ✅ Pushed to DOCR"
             echo ""
