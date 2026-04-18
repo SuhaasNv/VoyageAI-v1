@@ -24,7 +24,7 @@
 # ── DigitalOcean Project ──────────────────────────────────────────────────────
 
 resource "digitalocean_project" "voyageai" {
-  name        = var.project_name
+  name        = local.project_name
   description = "VoyageAI — AI-powered travel planning app"
   purpose     = "Web Application"
   environment = title(var.environment) # "Staging" | "Production"

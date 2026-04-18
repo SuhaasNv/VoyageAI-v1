@@ -31,6 +31,8 @@ name: Infrastructure — DigitalOcean (Terraform)
 #
 #  Optional GitHub Secrets / Variables:
 #    DO_SPACES_REGION           — Spaces region (default: sgp1)
+#    REGISTRY_NAME              — DOCR slug; set to "voyageai" if importing an existing registry
+#    DO_PROJECT_NAME            — DO project display name; set to "VoyageAI" if importing an existing project
 #    TF_VAR_alert_email         — Email for infrastructure alerts
 #    TF_VAR_region              — DO region (default: sgp1)
 #    TF_VAR_environment         — staging | production (default: production)
@@ -90,6 +92,8 @@ env:
   TF_VAR_internal_agent_secret: ${{ secrets.TF_VAR_internal_agent_secret }}
   TF_VAR_alert_email: ${{ secrets.TF_VAR_alert_email || '' }}
   TF_VAR_environment: ${{ github.event.inputs.environment || 'production' }}
+  TF_VAR_registry_name: ${{ vars.REGISTRY_NAME }}
+  TF_VAR_project_name: ${{ vars.DO_PROJECT_NAME }}
   # ── Next.js runtime secrets — injected into the App Platform Next.js service ─
   TF_VAR_database_url: ${{ secrets.DATABASE_URL || '' }}
   TF_VAR_direct_url: ${{ secrets.DIRECT_URL || '' }}
@@ -109,7 +113,7 @@ env:
   TF_CLI_ARGS_plan: "-lock-timeout=60s"
   TF_CLI_ARGS_apply: "-lock-timeout=60s"
   # Registry name must match var.registry_name default (used in placeholder push)
-  DOCR_REGISTRY: registry.digitalocean.com/${{ vars.REGISTRY_NAME || 'voyageai' }}
+  DOCR_REGISTRY: registry.digitalocean.com/${{ vars.REGISTRY_NAME || format('voyageai-{0}', (github.event_name == 'workflow_dispatch' && github.event.inputs.environment) || 'production') }}
   # AWS SDK env vars for the S3-compatible Spaces backend.
   # Must be present for ALL terraform operations (init, plan, apply, destroy, show)
   # not just init — every state read/write authenticates against Spaces.

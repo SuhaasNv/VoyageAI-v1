@@ -136,7 +136,7 @@ env:
   IMAGE_NAME: voyageai-langgraph
   NEXTJS_IMAGE_NAME: voyageai-nextjs
   PYTHON_VERSION: "3.11"
-  DOCR_REGISTRY_NAME: ${{ secrets.DO_REGISTRY_NAME || vars.REGISTRY_NAME || 'voyageai' }}
+  DOCR_REGISTRY_NAME: ${{ secrets.DO_REGISTRY_NAME || vars.REGISTRY_NAME || format('voyageai-{0}', (github.event_name == 'workflow_dispatch' && github.event.inputs.environment) || 'production') }}
   # AI gate — static checks, no real LLM calls, no production DB
   SKIP_ENV_VALIDATION: "1"
   LLM_PROVIDER: "mock"
@@ -159,6 +159,9 @@ env:
   TF_VAR_internal_agent_secret: ${{ secrets.TF_VAR_internal_agent_secret }}
   TF_VAR_environment: ${{ github.event.inputs.environment || 'production' }}
   TF_VAR_region: ${{ vars.DO_REGION || 'sgp' }}
+  # Pin names when reusing an existing DO project/registry; otherwise Terraform defaults to env-suffixed names.
+  TF_VAR_registry_name: ${{ vars.REGISTRY_NAME }}
+  TF_VAR_project_name: ${{ vars.DO_PROJECT_NAME }}
   # ── Next.js runtime secrets — propagated into App Platform via Terraform ─────
   TF_VAR_database_url: ${{ secrets.DATABASE_URL || '' }}
   TF_VAR_direct_url: ${{ secrets.DIRECT_URL || '' }}
@@ -397,7 +400,7 @@ jobs:
         if: steps.infra-changed.outputs.changed != '0'
         working-directory: infra
         run: |
-          REGISTRY="registry.digitalocean.com/${{ vars.REGISTRY_NAME || 'voyageai' }}"
+          REGISTRY="registry.digitalocean.com/${{ vars.REGISTRY_NAME || format('voyageai-{0}', (github.event_name == 'workflow_dispatch' && github.event.inputs.environment) || 'production') }}"
           echo "$DIGITALOCEAN_ACCESS_TOKEN" | \
             docker login registry.digitalocean.com --username token --password-stdin
           # LangGraph placeholder

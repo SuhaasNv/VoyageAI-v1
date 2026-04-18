@@ -62,9 +62,8 @@ env:
   IMAGE_NAME: voyageai-langgraph
   NEXTJS_IMAGE_NAME: voyageai-nextjs
   PYTHON_VERSION: "3.11"
-  # Registry name — falls back to vars.REGISTRY_NAME then 'voyageai' if the
-  # DO_REGISTRY_NAME secret is not set.
-  DOCR_REGISTRY_NAME: ${{ secrets.DO_REGISTRY_NAME || vars.REGISTRY_NAME || 'voyageai' }}
+  # Registry slug — must match Terraform (voyageai-<environment> unless REGISTRY_NAME is set).
+  DOCR_REGISTRY_NAME: ${{ secrets.DO_REGISTRY_NAME || vars.REGISTRY_NAME || format('voyageai-{0}', vars.DO_ENVIRONMENT || 'production') }}
 
 defaults:
   run:
@@ -98,7 +97,8 @@ defaults:
 #
 #  Required secrets for stages 15–16:
 #    DIGITALOCEAN_ACCESS_TOKEN  — DO API token (write:registry)
-#    DO_REGISTRY_NAME           — registry slug, e.g. "voyageai"
+#    DO_REGISTRY_NAME           — registry slug (overrides vars.REGISTRY_NAME / default voyageai-<DO_ENVIRONMENT>)
+#    DO_ENVIRONMENT             — repo variable: staging | production (default production) for default registry slug
 #    PRODUCTION_URL             — public Railway app URL for DAST (main only), e.g. https://xxx.up.railway.app
 #
 #  workflow_dispatch inputs:
@@ -944,7 +944,7 @@ jobs:
   #
   #  Required secrets:
   #    DIGITALOCEAN_ACCESS_TOKEN  — DO personal access token (write:registry)
-  #    DO_REGISTRY_NAME           — registry slug (e.g. "voyageai")
+  #    DO_REGISTRY_NAME           — registry slug (overrides vars / default voyageai-<DO_ENVIRONMENT>)
   # ══════════════════════════════════════════════════════════════════════════
   push-to-docr:
     name: "15 · Push to DigitalOcean Container Registry"
@@ -1162,7 +1162,7 @@ jobs:
   #
   #  Required secrets:
   #    DIGITALOCEAN_ACCESS_TOKEN  — DO personal access token (write:registry)
-  #    DO_REGISTRY_NAME           — registry slug (e.g. "voyageai")
+  #    DO_REGISTRY_NAME           — registry slug (overrides vars / default voyageai-<DO_ENVIRONMENT>)
   # ══════════════════════════════════════════════════════════════════════════
   push-nextjs-to-docr:
     name: "15b · Push Next.js to DigitalOcean Container Registry"

@@ -12,7 +12,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "digitalocean_container_registry" "voyageai" {
-  name                   = var.registry_name
+  name                   = local.registry_name
   subscription_tier_slug = var.registry_tier
   region                 = var.region
 

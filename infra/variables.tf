@@ -31,9 +31,10 @@ variable "region" {
 # ── Project ───────────────────────────────────────────────────────────────────
 
 variable "project_name" {
-  description = "DigitalOcean project name used to group all resources"
+  description = "DigitalOcean project name. Leave unset for VoyageAI-<environment>. Set explicitly (e.g. VoyageAI) when importing an existing project."
   type        = string
-  default     = "VoyageAI"
+  nullable    = true
+  default     = null
 }
 
 variable "environment" {
@@ -50,9 +51,10 @@ variable "environment" {
 # ── Container Registry ────────────────────────────────────────────────────────
 
 variable "registry_name" {
-  description = "DigitalOcean Container Registry name (slug). Must be globally unique."
+  description = "Container registry slug. Leave unset for voyageai-<environment>. Set explicitly (e.g. voyageai) when importing an existing registry."
   type        = string
-  default     = "voyageai"
+  nullable    = true
+  default     = null
 }
 
 variable "registry_tier" {
