@@ -101,6 +101,10 @@ on:
         required: false
         default: "false"
         type: boolean
+      image_tag:
+        description: "Existing DOCR image tag to deploy without rebuilding (e.g. sha-abc1234, 42, latest). Leave empty to build fresh from source."
+        required: false
+        default: ""
       emergency_reason:
         description: "Reason for skipping gates (required when any skip_* is true)"
         required: false
@@ -512,6 +516,7 @@ jobs:
           tags: type=raw,value=latest
 
       - name: Build image and export tarball
+        if: github.event.inputs.image_tag == ''
         uses: docker/build-push-action@v5
         with:
           context: ./python/agent_graph
@@ -526,7 +531,18 @@ jobs:
             GIT_SHA=${{ github.sha }}
 
       - name: Load image into Docker daemon
+        if: github.event.inputs.image_tag == ''
         run: docker load --input /tmp/langgraph-image.tar
+
+      # ── Pull existing tag from DOCR (skip build) ───────────────────────────
+      - name: Pull existing LangGraph image from DOCR
+        if: github.event.inputs.image_tag != ''
+        run: |
+          REGISTRY="registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}"
+          doctl registry login --expiry-seconds 600
+          docker pull "${REGISTRY}:${{ github.event.inputs.image_tag }}"
+          docker tag  "${REGISTRY}:${{ github.event.inputs.image_tag }}" "${{ env.IMAGE_NAME }}:latest"
+          echo "ℹ️ Using existing DOCR tag: ${{ github.event.inputs.image_tag }}"
 
       # ── Trivy scans ───────────────────────────────────────────────────────
       - name: Trivy — SARIF report (all severities → Security tab)
@@ -607,6 +623,7 @@ jobs:
 
       - name: Build and push to DOCR (layers cached)
         id: push
+        if: github.event.inputs.image_tag == ''
         uses: docker/build-push-action@v5
         with:
           context: ./python/agent_graph
@@ -618,6 +635,19 @@ jobs:
           cache-to: type=gha,mode=max
           provenance: true
           sbom: true
+
+      - name: Re-tag and push existing image to DOCR
+        id: retag
+        if: github.event.inputs.image_tag != ''
+        run: |
+          REGISTRY="registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}"
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          docker tag "${REGISTRY}:${{ github.event.inputs.image_tag }}" "${REGISTRY}:latest"
+          docker tag "${REGISTRY}:${{ github.event.inputs.image_tag }}" "${REGISTRY}:sha-${SHORT_SHA}"
+          docker tag "${REGISTRY}:${{ github.event.inputs.image_tag }}" "${REGISTRY}:${{ github.run_number }}"
+          docker push "${REGISTRY}:latest"
+          docker push "${REGISTRY}:sha-${SHORT_SHA}"
+          docker push "${REGISTRY}:${{ github.run_number }}"
 
       - name: Trivy — verify pushed registry image
         uses: aquasecurity/trivy-action@master
@@ -634,6 +664,7 @@ jobs:
       - name: Write Docker summary
         run: |
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          MODE=$([ -n "${{ github.event.inputs.image_tag }}" ] && echo "Re-tagged from \`${{ github.event.inputs.image_tag }}\`" || echo "Built from source")
           {
             echo "## 🐳 Docker — ✅ Pushed to DOCR"
             echo ""
@@ -642,6 +673,7 @@ jobs:
             echo "| **Registry** | \`registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}\` |"
             echo "| **Image** | \`${{ env.IMAGE_NAME }}\` |"
             echo "| **Tags** | \`latest\`, \`sha-${SHORT_SHA}\`, \`${{ github.run_number }}\` |"
+            echo "| **Mode** | ${MODE} |"
             echo "| **Digest** | \`${{ steps.push.outputs.digest }}\` |"
             echo "| **Trivy** | ✅ No CRITICAL CVEs |"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -696,6 +728,7 @@ jobs:
           tags: type=raw,value=latest
 
       - name: Build Next.js image and export tarball
+        if: github.event.inputs.image_tag == ''
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -711,7 +744,18 @@ jobs:
             GIT_SHA=${{ github.sha }}
 
       - name: Load image into Docker daemon
+        if: github.event.inputs.image_tag == ''
         run: docker load --input /tmp/nextjs-image.tar
+
+      # ── Pull existing tag from DOCR (skip build) ───────────────────────────
+      - name: Pull existing Next.js image from DOCR
+        if: github.event.inputs.image_tag != ''
+        run: |
+          REGISTRY="registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.NEXTJS_IMAGE_NAME }}"
+          doctl registry login --expiry-seconds 600
+          docker pull "${REGISTRY}:${{ github.event.inputs.image_tag }}"
+          docker tag  "${REGISTRY}:${{ github.event.inputs.image_tag }}" "${{ env.NEXTJS_IMAGE_NAME }}:latest"
+          echo "ℹ️ Using existing DOCR tag: ${{ github.event.inputs.image_tag }}"
 
       # ── Trivy scans ───────────────────────────────────────────────────────
       - name: Trivy — SARIF report (all severities → Security tab)
@@ -788,6 +832,7 @@ jobs:
 
       - name: Build and push Next.js to DOCR (layers cached)
         id: push
+        if: github.event.inputs.image_tag == ''
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -801,6 +846,19 @@ jobs:
           sbom: true
           build-args: |
             NEXT_PUBLIC_MAPBOX_TOKEN=${{ secrets.NEXT_PUBLIC_MAPBOX_TOKEN }}
+
+      - name: Re-tag and push existing Next.js image to DOCR
+        id: retag
+        if: github.event.inputs.image_tag != ''
+        run: |
+          REGISTRY="registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.NEXTJS_IMAGE_NAME }}"
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          docker tag "${REGISTRY}:${{ github.event.inputs.image_tag }}" "${REGISTRY}:latest"
+          docker tag "${REGISTRY}:${{ github.event.inputs.image_tag }}" "${REGISTRY}:sha-${SHORT_SHA}"
+          docker tag "${REGISTRY}:${{ github.event.inputs.image_tag }}" "${REGISTRY}:${{ github.run_number }}"
+          docker push "${REGISTRY}:latest"
+          docker push "${REGISTRY}:sha-${SHORT_SHA}"
+          docker push "${REGISTRY}:${{ github.run_number }}"
 
       - name: Trivy — verify pushed Next.js registry image
         uses: aquasecurity/trivy-action@master
@@ -825,6 +883,7 @@ jobs:
       - name: Write Next.js Docker summary
         run: |
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          MODE=$([ -n "${{ github.event.inputs.image_tag }}" ] && echo "Re-tagged from \`${{ github.event.inputs.image_tag }}\`" || echo "Built from source")
           {
             echo "## 🐳 Next.js Container — ✅ Pushed to DOCR"
             echo ""
@@ -833,6 +892,7 @@ jobs:
             echo "| **Registry** | \`registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}\` |"
             echo "| **Image** | \`${{ env.NEXTJS_IMAGE_NAME }}\` |"
             echo "| **Tags** | \`latest\`, \`sha-${SHORT_SHA}\`, \`${{ github.run_number }}\` |"
+            echo "| **Mode** | ${MODE} |"
             echo "| **Digest** | \`${{ steps.push.outputs.digest }}\` |"
             echo "| **Trivy** | ✅ No CRITICAL CVEs |"
           } >> "$GITHUB_STEP_SUMMARY"
