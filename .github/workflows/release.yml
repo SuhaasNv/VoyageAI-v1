@@ -46,7 +46,7 @@ name: Release — VoyageAI Production Deployment
 #    DIGITALOCEAN_EMAIL          Optional Repo Variable — DO login email for docker login (DO docs); omit to use username "token" + PAT (same as infra placeholder step)
 #    DIGITALOCEAN_REGISTRY_USER  Optional Secret — overrides docker registry username (email or "token")
 #    DO_REGISTRY_NAME            Registry slug (default voyageai-docr)
-#    DO_TF_MANAGE_PROJECT        Repo Variable — set false if DO project name already exists (409 duplicate); else omit / true
+#    DO_TF_MANAGE_PROJECT        Repo Variable — set true only so Terraform creates the DO project (greenfield); omit = use existing project (default)
 #    DO_SPACES_ACCESS_KEY        Spaces access key (Terraform state)
 #    DO_SPACES_SECRET_KEY        Spaces secret key (Terraform state)
 #    TF_VAR_next_internal_url    DO App Platform public URL of the Next.js app (used by LangGraph)
@@ -168,7 +168,7 @@ env:
   # Pin registry / project when importing existing DO resources; default project name is VoyageAI (shared across environments).
   TF_VAR_registry_name: ${{ vars.REGISTRY_NAME }}
   TF_VAR_project_name: ${{ vars.DO_PROJECT_NAME }}
-  TF_VAR_manage_digitalocean_project: ${{ vars.DO_TF_MANAGE_PROJECT == 'false' && 'false' || 'true' }}
+  TF_VAR_manage_digitalocean_project: ${{ vars.DO_TF_MANAGE_PROJECT == 'true' && 'true' || 'false' }}
   # ── Next.js runtime secrets — propagated into App Platform via Terraform ─────
   TF_VAR_database_url: ${{ secrets.DATABASE_URL || '' }}
   TF_VAR_direct_url: ${{ secrets.DIRECT_URL || '' }}
@@ -407,7 +407,7 @@ jobs:
             -target=digitalocean_container_registry.voyageai \
             -target=digitalocean_container_registry_docker_credentials.app_platform
 
-      # Placeholders only for an empty DOCR (first bootstrap). Skip when any repository already exists.
+      # Skip placeholder push only when both repos already have :placeholder (matches Terraform default image tag).
       - name: Install doctl (registry repo check)
         if: steps.infra-changed.outputs.changed != '0'
         uses: digitalocean/action-doctl@v2
@@ -420,15 +420,23 @@ jobs:
         run: |
           set -euo pipefail
           REGISTRY="registry.digitalocean.com/${{ vars.REGISTRY_NAME || 'voyageai-docr' }}"
-          REPO_COUNT=0
+          PH_TAG="placeholder"
+          SKIP=0
           if REPOS_OUT=$(doctl registry repository list --format Name --no-header 2>/dev/null); then
-            REPO_COUNT=$(printf '%s\n' "$REPOS_OUT" | sed '/^[[:space:]]*$/d' | wc -l | tr -d ' \n')
-            REPO_COUNT=${REPO_COUNT:-0}
+            if echo "$REPOS_OUT" | grep -qx 'voyageai-langgraph' && echo "$REPOS_OUT" | grep -qx 'voyageai-nextjs'; then
+              LG_OK=0
+              NX_OK=0
+              if doctl registry repository list-tags voyageai-langgraph --format Tag --no-header 2>/dev/null | grep -qx "$PH_TAG"; then LG_OK=1; fi
+              if doctl registry repository list-tags voyageai-nextjs --format Tag --no-header 2>/dev/null | grep -qx "$PH_TAG"; then NX_OK=1; fi
+              if [ "$LG_OK" -eq 1 ] && [ "$NX_OK" -eq 1 ]; then
+                SKIP=1
+              fi
+            fi
           else
             echo "::warning::Could not list DOCR repositories; pushing placeholders to be safe."
           fi
-          if [ "${REPO_COUNT:-0}" -gt 0 ]; then
-            echo "::notice::DOCR already has ${REPO_COUNT} repository(ies) — skipping placeholder image push."
+          if [ "$SKIP" -eq 1 ]; then
+            echo "::notice::DOCR repos already have :${PH_TAG} — skipping placeholder image push."
             exit 0
           fi
           echo "$DIGITALOCEAN_ACCESS_TOKEN" | \

@@ -38,9 +38,9 @@ variable "project_name" {
 }
 
 variable "manage_digitalocean_project" {
-  description = "When true (default), Terraform creates the DO project. Set false when that name already exists (409 duplicate) — uses a data source. If upgrading from older Terraform without count on this resource, run: terraform state mv digitalocean_project.voyageai digitalocean_project.voyageai[0]"
+  description = "When false (default), Terraform looks up the existing DO project by name (avoids 409 duplicate). Set true only for greenfield accounts so Terraform creates the project. If upgrading from older Terraform without count on this resource, run: terraform state mv digitalocean_project.voyageai digitalocean_project.voyageai[0]"
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "environment" {

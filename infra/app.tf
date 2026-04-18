@@ -22,7 +22,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── DigitalOcean Project ──────────────────────────────────────────────────────
-# manage_digitalocean_project=false when the name already exists (manual UI or prior account setup).
+# manage_digitalocean_project defaults false (lookup existing project by name). Set true only for greenfield DO accounts.
 
 resource "digitalocean_project" "voyageai" {
   count = var.manage_digitalocean_project ? 1 : 0

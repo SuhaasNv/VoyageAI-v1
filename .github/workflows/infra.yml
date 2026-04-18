@@ -33,7 +33,7 @@ name: Infrastructure — DigitalOcean (Terraform)
 #    DO_SPACES_REGION           — Spaces region (default: sgp1)
 #    REGISTRY_NAME              — DOCR slug (default voyageai-docr; set explicitly when importing another registry)
 #    DO_PROJECT_NAME            — DO project display name (default VoyageAI via Terraform locals)
-#    DO_TF_MANAGE_PROJECT       — Set to false if that project already exists in DO (avoids POST /projects 409); omit or true to create via Terraform
+#    DO_TF_MANAGE_PROJECT       — Set to true only so Terraform creates the DO project (greenfield). Omit or false = use existing project by name (default).
 #    TF_VAR_alert_email         — Email for infrastructure alerts
 #    TF_VAR_region              — DO region (default: sgp1)
 #    TF_VAR_environment         — staging | production (default: production)
@@ -95,7 +95,7 @@ env:
   TF_VAR_environment: ${{ github.event.inputs.environment || 'production' }}
   TF_VAR_registry_name: ${{ vars.REGISTRY_NAME }}
   TF_VAR_project_name: ${{ vars.DO_PROJECT_NAME }}
-  TF_VAR_manage_digitalocean_project: ${{ vars.DO_TF_MANAGE_PROJECT == 'false' && 'false' || 'true' }}
+  TF_VAR_manage_digitalocean_project: ${{ vars.DO_TF_MANAGE_PROJECT == 'true' && 'true' || 'false' }}
   # ── Next.js runtime secrets — injected into the App Platform Next.js service ─
   TF_VAR_database_url: ${{ secrets.DATABASE_URL || '' }}
   TF_VAR_direct_url: ${{ secrets.DIRECT_URL || '' }}
@@ -468,20 +468,28 @@ jobs:
         with:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
-      # Placeholders are only needed for a brand-new empty DOCR. Skip if any repository already exists.
+      # App Platform needs the :placeholder tag until CI pushes other tags. Skip only if both repos already have it.
       - name: Push placeholder images to DOCR
         run: |
           set -euo pipefail
           REGISTRY="${DOCR_REGISTRY}"
-          REPO_COUNT=0
+          PH_TAG="placeholder"
+          SKIP=0
           if REPOS_OUT=$(doctl registry repository list --format Name --no-header 2>/dev/null); then
-            REPO_COUNT=$(printf '%s\n' "$REPOS_OUT" | sed '/^[[:space:]]*$/d' | wc -l | tr -d ' \n')
-            REPO_COUNT=${REPO_COUNT:-0}
+            if echo "$REPOS_OUT" | grep -qx 'voyageai-langgraph' && echo "$REPOS_OUT" | grep -qx 'voyageai-nextjs'; then
+              LG_OK=0
+              NX_OK=0
+              if doctl registry repository list-tags voyageai-langgraph --format Tag --no-header 2>/dev/null | grep -qx "$PH_TAG"; then LG_OK=1; fi
+              if doctl registry repository list-tags voyageai-nextjs --format Tag --no-header 2>/dev/null | grep -qx "$PH_TAG"; then NX_OK=1; fi
+              if [ "$LG_OK" -eq 1 ] && [ "$NX_OK" -eq 1 ]; then
+                SKIP=1
+              fi
+            fi
           else
             echo "::warning::Could not list DOCR repositories; pushing placeholders to be safe."
           fi
-          if [ "${REPO_COUNT:-0}" -gt 0 ]; then
-            echo "::notice::DOCR already has ${REPO_COUNT} repository(ies) — skipping placeholder image push."
+          if [ "$SKIP" -eq 1 ]; then
+            echo "::notice::DOCR repos already have :${PH_TAG} — skipping placeholder image push."
             exit 0
           fi
           echo "$DIGITALOCEAN_ACCESS_TOKEN" | \
