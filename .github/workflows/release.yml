@@ -693,9 +693,19 @@ jobs:
       # Now that :latest is in DOCR, force a new deployment so App Platform
       # picks up the real image.  Skipped if infra-apply did not surface an ID.
       - name: Redeploy LangGraph App Platform with real image
-        if: needs.infra-apply.outputs.app_id != ''
         run: |
           APP_ID="${{ needs.infra-apply.outputs.app_id }}"
+          if [ -z "$APP_ID" ]; then
+            ENV="${{ github.event.inputs.environment || 'production' }}"
+            APP_ID=$(doctl apps list --output json 2>/dev/null \
+              | jq -r --arg n "voyageai-langgraph-${ENV}" \
+                '.[] | select(.spec.name == $n) | .id // ""' \
+              | head -1)
+          fi
+          if [ -z "$APP_ID" ]; then
+            echo "⚠️ Could not find LangGraph app ID — skipping redeploy trigger"
+            exit 0
+          fi
           echo "Triggering App Platform deployment for LangGraph app ${APP_ID}"
           doctl auth init --access-token "$DIGITALOCEAN_ACCESS_TOKEN"
           doctl apps create-deployment "$APP_ID" --wait
@@ -891,9 +901,20 @@ jobs:
           TRIVY_PASSWORD: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
       - name: Redeploy Next.js App Platform with real image
-        if: needs.infra-apply.outputs.nextjs_app_id != ''
         run: |
+          # Prefer app ID from infra-apply; fall back to doctl lookup by app name.
           APP_ID="${{ needs.infra-apply.outputs.nextjs_app_id }}"
+          if [ -z "$APP_ID" ]; then
+            ENV="${{ github.event.inputs.environment || 'production' }}"
+            APP_ID=$(doctl apps list --output json 2>/dev/null \
+              | jq -r --arg n "voyageai-nextjs-${ENV}" \
+                '.[] | select(.spec.name == $n) | .id // ""' \
+              | head -1)
+          fi
+          if [ -z "$APP_ID" ]; then
+            echo "⚠️ Could not find Next.js app ID — skipping redeploy trigger"
+            exit 0
+          fi
           echo "Triggering App Platform deployment for Next.js app ${APP_ID}"
           doctl auth init --access-token "$DIGITALOCEAN_ACCESS_TOKEN"
           doctl apps create-deployment "$APP_ID" --wait
@@ -1044,6 +1065,9 @@ jobs:
   health-check:
     name: "4 · Health Check (Production Smoke Tests)"
     needs: deploy-nextjs-do
+    if: |
+      always() &&
+      needs.deploy-nextjs-do.result == 'success'
     runs-on: ubuntu-latest
     outputs:
       app_url:      ${{ needs.deploy-nextjs-do.outputs.app_url }}
