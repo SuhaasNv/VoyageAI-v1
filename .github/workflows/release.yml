@@ -90,6 +90,11 @@ on:
         required: false
         default: "false"
         type: boolean
+      force_infra:
+        description: "Force Terraform apply even if no infra/ files changed (use to push env var or config updates)"
+        required: false
+        default: "false"
+        type: boolean
       environment:
         description: "Target environment to deploy to"
         required: false
@@ -323,6 +328,11 @@ jobs:
         id: infra-changed
         run: |
           CHANGED=$(git diff --name-only HEAD~1 HEAD -- infra/ | wc -l)
+          # Honor force_infra override — treat as if files changed
+          if [ "${{ github.event.inputs.force_infra }}" = "true" ]; then
+            CHANGED=1
+            echo "⚡ force_infra=true — running Terraform regardless of file changes"
+          fi
           echo "changed=${CHANGED}" >> "$GITHUB_OUTPUT"
           echo "Infra files changed: ${CHANGED}"
 
