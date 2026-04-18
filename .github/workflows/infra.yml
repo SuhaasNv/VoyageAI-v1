@@ -152,10 +152,23 @@ jobs:
 
       - name: Bootstrap tfstate bucket
         run: |
-          aws s3api head-bucket --bucket voyageai-tfstate \
-            --endpoint-url "$AWS_ENDPOINT_URL_S3" 2>/dev/null \
-            || aws s3api create-bucket --bucket voyageai-tfstate \
-                 --endpoint-url "$AWS_ENDPOINT_URL_S3"
+          set -euo pipefail
+          BUCKET="${TF_BACKEND_BUCKET:-voyageai-tfstate}"
+          REGION="${DO_SPACES_REGION}"
+          ENDPOINT="${AWS_ENDPOINT_URL_S3}"
+
+          if aws s3api head-bucket --bucket "$BUCKET" --endpoint-url "$ENDPOINT" 2>/dev/null; then
+            echo "✅ Terraform state bucket exists: ${BUCKET} (${REGION})"
+            exit 0
+          fi
+
+          echo "📦 Creating Spaces bucket ${BUCKET} in ${REGION} (endpoint ${ENDPOINT})..."
+          aws s3api create-bucket \
+            --bucket "$BUCKET" \
+            --endpoint-url "$ENDPOINT" \
+            --create-bucket-configuration "{\"LocationConstraint\":\"${REGION}\"}"
+
+          echo "✅ Created state bucket ${BUCKET}"
 
       - name: terraform init
         id: init
@@ -224,10 +237,23 @@ jobs:
 
       - name: Bootstrap tfstate bucket
         run: |
-          aws s3api head-bucket --bucket voyageai-tfstate \
-            --endpoint-url "$AWS_ENDPOINT_URL_S3" 2>/dev/null \
-            || aws s3api create-bucket --bucket voyageai-tfstate \
-                 --endpoint-url "$AWS_ENDPOINT_URL_S3"
+          set -euo pipefail
+          BUCKET="${TF_BACKEND_BUCKET:-voyageai-tfstate}"
+          REGION="${DO_SPACES_REGION}"
+          ENDPOINT="${AWS_ENDPOINT_URL_S3}"
+
+          if aws s3api head-bucket --bucket "$BUCKET" --endpoint-url "$ENDPOINT" 2>/dev/null; then
+            echo "✅ Terraform state bucket exists: ${BUCKET} (${REGION})"
+            exit 0
+          fi
+
+          echo "📦 Creating Spaces bucket ${BUCKET} in ${REGION} (endpoint ${ENDPOINT})..."
+          aws s3api create-bucket \
+            --bucket "$BUCKET" \
+            --endpoint-url "$ENDPOINT" \
+            --create-bucket-configuration "{\"LocationConstraint\":\"${REGION}\"}"
+
+          echo "✅ Created state bucket ${BUCKET}"
 
       - name: terraform init
         run: |
@@ -370,10 +396,23 @@ jobs:
 
       - name: Bootstrap tfstate bucket
         run: |
-          aws s3api head-bucket --bucket voyageai-tfstate \
-            --endpoint-url "$AWS_ENDPOINT_URL_S3" 2>/dev/null \
-            || aws s3api create-bucket --bucket voyageai-tfstate \
-                 --endpoint-url "$AWS_ENDPOINT_URL_S3"
+          set -euo pipefail
+          BUCKET="${TF_BACKEND_BUCKET:-voyageai-tfstate}"
+          REGION="${DO_SPACES_REGION}"
+          ENDPOINT="${AWS_ENDPOINT_URL_S3}"
+
+          if aws s3api head-bucket --bucket "$BUCKET" --endpoint-url "$ENDPOINT" 2>/dev/null; then
+            echo "✅ Terraform state bucket exists: ${BUCKET} (${REGION})"
+            exit 0
+          fi
+
+          echo "📦 Creating Spaces bucket ${BUCKET} in ${REGION} (endpoint ${ENDPOINT})..."
+          aws s3api create-bucket \
+            --bucket "$BUCKET" \
+            --endpoint-url "$ENDPOINT" \
+            --create-bucket-configuration "{\"LocationConstraint\":\"${REGION}\"}"
+
+          echo "✅ Created state bucket ${BUCKET}"
 
       - name: terraform init
         run: |
@@ -483,10 +522,23 @@ jobs:
 
       - name: Bootstrap tfstate bucket
         run: |
-          aws s3api head-bucket --bucket voyageai-tfstate \
-            --endpoint-url "$AWS_ENDPOINT_URL_S3" 2>/dev/null \
-            || aws s3api create-bucket --bucket voyageai-tfstate \
-                 --endpoint-url "$AWS_ENDPOINT_URL_S3"
+          set -euo pipefail
+          BUCKET="${TF_BACKEND_BUCKET:-voyageai-tfstate}"
+          REGION="${DO_SPACES_REGION}"
+          ENDPOINT="${AWS_ENDPOINT_URL_S3}"
+
+          if aws s3api head-bucket --bucket "$BUCKET" --endpoint-url "$ENDPOINT" 2>/dev/null; then
+            echo "✅ Terraform state bucket exists: ${BUCKET} (${REGION})"
+            exit 0
+          fi
+
+          echo "📦 Creating Spaces bucket ${BUCKET} in ${REGION} (endpoint ${ENDPOINT})..."
+          aws s3api create-bucket \
+            --bucket "$BUCKET" \
+            --endpoint-url "$ENDPOINT" \
+            --create-bucket-configuration "{\"LocationConstraint\":\"${REGION}\"}"
+
+          echo "✅ Created state bucket ${BUCKET}"
 
       - name: terraform init
         run: |

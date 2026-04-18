@@ -6,8 +6,8 @@
 #  Remote state backend: DigitalOcean Spaces (S3-compatible).
 #  The bucket must exist before `terraform init` can succeed.
 #
-#  One-time bootstrap (run locally, once per project):
-#    doctl spaces create voyageai-tfstate --region nyc3
+#  One-time bootstrap (run locally, once per project — region must match CI):
+#    doctl spaces create voyageai-tfstate --region sgp1
 #
 #  Credentials are injected at init time via -backend-config flags in CI
 #  (see .github/workflows/infra.yml) so no secrets are baked into this file.

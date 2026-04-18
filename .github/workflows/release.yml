@@ -152,7 +152,7 @@ env:
   TF_IN_AUTOMATION: "true"
   TF_CLI_ARGS_plan: "-lock-timeout=60s"
   TF_CLI_ARGS_apply: "-lock-timeout=60s"
-  DO_SPACES_REGION: ${{ vars.DO_SPACES_REGION || 'nyc3' }}
+  DO_SPACES_REGION: ${{ vars.DO_SPACES_REGION || 'sgp1' }}
   DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
   TF_VAR_do_token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
   TF_VAR_next_internal_url: ${{ secrets.TF_VAR_next_internal_url || '' }}
@@ -178,7 +178,7 @@ env:
   AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_ACCESS_KEY }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET_KEY }}
   AWS_DEFAULT_REGION: us-east-1
-  AWS_ENDPOINT_URL_S3: https://${{ vars.DO_SPACES_REGION || 'nyc3' }}.digitaloceanspaces.com
+  AWS_ENDPOINT_URL_S3: https://${{ vars.DO_SPACES_REGION || 'sgp1' }}.digitaloceanspaces.com
 
 defaults:
   run:
@@ -354,11 +354,23 @@ jobs:
       - name: Bootstrap tfstate bucket
         if: steps.infra-changed.outputs.changed != '0'
         run: |
-          aws s3api head-bucket --bucket voyageai-tfstate \
-            --endpoint-url "$AWS_ENDPOINT_URL_S3" 2>/dev/null \
-            || aws s3api create-bucket --bucket voyageai-tfstate \
-                 --endpoint-url "$AWS_ENDPOINT_URL_S3" 2>/dev/null \
-            || true  # bucket already exists — that is fine
+          set -euo pipefail
+          BUCKET="voyageai-tfstate"
+          REGION="${DO_SPACES_REGION}"
+          ENDPOINT="${AWS_ENDPOINT_URL_S3}"
+
+          if aws s3api head-bucket --bucket "$BUCKET" --endpoint-url "$ENDPOINT" 2>/dev/null; then
+            echo "✅ Terraform state bucket exists: ${BUCKET} (${REGION})"
+            exit 0
+          fi
+
+          echo "📦 Creating Spaces bucket ${BUCKET} in ${REGION} (endpoint ${ENDPOINT})..."
+          aws s3api create-bucket \
+            --bucket "$BUCKET" \
+            --endpoint-url "$ENDPOINT" \
+            --create-bucket-configuration "{\"LocationConstraint\":\"${REGION}\"}"
+
+          echo "✅ Created state bucket ${BUCKET}"
 
       - name: terraform init
         if: steps.infra-changed.outputs.changed != '0'
