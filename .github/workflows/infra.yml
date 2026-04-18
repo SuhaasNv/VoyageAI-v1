@@ -163,6 +163,7 @@ jobs:
           terraform init \
             -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
             -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
+            -reconfigure \
             -input=false
 
       - name: terraform validate
@@ -233,6 +234,7 @@ jobs:
           terraform init \
             -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
             -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
+            -reconfigure \
             -input=false
 
       - name: terraform plan
@@ -378,6 +380,7 @@ jobs:
           terraform init \
             -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
             -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
+            -reconfigure \
             -input=false
 
       # Always push the placeholder to :placeholder tag before terraform apply.
@@ -490,6 +493,7 @@ jobs:
           terraform init \
             -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
             -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
+            -reconfigure \
             -input=false
 
       # Temporarily remove prevent_destroy from the registry before destroying.
