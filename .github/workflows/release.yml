@@ -403,9 +403,9 @@ jobs:
         id: tf-out
         run: |
           echo "registry=$(terraform output -raw registry_endpoint 2>/dev/null || echo 'N/A')"        >> "$GITHUB_OUTPUT"
-          echo "app_url=$(terraform output -raw langgraph_live_url 2>/dev/null || echo 'N/A')"        >> "$GITHUB_OUTPUT"
+          echo "app_url=$(terraform output -raw langgraph_default_ingress 2>/dev/null || terraform output -raw langgraph_live_url 2>/dev/null || echo 'N/A')"        >> "$GITHUB_OUTPUT"
           echo "app_id=$(terraform output -raw langgraph_app_id 2>/dev/null || echo '')"              >> "$GITHUB_OUTPUT"
-          echo "nextjs_app_url=$(terraform output -raw nextjs_live_url 2>/dev/null || echo 'N/A')"    >> "$GITHUB_OUTPUT"
+          echo "nextjs_app_url=$(terraform output -raw nextjs_default_ingress 2>/dev/null || terraform output -raw nextjs_live_url 2>/dev/null || echo 'N/A')"    >> "$GITHUB_OUTPUT"
           echo "nextjs_app_id=$(terraform output -raw nextjs_app_id 2>/dev/null || echo '')"          >> "$GITHUB_OUTPUT"
 
       - name: Write infra summary
@@ -466,12 +466,12 @@ jobs:
 
           NEXTJS_URL=$(doctl apps list --output json 2>/dev/null \
             | jq -r --arg n "voyageai-nextjs-${ENV}" \
-              '.[] | select(.spec.name == $n) | .live_url // ""' \
+              '.[] | select(.spec.name == $n) | .default_ingress // .live_url // ""' \
             | head -1)
 
           LG_URL=$(doctl apps list --output json 2>/dev/null \
             | jq -r --arg n "voyageai-langgraph-${ENV}" \
-              '.[] | select(.spec.name == $n) | .live_url // ""' \
+              '.[] | select(.spec.name == $n) | .default_ingress // .live_url // ""' \
             | head -1)
 
           # Fall back to Terraform outputs if doctl returned nothing
