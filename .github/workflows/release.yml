@@ -436,8 +436,7 @@ jobs:
     needs: [ai-gate, ai-gate-skipped, infra-apply]
     if: |
       always() &&
-      (needs.ai-gate.result == 'success' || needs.ai-gate-skipped.result == 'success') &&
-      (needs.infra-apply.result == 'success' || needs.infra-apply.result == 'skipped')
+      (needs.ai-gate.result == 'success' || needs.ai-gate-skipped.result == 'success')
     runs-on: ubuntu-latest
     outputs:
       nextjs_url:    ${{ steps.fetch.outputs.nextjs_url }}
@@ -992,6 +991,11 @@ jobs:
   deploy-nextjs-do:
     name: "3 · Deploy — Next.js → DigitalOcean App Platform"
     needs: [docker-push-nextjs, migrate, resolve-urls]
+    if: |
+      always() &&
+      needs.docker-push-nextjs.result == 'success' &&
+      needs.migrate.result == 'success' &&
+      needs.resolve-urls.result == 'success'
     runs-on: ubuntu-latest
     outputs:
       app_url: ${{ needs.resolve-urls.outputs.nextjs_url }}
