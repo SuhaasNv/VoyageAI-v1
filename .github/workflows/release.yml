@@ -90,6 +90,12 @@ on:
         required: false
         default: "false"
         type: boolean
+      environment:
+        description: "Target environment to deploy to"
+        required: false
+        default: "production"
+        type: choice
+        options: [staging, production]
       skip_dast:
         description: "Skip DAST scan (faster release when no API surface changed)"
         required: false
@@ -137,7 +143,7 @@ env:
   TF_VAR_do_token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
   TF_VAR_next_internal_url: ${{ secrets.TF_VAR_next_internal_url || '' }}
   TF_VAR_internal_agent_secret: ${{ secrets.TF_VAR_internal_agent_secret }}
-  TF_VAR_environment: "production"
+  TF_VAR_environment: ${{ github.event.inputs.environment || 'production' }}
   # ── Next.js runtime secrets — propagated into App Platform via Terraform ─────
   TF_VAR_database_url: ${{ secrets.DATABASE_URL || '' }}
   TF_VAR_direct_url: ${{ secrets.DIRECT_URL || '' }}
@@ -337,6 +343,7 @@ jobs:
           terraform init \
             -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
             -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
+            -reconfigure \
             -input=false
 
       # Always push both placeholder images before terraform apply.
@@ -398,6 +405,62 @@ jobs:
               echo "| **Next.js URL** | \`${{ steps.tf-out.outputs.nextjs_app_url }}\` |"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # ════════════════════════════════════════════════════════════════════════════
+  #  STAGE 2d — RESOLVE APP URLs
+  #
+  #  Uses doctl (DO API token already in secrets) to look up the live URLs of
+  #  the Next.js and LangGraph App Platform apps for the target environment.
+  #  Eliminates the need for a PRODUCTION_URL GitHub Secret — the URL is
+  #  discovered automatically from the deployed app's name.
+  #
+  #  App name pattern (set by Terraform): voyageai-nextjs-<environment>
+  #                                       voyageai-langgraph-<environment>
+  #
+  #  Falls back to infra-apply Terraform outputs when doctl returns nothing
+  #  (e.g. first deploy before the app exists in DO).
+  # ════════════════════════════════════════════════════════════════════════════
+  resolve-urls:
+    name: "2d · Resolve App URLs (DigitalOcean API)"
+    needs: [ai-gate, ai-gate-skipped, infra-apply]
+    if: |
+      always() &&
+      (needs.ai-gate.result == 'success' || needs.ai-gate-skipped.result == 'success') &&
+      (needs.infra-apply.result == 'success' || needs.infra-apply.result == 'skipped')
+    runs-on: ubuntu-latest
+    outputs:
+      nextjs_url:    ${{ steps.fetch.outputs.nextjs_url }}
+      langgraph_url: ${{ steps.fetch.outputs.langgraph_url }}
+
+    steps:
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Fetch App URLs from DigitalOcean
+        id: fetch
+        run: |
+          ENV="${{ github.event.inputs.environment || 'production' }}"
+
+          NEXTJS_URL=$(doctl apps list --output json 2>/dev/null \
+            | jq -r --arg n "voyageai-nextjs-${ENV}" \
+              '.[] | select(.spec.name == $n) | .live_url // ""' \
+            | head -1)
+
+          LG_URL=$(doctl apps list --output json 2>/dev/null \
+            | jq -r --arg n "voyageai-langgraph-${ENV}" \
+              '.[] | select(.spec.name == $n) | .live_url // ""' \
+            | head -1)
+
+          # Fall back to Terraform outputs if doctl returned nothing
+          [ -z "$NEXTJS_URL" ] && NEXTJS_URL="${{ needs.infra-apply.outputs.nextjs_app_url }}"
+          [ -z "$LG_URL" ]     && LG_URL="${{ needs.infra-apply.outputs.app_url }}"
+
+          echo "nextjs_url=${NEXTJS_URL}"    >> "$GITHUB_OUTPUT"
+          echo "langgraph_url=${LG_URL}"     >> "$GITHUB_OUTPUT"
+          echo "✅ Next.js URL:   ${NEXTJS_URL}"
+          echo "✅ LangGraph URL: ${LG_URL}"
 
   # ════════════════════════════════════════════════════════════════════════════
   #  STAGE 2b — DOCKER: BUILD → TRIVY SCAN → PUSH TO DOCR
@@ -842,35 +905,39 @@ jobs:
   #  The actual App Platform redeploy is triggered inside docker-push-nextjs.
   #  This stage confirms success and gates the health-check stage.
   #
-  #  Required secrets:
-  #    PRODUCTION_URL  — DO App Platform public URL for the Next.js app
+  #  App URL is resolved automatically from the DO API by the resolve-urls job.
+  #  PRODUCTION_URL GitHub Secret is no longer required.
   # ══════════════════════════════════════════════════════════════════════════
   deploy-nextjs-do:
     name: "3 · Deploy — Next.js → DigitalOcean App Platform"
-    needs: [docker-push-nextjs, migrate]
+    needs: [docker-push-nextjs, migrate, resolve-urls]
     runs-on: ubuntu-latest
+    outputs:
+      app_url: ${{ needs.resolve-urls.outputs.nextjs_url }}
     environment:
-      name: production
-      url: ${{ secrets.PRODUCTION_URL }}
+      name: ${{ github.event.inputs.environment || 'production' }}
+      url: ${{ needs.resolve-urls.outputs.nextjs_url }}
 
     steps:
       - name: Confirm App Platform deployment
         run: |
           echo "Next.js App Platform redeployment was triggered in the docker-push-nextjs stage."
-          echo "Production URL: ${{ secrets.PRODUCTION_URL }}"
+          echo "App URL: ${{ needs.resolve-urls.outputs.nextjs_url }}"
 
       - name: Write deploy summary
         if: always()
         run: |
           STATUS="${{ job.status }}"
           ICON=$([ "$STATUS" = "success" ] && echo "✅" || echo "❌")
+          APP_URL="${{ needs.resolve-urls.outputs.nextjs_url }}"
           {
             echo "## 🌊 Next.js Deploy → DigitalOcean — ${ICON} ${STATUS^}"
             echo ""
             echo "| Field | Value |"
             echo "|-------|-------|"
             echo "| **Platform** | DigitalOcean App Platform |"
-            echo "| **App URL** | ${{ secrets.PRODUCTION_URL }} |"
+            echo "| **Environment** | ${{ github.event.inputs.environment || 'production' }} |"
+            echo "| **App URL** | ${APP_URL} |"
             echo "| **Commit** | \`${{ github.sha }}\` |"
             echo "| **Author** | @${{ github.actor }} |"
             echo "| **Message** | ${{ github.event.head_commit.message }} |"
@@ -893,6 +960,8 @@ jobs:
     name: "4 · Health Check (Production Smoke Tests)"
     needs: deploy-nextjs-do
     runs-on: ubuntu-latest
+    outputs:
+      app_url:      ${{ needs.deploy-nextjs-do.outputs.app_url }}
 
     steps:
       - name: Wait 60s for App Platform deploy propagation
@@ -900,7 +969,7 @@ jobs:
 
       - name: Smoke test — Next.js root page
         run: |
-          URL="${{ secrets.PRODUCTION_URL }}"
+          URL="${{ needs.deploy-nextjs-do.outputs.app_url }}"
           echo "Testing: ${URL}"
           for i in 1 2 3 4 5; do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "${URL}" || echo "000")
@@ -915,7 +984,7 @@ jobs:
 
       - name: Smoke test — CSRF endpoint
         run: |
-          URL="${{ secrets.PRODUCTION_URL }}/api/auth/csrf"
+          URL="${{ needs.deploy-nextjs-do.outputs.app_url }}/api/auth/csrf"
           for i in 1 2 3 4 5; do
             BODY=$(curl -s --max-time 10 "${URL}" || echo "")
             if echo "$BODY" | grep -q "csrfToken\|token"; then
@@ -989,10 +1058,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: ZAP Full Scan — ${{ secrets.PRODUCTION_URL }}
+      - name: ZAP Full Scan — ${{ needs.health-check.outputs.app_url }}
         uses: zaproxy/action-full-scan@v0.10.0
         with:
-          target: ${{ secrets.PRODUCTION_URL }}
+          target: ${{ needs.health-check.outputs.app_url }}
           allow_issue_writing: true
           fail_action: true
           rules_file_name: .github/zap/rules.tsv
@@ -1020,7 +1089,7 @@ jobs:
             echo ""
             echo "| Field | Value |"
             echo "|-------|-------|"
-            echo "| **Target** | ${{ secrets.PRODUCTION_URL }} |"
+            echo "| **Target** | ${{ needs.health-check.outputs.app_url }} |"
             echo "| **Scan type** | Full scan (active + passive) |"
             echo "| **Status** | ${STATUS^} |"
             echo ""
@@ -1145,7 +1214,7 @@ jobs:
             echo ""
             echo "| Service | Platform | URL |"
             echo "|---------|----------|-----|"
-            echo "| Next.js app | DO App Platform | ${{ secrets.PRODUCTION_URL }} |"
+            echo "| Next.js app | DO App Platform | ${{ needs.deploy-nextjs-do.outputs.app_url }} |"
             echo "| LangGraph service | DO App Platform | (see infra outputs) |"
             echo "| LangGraph image | DOCR | \`registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}:sha-${SHORT_SHA}\` |"
             echo "| Next.js image | DOCR | \`registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.NEXTJS_IMAGE_NAME }}:sha-${SHORT_SHA}\` |"
