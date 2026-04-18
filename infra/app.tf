@@ -306,6 +306,13 @@ resource "digitalocean_app" "nextjs" {
         scope = "RUN_TIME"
         type  = "SECRET"
       }
+
+      env {
+        key   = "NEXT_PUBLIC_APP_URL"
+        value = "$${APP_URL}"
+        scope = "RUN_TIME"
+        type  = "GENERAL"
+      }
     }
 
     # ── Ingress (route all traffic to the Next.js service) ───────────────────
