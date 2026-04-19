@@ -180,6 +180,9 @@ const FOOD_PRICE_LEVEL_FALLBACK: Record<string, number> = {
 };
 const FOOD_DEFAULT_COST = 20;
 
+/** Flat per-day transit estimate — covers subway, bus, tuk-tuk, etc. */
+const TRANSPORT_PER_DAY_USD = 15;
+
 // Thresholds that trigger budget adjustment rules.
 const HOTEL_SHARE_THRESHOLD = 0.50; // hotel > 50% of total → suggest hotel tier drop
 
@@ -331,6 +334,17 @@ function buildCostLedger(context: OptimizedTripContext): CostLineItem[] {
                 meta: { source, activityId },
             });
         }
+    }
+
+    // ── Transport (flat per-day estimate for local transit) ───────────────────
+    for (let i = 0; i < context.durationDays; i++) {
+        ledger.push({
+            day: i + 1,
+            category: "other",
+            name: "Local transport & transit",
+            amount: TRANSPORT_PER_DAY_USD,
+            meta: { source: "fallback" },
+        });
     }
 
     return ledger;

@@ -19,6 +19,7 @@ const COLOR_CLASSES: Record<NonNullable<AgentConfig["color"]>, string> = {
     amber: "border-amber-500/40 text-amber-400",
     green: "border-emerald-500/40 text-emerald-400",
     purple: "border-purple-500/40 text-purple-400",
+
 };
 
 export function WhyTooltip({ reason, confidence, agentColor = "indigo" }: WhyTooltipProps) {

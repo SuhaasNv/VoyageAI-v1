@@ -39,7 +39,7 @@ const CAT = {
     hotel:    { label: "Hotel",      color: "#6366f1", text: "text-indigo-400", desc: "Per-night rate" },
     activity: { label: "Activities", color: "#14b8a6", text: "text-teal-400",   desc: "Tours & experiences" },
     food:     { label: "Food",       color: "#f59e0b", text: "text-amber-400",  desc: "Dining & snacks" },
-    other:    { label: "Other",      color: "#475569", text: "text-slate-400",  desc: "Miscellaneous" },
+    other:    { label: "Transport",  color: "#475569", text: "text-slate-400",  desc: "Local transit & transport" },
 } as const;
 type CatKey = keyof typeof CAT;
 const CAT_ORDER: CatKey[] = ["hotel", "activity", "food", "other"];
@@ -54,10 +54,10 @@ const ADJ_META: Record<BudgetAdjustment["type"], { label: string; colorCls: stri
 // ─── Source badge config ──────────────────────────────────────────────────────
 
 const SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
-    logistics:     { label: "Verified",  cls: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" },
-    estimatedCost: { label: "Exact",     cls: "text-sky-400 bg-sky-500/10 border-sky-500/20"             },
-    priceLevel:    { label: "Est.",      cls: "text-slate-400 bg-white/[0.04] border-white/[0.08]"       },
-    fallback:      { label: "Est.",      cls: "text-slate-400 bg-white/[0.04] border-white/[0.08]"       },
+    logistics:     { label: "Calculated", cls: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" },
+    estimatedCost: { label: "Estimated",  cls: "text-sky-400 bg-sky-500/10 border-sky-500/20"             },
+    priceLevel:    { label: "Estimated",  cls: "text-amber-400 bg-amber-500/10 border-amber-500/20"       },
+    fallback:      { label: "Estimated",  cls: "text-slate-400 bg-white/[0.04] border-white/[0.08]"       },
 };
 
 // ─── AnimatedNumber ───────────────────────────────────────────────────────────
@@ -527,13 +527,20 @@ export function BudgetStage({
         hotel: 0, food: 0, activity: 0, other: 0,
     };
 
-    // Ledger items grouped by day
-    const ledger = budget?.ledger ?? [];
-    const ledgerByDay = (result?.days ?? []).map((day) => ({
-        day,
-        items: ledger.filter((item) => item.day === day.day),
-        dayCost: budget?.costBreakdown?.perDay[day.day - 1] ?? 0,
-    }));
+    // Ledger items — separate transport (uniform flat cost) for a single grouped row
+    const ledger         = budget?.ledger ?? [];
+    const mainLedger     = ledger.filter((item) => item.category !== "other");
+    const transportItems = ledger.filter((item) => item.category === "other");
+    const transportTotal = transportItems.reduce((sum, item) => sum + item.amount, 0);
+    const transportDays  = result?.days?.length ?? 0;
+
+    // Build per-day groups from non-transport items only; compute dayCost from items
+    // so the accordion header always matches the sum of what's shown inside.
+    const ledgerByDay = (result?.days ?? []).map((day) => {
+        const items   = mainLedger.filter((item) => item.day === day.day);
+        const dayCost = items.reduce((sum, item) => sum + item.amount, 0);
+        return { day, items, dayCost };
+    });
 
     const optimalPlan    = budget?.budgetAnalysis?.optimalPlan;
     const planWasApplied = appliedSavings > 0;
@@ -598,17 +605,22 @@ export function BudgetStage({
                             Budget Breakdown
                         </h3>
                         <div className="flex items-center gap-2">
-                            <select
-                                value={currency.code}
-                                onChange={(e) => setCurrency(CURRENCIES.find((c) => c.code === e.target.value) ?? CURRENCIES[0]!)}
-                                className="text-xs bg-white/[0.04] border border-white/[0.08] rounded-full px-2.5 py-1 text-slate-300 outline-none appearance-none"
-                            >
-                                {CURRENCIES.map((c) => (
-                                    <option key={c.code} value={c.code} className="bg-[#0B0F19]">
-                                        {c.flag} {c.code}
-                                    </option>
-                                ))}
-                            </select>
+                            <div className="flex flex-col items-end gap-0.5">
+                                <select
+                                    value={currency.code}
+                                    onChange={(e) => setCurrency(CURRENCIES.find((c) => c.code === e.target.value) ?? CURRENCIES[0]!)}
+                                    className="text-xs bg-white/[0.04] border border-white/[0.08] rounded-full px-2.5 py-1 text-slate-300 outline-none appearance-none"
+                                >
+                                    {CURRENCIES.map((c) => (
+                                        <option key={c.code} value={c.code} className="bg-[#0B0F19]">
+                                            {c.flag} {c.code}
+                                        </option>
+                                    ))}
+                                </select>
+                                <p className="text-[9px] text-slate-600 leading-none">
+                                    Rates are approximate and may vary.
+                                </p>
+                            </div>
                             <button
                                 onClick={onExplain}
                                 className="text-xs text-emerald-400 hover:text-emerald-300 border border-emerald-500/20 rounded-full px-2.5 py-0.5 hover:scale-105 active:scale-95"
@@ -638,6 +650,9 @@ export function BudgetStage({
                         <p className="text-xs text-slate-500 uppercase tracking-widest mb-1">Estimated Total</p>
                         <p className={`text-5xl font-bold tracking-tight ${totalColor}`}>
                             <AnimatedNumber to={total} symbol={currency.symbol} />
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1">
+                            Includes accommodation, food, activities, and transport estimates
                         </p>
                         {userBudget && (
                             <p className="text-sm text-slate-500 mt-2">
@@ -719,6 +734,31 @@ export function BudgetStage({
                                 onToggle={() => toggleDay(day.day)}
                             />
                         ))}
+
+                        {/* Transport summary — collapsed into one row across the trip */}
+                        {transportDays > 0 && (
+                            <div className="flex items-center justify-between px-4 py-3 bg-white/[0.04] border border-white/[0.08] rounded-xl">
+                                <div className="flex items-center gap-2 min-w-0">
+                                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full border text-slate-400 bg-white/[0.04] border-white/[0.06] flex-shrink-0">
+                                        Transport
+                                    </span>
+                                    <span className="text-sm text-slate-300 font-medium truncate">
+                                        Transport &amp; local transit
+                                    </span>
+                                    <span className="text-xs text-slate-600 flex-shrink-0">
+                                        ({transportDays} {transportDays === 1 ? "day" : "days"})
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${SOURCE_BADGE.fallback!.cls}`}>
+                                        {SOURCE_BADGE.fallback!.label}
+                                    </span>
+                                    <span className="text-sm font-semibold text-white w-16 text-right">
+                                        {currency.symbol}{Math.round(transportTotal * currency.rate).toLocaleString()}
+                                    </span>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     {/* ── Decision gate ── */}

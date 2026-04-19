@@ -59,22 +59,14 @@ export default function DashboardPage() {
             .catch(console.error);
     }, []);
 
-    const { totalBudget, totalSpent, budgetCurrency } = useMemo(() => {
+    const { totalPlanned, budgetCurrency } = useMemo(() => {
         const baseCurrency: CurrencyCode = "USD";
         let totalB = 0;
-        let totalS = 0;
-        
         trips.forEach(t => {
             const tripCurrency = (t.budget?.currency || "USD") as CurrencyCode;
             totalB += CurrencyService.convert(t.budget?.total || 0, tripCurrency, baseCurrency);
-            totalS += CurrencyService.convert(t.budget?.spent || 0, tripCurrency, baseCurrency);
         });
-
-        return {
-            totalBudget: totalB,
-            totalSpent: totalS,
-            budgetCurrency: baseCurrency as string
-        };
+        return { totalPlanned: totalB, budgetCurrency: baseCurrency as string };
     }, [trips]);
 
     const aiStatusMessage = useMemo(() => {
@@ -169,8 +161,8 @@ export default function DashboardPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4 gap-6 items-start">
                     <TripIntelligencePanel trips={trips} isLoading={isLoading} />
                     <BudgetOverviewCard
-                        totalBudget={totalBudget}
-                        totalSpent={totalSpent}
+                        totalPlanned={totalPlanned}
+                        tripCount={trips.length}
                         currency={budgetCurrency}
                     />
                     <CalendarWidget trips={trips} />
