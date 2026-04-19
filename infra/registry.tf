@@ -12,9 +12,9 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "digitalocean_container_registry" "voyageai" {
-  name                   = var.registry_name
+  name                   = local.registry_name
   subscription_tier_slug = var.registry_tier
-  region                 = var.region
+  region                 = local.registry_region
 
   lifecycle {
     # Prevent accidental deletion — destroying the registry also deletes all images.
@@ -25,17 +25,12 @@ resource "digitalocean_container_registry" "voyageai" {
 # Grant the App Platform service account pull access to the registry.
 # Without this the App Platform cannot pull the voyageai-langgraph image.
 resource "digitalocean_container_registry_docker_credentials" "app_platform" {
-  registry_name = digitalocean_container_registry.voyageai.name
-  write         = false   # App Platform only needs read (pull) access
-  expiry_seconds = 0      # 0 = never expires (rotated by CI on each deploy)
+  registry_name  = digitalocean_container_registry.voyageai.name
+  write          = false # App Platform only needs read (pull) access
+  expiry_seconds = 0     # 0 = never expires (rotated by CI on each deploy)
 }
 
-# ── Project membership ────────────────────────────────────────────────────────
-# Assigns the registry to the DigitalOcean project for cost tracking + grouping.
-
-resource "digitalocean_project_resources" "registry" {
-  project = digitalocean_project.voyageai.id
-  resources = [
-    digitalocean_container_registry.voyageai.urn,
-  ]
-}
+# NOTE: Container Registry is an account-level resource in DigitalOcean and
+# cannot be assigned to a project via the project resources API.
+# Only apps, droplets, databases, Kubernetes clusters, load balancers,
+# domains, volumes, spaces, and floating IPs are project-assignable.

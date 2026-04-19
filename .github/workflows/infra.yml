@@ -26,18 +26,21 @@ name: Infrastructure — DigitalOcean (Terraform)
 #    DIGITALOCEAN_ACCESS_TOKEN  — DO API token (write:registry + app platform)
 #    DO_SPACES_ACCESS_KEY       — Spaces access key (for Terraform state bucket)
 #    DO_SPACES_SECRET_KEY       — Spaces secret key (for Terraform state bucket)
-#    TF_VAR_next_internal_url   — Vercel production URL (e.g. https://voyageai.vercel.app)
+#    TF_VAR_next_internal_url   — Railway public app URL (e.g. https://voyageai.up.railway.app)
 #    TF_VAR_internal_agent_secret — Shared secret for Next.js ↔ LangGraph auth
 #
 #  Optional GitHub Secrets / Variables:
-#    DO_SPACES_REGION           — Spaces region (default: nyc3)
+#    DO_SPACES_REGION           — Spaces region (default: sgp1)
+#    REGISTRY_NAME              — DOCR slug (default voyageai-docr; set explicitly when importing another registry)
+#    DO_PROJECT_NAME            — DO project display name (default VoyageAI via Terraform locals)
+#    DO_TF_MANAGE_PROJECT       — Set to true only so Terraform creates the DO project (greenfield). Omit or false = use existing project by name (default).
 #    TF_VAR_alert_email         — Email for infrastructure alerts
-#    TF_VAR_region              — DO region (default: nyc3)
+#    TF_VAR_region              — DO region (default: sgp1)
 #    TF_VAR_environment         — staging | production (default: production)
 #    TF_VAR_langgraph_image_tag — Image tag to deploy (default: latest)
 #
 #  One-time bootstrap (run locally before first CI run):
-#    doctl spaces create voyageai-tfstate --region nyc3
+#    doctl spaces create voyageai-tfstate --region sgp1
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -80,19 +83,46 @@ env:
   TF_VERSION: "1.8.5"
   TF_WORKING_DIR: infra
   # DigitalOcean Spaces backend config
-  DO_SPACES_REGION: ${{ vars.DO_SPACES_REGION || 'nyc3' }}
+  DO_SPACES_REGION: ${{ vars.DO_SPACES_REGION || 'sgp1' }}
   TF_BACKEND_BUCKET: voyageai-tfstate
   # Pass DO token to both Terraform provider and doctl
   DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
   # All TF_VAR_* are automatically picked up by Terraform as input variables
   TF_VAR_do_token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
-  TF_VAR_next_internal_url: ${{ secrets.TF_VAR_next_internal_url }}
+  TF_VAR_next_internal_url: ${{ secrets.TF_VAR_next_internal_url || '' }}
   TF_VAR_internal_agent_secret: ${{ secrets.TF_VAR_internal_agent_secret }}
   TF_VAR_alert_email: ${{ secrets.TF_VAR_alert_email || '' }}
   TF_VAR_environment: ${{ github.event.inputs.environment || 'production' }}
-  TF_IN_AUTOMATION: "true"    # Suppress interactive prompts in Terraform output
+  TF_VAR_registry_name: ${{ vars.REGISTRY_NAME }}
+  TF_VAR_project_name: ${{ vars.DO_PROJECT_NAME }}
+  TF_VAR_manage_digitalocean_project: ${{ vars.DO_TF_MANAGE_PROJECT == 'true' && 'true' || 'false' }}
+  # ── Next.js runtime secrets — injected into the App Platform Next.js service ─
+  TF_VAR_database_url: ${{ secrets.DATABASE_URL || '' }}
+  TF_VAR_direct_url: ${{ secrets.DIRECT_URL || '' }}
+  TF_VAR_jwt_access_secret: ${{ secrets.JWT_ACCESS_SECRET || '' }}
+  TF_VAR_jwt_refresh_secret: ${{ secrets.JWT_REFRESH_SECRET || '' }}
+  TF_VAR_csrf_secret: ${{ secrets.CSRF_SECRET || '' }}
+  TF_VAR_google_client_id: ${{ secrets.GOOGLE_CLIENT_ID || '' }}
+  TF_VAR_google_client_secret: ${{ secrets.GOOGLE_CLIENT_SECRET || '' }}
+  TF_VAR_llm_provider: ${{ vars.LLM_PROVIDER || 'openai' }}
+  TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY || '' }}
+  TF_VAR_gemini_api_key: ${{ secrets.GEMINI_API_KEY || '' }}
+  TF_VAR_mapbox_token: ${{ secrets.NEXT_PUBLIC_MAPBOX_TOKEN || '' }}
+  TF_VAR_pexels_api_key: ${{ secrets.PEXELS_API_KEY || '' }}
+  TF_VAR_upstash_redis_rest_url: ${{ secrets.UPSTASH_REDIS_REST_URL || '' }}
+  TF_VAR_upstash_redis_rest_token: ${{ secrets.UPSTASH_REDIS_REST_TOKEN || '' }}
+  TF_VAR_langgraph_service_url: ${{ secrets.LANGGRAPH_SERVICE_URL || '' }}
   TF_CLI_ARGS_plan: "-lock-timeout=60s"
   TF_CLI_ARGS_apply: "-lock-timeout=60s"
+  # Registry name must match var.registry_name default (used in placeholder push)
+  DOCR_REGISTRY: registry.digitalocean.com/${{ vars.REGISTRY_NAME || 'voyageai-docr' }}
+  # AWS SDK env vars for the S3-compatible Spaces backend.
+  # Must be present for ALL terraform operations (init, plan, apply, destroy, show)
+  # not just init — every state read/write authenticates against Spaces.
+  AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_ACCESS_KEY }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET_KEY }}
+  AWS_DEFAULT_REGION: us-east-1
+  AWS_ENDPOINT_URL_S3: https://${{ vars.DO_SPACES_REGION || 'sgp1' }}.digitaloceanspaces.com
 
 defaults:
   run:
@@ -101,7 +131,6 @@ defaults:
 
 # ─────────────────────────────────────────────────────────────────────────────
 jobs:
-
   # ════════════════════════════════════════════════════════════════════════════
   #  VALIDATE
   #  • terraform fmt   — enforces canonical formatting (fails on drift)
@@ -125,16 +154,45 @@ jobs:
       - name: terraform fmt — check canonical formatting
         id: fmt
         run: terraform fmt -check -recursive -diff
-        continue-on-error: true   # Report but don't block — fmt errors are cosmetic
+        continue-on-error: true # Report but don't block — fmt errors are cosmetic
+
+      - name: Bootstrap tfstate bucket
+        run: |
+          set -euo pipefail
+          BUCKET="${TF_BACKEND_BUCKET:-voyageai-tfstate}"
+          REGION="${DO_SPACES_REGION}"
+          ENDPOINT="${AWS_ENDPOINT_URL_S3}"
+
+          if aws s3api head-bucket --bucket "$BUCKET" --endpoint-url "$ENDPOINT" 2>/dev/null; then
+            echo "✅ Terraform state bucket exists: ${BUCKET} (${REGION})"
+            exit 0
+          fi
+
+          echo "📦 Creating Spaces bucket ${BUCKET} in ${REGION} (endpoint ${ENDPOINT})..."
+          aws s3api create-bucket \
+            --bucket "$BUCKET" \
+            --endpoint-url "$ENDPOINT" \
+            --create-bucket-configuration "{\"LocationConstraint\":\"${REGION}\"}"
+
+          echo "✅ Created state bucket ${BUCKET}"
 
       - name: terraform init
         id: init
         run: |
-          terraform init \
-            -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
-            -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
-            -backend-config="endpoint=https://${{ env.DO_SPACES_REGION }}.digitaloceanspaces.com" \
-            -input=false
+          # Provider install hits registry.terraform.io → GitHub checksums; 504s are transient.
+          for attempt in 1 2 3 4 5 6; do
+            echo "::notice::terraform init attempt ${attempt}/6..."
+            if terraform init \
+              -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
+              -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
+              -reconfigure \
+              -input=false; then
+              exit 0
+            fi
+            echo "::warning::terraform init failed (registry timeout/network); retrying in 30s..."
+            [ "$attempt" = "6" ] && { echo "::error::terraform init failed after 6 attempts"; exit 1; }
+            sleep 30
+          done
 
       - name: terraform validate
         id: validate
@@ -192,13 +250,42 @@ jobs:
           key: terraform-${{ runner.os }}-${{ hashFiles('infra/.terraform.lock.hcl') }}
           restore-keys: terraform-${{ runner.os }}-
 
+      - name: Bootstrap tfstate bucket
+        run: |
+          set -euo pipefail
+          BUCKET="${TF_BACKEND_BUCKET:-voyageai-tfstate}"
+          REGION="${DO_SPACES_REGION}"
+          ENDPOINT="${AWS_ENDPOINT_URL_S3}"
+
+          if aws s3api head-bucket --bucket "$BUCKET" --endpoint-url "$ENDPOINT" 2>/dev/null; then
+            echo "✅ Terraform state bucket exists: ${BUCKET} (${REGION})"
+            exit 0
+          fi
+
+          echo "📦 Creating Spaces bucket ${BUCKET} in ${REGION} (endpoint ${ENDPOINT})..."
+          aws s3api create-bucket \
+            --bucket "$BUCKET" \
+            --endpoint-url "$ENDPOINT" \
+            --create-bucket-configuration "{\"LocationConstraint\":\"${REGION}\"}"
+
+          echo "✅ Created state bucket ${BUCKET}"
+
       - name: terraform init
         run: |
-          terraform init \
-            -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
-            -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
-            -backend-config="endpoint=https://${{ env.DO_SPACES_REGION }}.digitaloceanspaces.com" \
-            -input=false
+          # Provider install hits registry.terraform.io → GitHub checksums; 504s are transient.
+          for attempt in 1 2 3 4 5 6; do
+            echo "::notice::terraform init attempt ${attempt}/6..."
+            if terraform init \
+              -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
+              -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
+              -reconfigure \
+              -input=false; then
+              exit 0
+            fi
+            echo "::warning::terraform init failed (registry timeout/network); retrying in 30s..."
+            [ "$attempt" = "6" ] && { echo "::error::terraform init failed after 6 attempts"; exit 1; }
+            sleep 30
+          done
 
       - name: terraform plan
         id: plan
@@ -303,7 +390,8 @@ jobs:
 
   # ════════════════════════════════════════════════════════════════════════════
   #  APPLY
-  #  Applies the exact binary plan from the plan job — no second plan run.
+  #  Creates DOCR via targeted apply, pushes placeholders only if DOCR has no repos yet, re-plans, then applies
+  #  (plan job artifact is not used here — state changes after registry bootstrap).
   #  Only runs on push to main or manual workflow_dispatch with action=apply.
   #  Posts the Terraform outputs (registry URL, app URL) to the step summary.
   # ════════════════════════════════════════════════════════════════════════════
@@ -311,7 +399,7 @@ jobs:
     name: "🚀 Apply"
     needs: plan
     runs-on: ubuntu-latest
-    environment: production       # Requires manual approval in GitHub Environments
+    environment: production # Requires manual approval in GitHub Environments
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
@@ -331,22 +419,111 @@ jobs:
           key: terraform-${{ runner.os }}-${{ hashFiles('infra/.terraform.lock.hcl') }}
           restore-keys: terraform-${{ runner.os }}-
 
+      - name: Bootstrap tfstate bucket
+        run: |
+          set -euo pipefail
+          BUCKET="${TF_BACKEND_BUCKET:-voyageai-tfstate}"
+          REGION="${DO_SPACES_REGION}"
+          ENDPOINT="${AWS_ENDPOINT_URL_S3}"
+
+          if aws s3api head-bucket --bucket "$BUCKET" --endpoint-url "$ENDPOINT" 2>/dev/null; then
+            echo "✅ Terraform state bucket exists: ${BUCKET} (${REGION})"
+            exit 0
+          fi
+
+          echo "📦 Creating Spaces bucket ${BUCKET} in ${REGION} (endpoint ${ENDPOINT})..."
+          aws s3api create-bucket \
+            --bucket "$BUCKET" \
+            --endpoint-url "$ENDPOINT" \
+            --create-bucket-configuration "{\"LocationConstraint\":\"${REGION}\"}"
+
+          echo "✅ Created state bucket ${BUCKET}"
+
       - name: terraform init
         run: |
-          terraform init \
-            -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
-            -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
-            -backend-config="endpoint=https://${{ env.DO_SPACES_REGION }}.digitaloceanspaces.com" \
-            -input=false
+          # Provider install hits registry.terraform.io → GitHub checksums; 504s are transient.
+          for attempt in 1 2 3 4 5 6; do
+            echo "::notice::terraform init attempt ${attempt}/6..."
+            if terraform init \
+              -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
+              -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
+              -reconfigure \
+              -input=false; then
+              exit 0
+            fi
+            echo "::warning::terraform init failed (registry timeout/network); retrying in 30s..."
+            [ "$attempt" = "6" ] && { echo "::error::terraform init failed after 6 attempts"; exit 1; }
+            sleep 30
+          done
 
-      - name: Download plan artifact
-        uses: actions/download-artifact@v4
+      # DOCR must exist before docker push (cannot push to a registry Terraform has not created yet).
+      - name: Terraform apply — container registry only (before DOCR push)
+        run: |
+          terraform apply -input=false -no-color -auto-approve \
+            -target=digitalocean_container_registry.voyageai \
+            -target=digitalocean_container_registry_docker_credentials.app_platform
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
         with:
-          name: tfplan-${{ github.sha }}
-          path: infra/
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      # App Platform needs the :placeholder tag until CI pushes other tags. Skip only if both repos already have it.
+      - name: Push placeholder images to DOCR
+        run: |
+          set -euo pipefail
+          REGISTRY="${DOCR_REGISTRY}"
+          PH_TAG="placeholder"
+          SKIP=0
+          if REPOS_OUT=$(doctl registry repository list --format Name --no-header 2>/dev/null); then
+            if echo "$REPOS_OUT" | grep -qx 'voyageai-langgraph' && echo "$REPOS_OUT" | grep -qx 'voyageai-nextjs'; then
+              LG_OK=0
+              NX_OK=0
+              if doctl registry repository list-tags voyageai-langgraph --format Tag --no-header 2>/dev/null | grep -qx "$PH_TAG"; then LG_OK=1; fi
+              if doctl registry repository list-tags voyageai-nextjs --format Tag --no-header 2>/dev/null | grep -qx "$PH_TAG"; then NX_OK=1; fi
+              if [ "$LG_OK" -eq 1 ] && [ "$NX_OK" -eq 1 ]; then
+                SKIP=1
+              fi
+            fi
+          else
+            echo "::warning::Could not list DOCR repositories; pushing placeholders to be safe."
+          fi
+          if [ "$SKIP" -eq 1 ]; then
+            echo "::notice::DOCR repos already have :${PH_TAG} — skipping placeholder image push."
+            exit 0
+          fi
+          echo "$DIGITALOCEAN_ACCESS_TOKEN" | \
+            docker login registry.digitalocean.com --username token --password-stdin
+          echo "::notice::If push fails with unauthorized, ensure DIGITALOCEAN_ACCESS_TOKEN has write:registry (or Full Access)."
+          LG_IMAGE="${REGISTRY}/voyageai-langgraph:placeholder"
+          docker build -t "$LG_IMAGE" placeholder/
+          docker push "$LG_IMAGE"
+          NX_IMAGE="${REGISTRY}/voyageai-nextjs:placeholder"
+          docker build -t "$NX_IMAGE" placeholder/nextjs/
+          docker push "$NX_IMAGE"
+
+      # Re-plan after registry exists (and placeholders if pushed) — plan job artifact is stale after -target apply + push.
+      - name: terraform plan (post-registry, for apply)
+        id: replan
+        run: |
+          set +e
+          terraform plan \
+            -out=tfplan.binary \
+            -input=false \
+            -no-color \
+            -detailed-exitcode > replan.txt 2>&1
+          EC=$?
+          echo "exitcode=${EC}" >> "$GITHUB_OUTPUT"
+          cat replan.txt
+          if [ "$EC" -eq 1 ]; then
+            echo "::error::terraform plan failed (see replan.txt)"
+            exit 1
+          fi
+          exit 0
 
       - name: terraform apply (saved plan)
         id: apply
+        if: steps.replan.outputs.exitcode != '1'
         run: terraform apply -input=false -no-color tfplan.binary
 
       # Capture outputs so they can be shown in the summary + used downstream
@@ -354,11 +531,15 @@ jobs:
         id: outputs
         run: |
           REGISTRY=$(terraform output -raw registry_endpoint 2>/dev/null || echo "N/A")
-          APP_URL=$(terraform output -raw langgraph_live_url 2>/dev/null || echo "N/A")
-          VERCEL_HINT=$(terraform output -raw vercel_env_hint 2>/dev/null || echo "N/A")
-          echo "registry=${REGISTRY}"       >> "$GITHUB_OUTPUT"
-          echo "app_url=${APP_URL}"          >> "$GITHUB_OUTPUT"
-          echo "vercel_hint=${VERCEL_HINT}"  >> "$GITHUB_OUTPUT"
+          LG_URL=$(terraform output -raw langgraph_live_url 2>/dev/null || echo "N/A")
+          NX_URL=$(terraform output -raw nextjs_live_url 2>/dev/null || echo "N/A")
+          LG_HINT=$(terraform output -raw langgraph_env_hint 2>/dev/null || echo "N/A")
+          NX_HINT=$(terraform output -raw nextjs_env_hint 2>/dev/null || echo "N/A")
+          echo "registry=${REGISTRY}"   >> "$GITHUB_OUTPUT"
+          echo "lg_url=${LG_URL}"       >> "$GITHUB_OUTPUT"
+          echo "nx_url=${NX_URL}"       >> "$GITHUB_OUTPUT"
+          echo "lg_hint=${LG_HINT}"     >> "$GITHUB_OUTPUT"
+          echo "nx_hint=${NX_HINT}"     >> "$GITHUB_OUTPUT"
 
       - name: Write apply summary
         run: |
@@ -368,15 +549,21 @@ jobs:
             echo "| Resource | Value |"
             echo "|----------|-------|"
             echo "| **Container Registry** | \`${{ steps.outputs.outputs.registry }}\` |"
-            echo "| **LangGraph App URL** | \`${{ steps.outputs.outputs.app_url }}\` |"
+            echo "| **LangGraph URL** | \`${{ steps.outputs.outputs.lg_url }}\` |"
+            echo "| **Next.js URL** | \`${{ steps.outputs.outputs.nx_url }}\` |"
             echo "| **Commit** | \`${{ github.sha }}\` |"
             echo "| **Applied by** | @${{ github.actor }} |"
             echo ""
-            echo "### Next step"
-            echo "Add the following to your **Vercel project environment variables**:"
+            echo "### Post-deploy wiring"
+            echo ""
+            echo "After both apps are live, update GitHub Secrets with:"
             echo ""
             echo '```'
-            echo "${{ steps.outputs.outputs.vercel_hint }}"
+            echo "# Set in GitHub Secrets → used by TF_VAR_langgraph_service_url"
+            echo "${{ steps.outputs.outputs.nx_hint }}"
+            echo ""
+            echo "# Set in GitHub Secrets → used by TF_VAR_next_internal_url"
+            echo "${{ steps.outputs.outputs.lg_hint }}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -404,13 +591,42 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
+      - name: Bootstrap tfstate bucket
+        run: |
+          set -euo pipefail
+          BUCKET="${TF_BACKEND_BUCKET:-voyageai-tfstate}"
+          REGION="${DO_SPACES_REGION}"
+          ENDPOINT="${AWS_ENDPOINT_URL_S3}"
+
+          if aws s3api head-bucket --bucket "$BUCKET" --endpoint-url "$ENDPOINT" 2>/dev/null; then
+            echo "✅ Terraform state bucket exists: ${BUCKET} (${REGION})"
+            exit 0
+          fi
+
+          echo "📦 Creating Spaces bucket ${BUCKET} in ${REGION} (endpoint ${ENDPOINT})..."
+          aws s3api create-bucket \
+            --bucket "$BUCKET" \
+            --endpoint-url "$ENDPOINT" \
+            --create-bucket-configuration "{\"LocationConstraint\":\"${REGION}\"}"
+
+          echo "✅ Created state bucket ${BUCKET}"
+
       - name: terraform init
         run: |
-          terraform init \
-            -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
-            -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
-            -backend-config="endpoint=https://${{ env.DO_SPACES_REGION }}.digitaloceanspaces.com" \
-            -input=false
+          # Provider install hits registry.terraform.io → GitHub checksums; 504s are transient.
+          for attempt in 1 2 3 4 5 6; do
+            echo "::notice::terraform init attempt ${attempt}/6..."
+            if terraform init \
+              -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
+              -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
+              -reconfigure \
+              -input=false; then
+              exit 0
+            fi
+            echo "::warning::terraform init failed (registry timeout/network); retrying in 30s..."
+            [ "$attempt" = "6" ] && { echo "::error::terraform init failed after 6 attempts"; exit 1; }
+            sleep 30
+          done
 
       # Temporarily remove prevent_destroy from the registry before destroying.
       # The lifecycle block is a Terraform meta-argument — it cannot be overridden
@@ -435,5 +651,5 @@ jobs:
             echo "| **Commit** | \`${{ github.sha }}\` |"
             echo ""
             echo "> All DigitalOcean resources (registry, app, project) have been destroyed."
-            echo "> Remember to remove \`LANGGRAPH_SERVICE_URL\` from the Vercel project settings."
+            echo "> Remember to remove \`LANGGRAPH_SERVICE_URL\` from the Railway service variables."
           } >> "$GITHUB_STEP_SUMMARY"

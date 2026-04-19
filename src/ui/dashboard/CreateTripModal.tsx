@@ -23,20 +23,10 @@ interface CreateTripModalProps {
 }
 
 export function CreateTripModal({ isOpen, onClose, onFlowStart, initialDestination = "" }: CreateTripModalProps) {
-    const defaultDates = () => {
-        const start = new Date();
-        start.setDate(start.getDate() + 1); // tomorrow
-        const end = new Date();
-        end.setDate(end.getDate() + 8); // 1 week later
-        return {
-            start: start.toISOString().split("T")[0],
-            end: end.toISOString().split("T")[0],
-        };
-    };
 
     const [destination, setDestination] = useState(initialDestination);
-    const [startDate, setStartDate] = useState(defaultDates().start);
-    const [endDate, setEndDate] = useState(defaultDates().end);
+    const [startDate, setStartDate] = useState("");
+    const [endDate, setEndDate] = useState("");
     const [selectedVibes, setSelectedVibes] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);

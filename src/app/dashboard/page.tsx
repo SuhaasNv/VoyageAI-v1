@@ -13,7 +13,6 @@ import { TravelDNAOnboardingModal } from "@/ui/dashboard/TravelDNAOnboardingModa
 import { AICommandPalette } from "@/ui/dashboard/AICommandPalette";
 import { FlightTicketWizard } from "@/ui/dashboard/FlightTicketWizard";
 import { ItineraryCreationFlow } from "@/ui/components/itinerary-flow/ItineraryCreationFlow";
-import { DashboardResumeBanner } from "@/ui/dashboard/DashboardResumeBanner";
 import { useTrips } from "@/hooks/useTrips";
 import { CurrencyService, type CurrencyCode } from "@/lib/services/currency.service";
 import type { Trip } from "@/lib/api";
@@ -86,8 +85,6 @@ export default function DashboardPage() {
     return (
         <div className="h-full overflow-y-auto scroll-smooth hide-scrollbar">
             <div className="min-h-full p-6 md:p-8 lg:p-10 max-w-[1440px] mx-auto space-y-8 relative mobile-container">
-                <DashboardResumeBanner onResume={(tripId: string, input: FlowInput) => setFlowSession({ tripId, input })} />
-
                 {/* ── Top bar ───────────────────────────────────────────────── */}
                 <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-2">
                     <div className="flex items-center gap-4 flex-1 justify-end">

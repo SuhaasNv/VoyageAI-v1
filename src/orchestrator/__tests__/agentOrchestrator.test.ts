@@ -100,12 +100,22 @@ function makeSafeContext(overBudget = false, dense = false): SafeTripContext {
 
 function makeBudgeted(overBudget = false, dense = false): BudgetedTripContext {
     const opt = makeOptimizedContext(overBudget, dense);
+    const total = overBudget ? 9999 : 400;
     return {
         ...opt,
         budget: {
-            totalEstimatedCost: overBudget ? 9999 : 400,
+            totalEstimatedCost: total,
             costPerDay: [200, 200],
             isOverBudget: overBudget,
+            ledger: [
+                { day: 1, category: "hotel", name: "Hotel A", amount: 100, meta: { source: "fallback" } },
+                { day: 2, category: "hotel", name: "Hotel A", amount: 100, meta: { source: "fallback" } },
+            ],
+            costBreakdown: {
+                perDay: [200, 200],
+                total,
+                categories: { hotel: 200, food: 0, activity: 0, other: 0 },
+            },
         },
     };
 }
