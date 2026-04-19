@@ -108,7 +108,7 @@ variable "langgraph_instance_size" {
 }
 
 variable "next_internal_url" {
-  description = "Public HTTPS URL of the Next.js App Platform service (LangGraph calls /api/internal/agent/execute)"
+  description = "Optional override for LangGraph NEXT_INTERNAL_URL. Leave empty (default) to use digitalocean_app.nextjs.live_url from Terraform (no manual URL pairing for this side)."
   type        = string
   default     = ""
 }
@@ -235,14 +235,23 @@ variable "pexels_api_key" {
   default     = ""
 }
 
+# ioredis / src/lib/redis.ts — required in production for AI rate limits (see src/security/rateLimiter.ts).
+# Use Upstash "Redis" TCP URL (rediss://…) or any Redis URL compatible with ioredis.
+variable "redis_url" {
+  description = "Redis connection URL for REDIS_URL (rate limiting, AI cache) — not the Upstash REST API"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "upstash_redis_rest_url" {
-  description = "Upstash Redis REST URL (LLM response caching, rate limiting)"
+  description = "Optional Upstash REST URL (UPSTASH_REDIS_REST_URL) — not read by Node ioredis; prefer redis_url"
   type        = string
   default     = ""
 }
 
 variable "upstash_redis_rest_token" {
-  description = "Upstash Redis REST token"
+  description = "Optional Upstash REST token — not read by Node ioredis; prefer redis_url"
   type        = string
   sensitive   = true
   default     = ""

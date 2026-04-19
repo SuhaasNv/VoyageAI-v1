@@ -4,7 +4,8 @@
 #  DigitalOcean App Platform — VoyageAI Multi-Service Stack
 #
 #  Architecture:
-#    App Platform (Next.js) ──HTTP──▶ App Platform (LangGraph) ──HTTP──▶ Next.js /api/internal
+#    LangGraph → Next.js (/api/internal/…) using NEXT_INTERNAL_URL (default: nextjs.live_url in TF)
+#    Next.js → LangGraph (/run) using LANGGRAPH_SERVICE_URL (GitHub secret / TF_VAR after LangGraph exists)
 #
 #  Services:
 #    • voyageai-langgraph  — Python FastAPI + LangGraph orchestration (port 8000)
@@ -38,10 +39,16 @@ data "digitalocean_project" "voyageai" {
 }
 
 # ── App Platform — LangGraph service ─────────────────────────────────────────
+# NEXT_INTERNAL_URL defaults to the Next.js app live_url so LangGraph can call
+# /api/internal/agent/execute without manually copying the Next URL into secrets.
+# Optional: set TF_VAR_next_internal_url to override (e.g. custom domain).
 
 resource "digitalocean_app" "langgraph" {
-  # Registry must exist before App Platform validates the image source.
-  depends_on = [digitalocean_container_registry.voyageai]
+  # Next.js must exist first so we can inject its public URL into LangGraph env.
+  depends_on = [
+    digitalocean_container_registry.voyageai,
+    digitalocean_app.nextjs,
+  ]
 
   spec {
     name   = "voyageai-langgraph-${var.environment}"
@@ -83,7 +90,7 @@ resource "digitalocean_app" "langgraph" {
       # Plain (non-sensitive) — visible in logs
       env {
         key   = "NEXT_INTERNAL_URL"
-        value = var.next_internal_url
+        value = length(trimspace(var.next_internal_url)) > 0 ? trimspace(var.next_internal_url) : digitalocean_app.nextjs.live_url
         scope = "RUN_TIME"
         type  = "GENERAL"
       }
@@ -303,6 +310,13 @@ resource "digitalocean_app" "nextjs" {
       env {
         key   = "PEXELS_API_KEY"
         value = var.pexels_api_key
+        scope = "RUN_TIME"
+        type  = "SECRET"
+      }
+
+      env {
+        key   = "REDIS_URL"
+        value = var.redis_url
         scope = "RUN_TIME"
         type  = "SECRET"
       }

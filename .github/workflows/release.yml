@@ -49,12 +49,12 @@ name: Release — VoyageAI Production Deployment
 #    DO_TF_MANAGE_PROJECT        Repo Variable — set true only so Terraform creates the DO project (greenfield); omit = use existing project (default)
 #    DO_SPACES_ACCESS_KEY        Spaces access key (Terraform state)
 #    DO_SPACES_SECRET_KEY        Spaces secret key (Terraform state)
-#    TF_VAR_next_internal_url    DO App Platform public URL of the Next.js app (used by LangGraph)
+#    TF_VAR_next_internal_url    Optional — override LangGraph NEXT_INTERNAL_URL (default: Terraform uses Next live_url)
 #    TF_VAR_internal_agent_secret Shared secret for Next.js ↔ LangGraph auth
 #
 #  Next.js runtime (injected via Terraform → App Platform env vars)
-#    DATABASE_URL                Railway Postgres connection string (pooler URL)
-#    DIRECT_URL                  Railway Postgres direct URL (Prisma migrate deploy)
+#    DATABASE_URL                Postgres connection string (pooler URL for the app)
+#    DIRECT_URL                  Postgres direct URL (Prisma migrate deploy)
 #    JWT_ACCESS_SECRET           JWT access token signing secret
 #    JWT_REFRESH_SECRET          JWT refresh token signing secret
 #    CSRF_SECRET                 CSRF HMAC secret
@@ -64,8 +64,9 @@ name: Release — VoyageAI Production Deployment
 #    GEMINI_API_KEY              Google Gemini API key (if LLM_PROVIDER=gemini)
 #    NEXT_PUBLIC_MAPBOX_TOKEN    Mapbox public token
 #    PEXELS_API_KEY              Pexels image API key
-#    UPSTASH_REDIS_REST_URL      Upstash Redis REST URL (optional)
-#    UPSTASH_REDIS_REST_TOKEN    Upstash Redis REST token (optional)
+#    REDIS_URL                   Redis TCP URL for ioredis (rate limits, AI cache) — e.g. Upstash rediss://
+#    UPSTASH_REDIS_REST_URL      Optional; not used by src/lib/redis.ts (REST only)
+#    UPSTASH_REDIS_REST_TOKEN    Optional; same as above
 #    LANGGRAPH_SERVICE_URL       DO LangGraph App Platform URL
 #
 #  Smoke tests + DAST
@@ -182,6 +183,7 @@ env:
   TF_VAR_gemini_api_key: ${{ secrets.GEMINI_API_KEY || '' }}
   TF_VAR_mapbox_token: ${{ secrets.NEXT_PUBLIC_MAPBOX_TOKEN || '' }}
   TF_VAR_pexels_api_key: ${{ secrets.PEXELS_API_KEY || '' }}
+  TF_VAR_redis_url: ${{ secrets.REDIS_URL || '' }}
   TF_VAR_upstash_redis_rest_url: ${{ secrets.UPSTASH_REDIS_REST_URL || '' }}
   TF_VAR_upstash_redis_rest_token: ${{ secrets.UPSTASH_REDIS_REST_TOKEN || '' }}
   TF_VAR_langgraph_service_url: ${{ secrets.LANGGRAPH_SERVICE_URL || '' }}

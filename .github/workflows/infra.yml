@@ -26,7 +26,7 @@ name: Infrastructure — DigitalOcean (Terraform)
 #    DIGITALOCEAN_ACCESS_TOKEN  — DO API token (write:registry + app platform)
 #    DO_SPACES_ACCESS_KEY       — Spaces access key (for Terraform state bucket)
 #    DO_SPACES_SECRET_KEY       — Spaces secret key (for Terraform state bucket)
-#    TF_VAR_next_internal_url   — Railway public app URL (e.g. https://voyageai.up.railway.app)
+#    TF_VAR_next_internal_url   — Optional: override LangGraph NEXT_INTERNAL_URL (default = Next live_url from Terraform)
 #    TF_VAR_internal_agent_secret — Shared secret for Next.js ↔ LangGraph auth
 #
 #  Optional GitHub Secrets / Variables:
@@ -38,6 +38,7 @@ name: Infrastructure — DigitalOcean (Terraform)
 #    TF_VAR_region              — DO region (default: sgp1)
 #    TF_VAR_environment         — staging | production (default: production)
 #    TF_VAR_langgraph_image_tag — Image tag to deploy (default: latest)
+#    REDIS_URL                  — Repo secret → TF_VAR_redis_url → App Platform REDIS_URL (ioredis; production AI rate limits)
 #
 #  One-time bootstrap (run locally before first CI run):
 #    doctl spaces create voyageai-tfstate --region sgp1
@@ -109,6 +110,7 @@ env:
   TF_VAR_gemini_api_key: ${{ secrets.GEMINI_API_KEY || '' }}
   TF_VAR_mapbox_token: ${{ secrets.NEXT_PUBLIC_MAPBOX_TOKEN || '' }}
   TF_VAR_pexels_api_key: ${{ secrets.PEXELS_API_KEY || '' }}
+  TF_VAR_redis_url: ${{ secrets.REDIS_URL || '' }}
   TF_VAR_upstash_redis_rest_url: ${{ secrets.UPSTASH_REDIS_REST_URL || '' }}
   TF_VAR_upstash_redis_rest_token: ${{ secrets.UPSTASH_REDIS_REST_TOKEN || '' }}
   TF_VAR_langgraph_service_url: ${{ secrets.LANGGRAPH_SERVICE_URL || '' }}
@@ -556,15 +558,16 @@ jobs:
             echo ""
             echo "### Post-deploy wiring"
             echo ""
-            echo "After both apps are live, update GitHub Secrets with:"
+            echo "LangGraph **NEXT_INTERNAL_URL** is set from the Next.js App Platform URL by Terraform (no secret required unless you use a custom domain — then set \`TF_VAR_next_internal_url\`)."
+            echo ""
+            echo "After LangGraph is live, set this GitHub Secret so Next.js can call Python (or re-run apply after setting it):"
             echo ""
             echo '```'
-            echo "# Set in GitHub Secrets → used by TF_VAR_langgraph_service_url"
+            echo "# Secret LANGGRAPH_SERVICE_URL → TF_VAR_langgraph_service_url"
             echo "${{ steps.outputs.outputs.nx_hint }}"
-            echo ""
-            echo "# Set in GitHub Secrets → used by TF_VAR_next_internal_url"
-            echo "${{ steps.outputs.outputs.lg_hint }}"
             echo '```'
+            echo ""
+            echo "_LangGraph override hint:_ \`${{ steps.outputs.outputs.lg_hint }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ════════════════════════════════════════════════════════════════════════════
