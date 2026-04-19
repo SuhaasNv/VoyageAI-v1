@@ -9,18 +9,11 @@ name: Infrastructure — DigitalOcean (Terraform)
 #    • App Platform service           — runs the LangGraph Python sidecar
 #    • Monitor alert policies         — CPU/memory spike notifications
 #
-#  Job flow:
+#  Job flow (manual only — Actions → Run workflow):
 #
-#    PR to main:
-#      validate → plan  (plan posted as PR comment)
-#
-#    Push to main (after merge):
-#      validate → plan → apply  (outputs written to GitHub step summary)
-#
-#    Manual (workflow_dispatch):
-#      action=plan    → validate → plan
-#      action=apply   → validate → plan → apply
-#      action=destroy → validate → destroy  (requires confirm_destroy="destroy")
+#    action=plan    → validate → plan  (summary in the run)
+#    action=apply   → validate → plan → apply  (outputs in step summary)
+#    action=destroy → destroy  (requires confirm_destroy="destroy")
 #
 #  Required GitHub Secrets:
 #    DIGITALOCEAN_ACCESS_TOKEN  — DO API token (write:registry + app platform)
@@ -45,16 +38,6 @@ name: Infrastructure — DigitalOcean (Terraform)
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "infra/**"
-      - ".github/workflows/infra.yml"
-  pull_request:
-    branches: [main]
-    paths:
-      - "infra/**"
-      - ".github/workflows/infra.yml"
   workflow_dispatch:
     inputs:
       action:
@@ -200,19 +183,6 @@ jobs:
         id: validate
         run: terraform validate -no-color
 
-      # Post formatting issues as a PR annotation (cosmetic — never blocks)
-      - name: Annotate fmt issues on PR
-        if: steps.fmt.outcome == 'failure' && github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: '> ⚠️ **Terraform fmt** found formatting issues in `infra/`. Run `terraform fmt -recursive infra/` locally and commit the result.'
-            })
-
       # Cache the .terraform directory so plan/apply don't re-download providers
       - name: Cache Terraform providers
         uses: actions/cache@v4
@@ -224,8 +194,7 @@ jobs:
   # ════════════════════════════════════════════════════════════════════════════
   #  PLAN
   #  Generates a Terraform execution plan and:
-  #    • Saves it as a binary artifact (used by the apply job — no re-plan)
-  #    • Posts a readable diff as a PR comment (on pull_request events)
+  #    • Saves a binary plan artifact + readable text for the run log
   #    • Writes a summary to the GitHub Actions step summary
   # ════════════════════════════════════════════════════════════════════════════
   plan:
@@ -310,58 +279,7 @@ jobs:
         id: show
         run: terraform show -no-color tfplan.binary > plan-readable.txt
 
-      # ── Post plan as PR comment ─────────────────────────────────────────
-      - name: Post plan comment on PR
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        env:
-          PLAN: ${{ steps.plan.outputs.stdout }}
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs   = require('fs');
-            const plan = fs.readFileSync('infra/plan-readable.txt', 'utf8');
-            const exitcode = '${{ steps.plan.outputs.exitcode }}';
-            const icon  = exitcode === '0' ? '✅' : exitcode === '2' ? '⚠️' : '❌';
-            const label = exitcode === '0' ? 'No changes' : exitcode === '2' ? 'Changes pending' : 'Error';
-
-            // Find and delete any previous plan comment from this workflow
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
-            for (const c of comments) {
-              if (c.user.type === 'Bot' && c.body.includes('## 🏗️ Terraform Plan')) {
-                await github.rest.issues.deleteComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: c.id });
-              }
-            }
-
-            const truncated = plan.length > 60000 ? plan.substring(0, 60000) + '\n...(truncated — see full plan in Actions run)' : plan;
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: [
-                `## 🏗️ Terraform Plan — ${icon} ${label}`,
-                '',
-                `| Field | Value |`,
-                `|-------|-------|`,
-                `| **Environment** | \`${{ env.TF_VAR_environment }}\` |`,
-                `| **Commit** | \`${{ github.sha }}\` |`,
-                `| **Exit code** | \`${exitcode}\` |`,
-                '',
-                '<details><summary>Show Plan</summary>',
-                '',
-                '```hcl',
-                truncated,
-                '```',
-                '',
-                '</details>',
-              ].join('\n')
-            });
-
-      # Upload the binary plan — apply job uses this exact plan (no re-plan)
+      # Upload the binary plan — retained for the workflow run (apply re-plans in this workflow)
       - name: Upload plan artifact
         uses: actions/upload-artifact@v4
         with:
@@ -394,7 +312,7 @@ jobs:
   #  APPLY
   #  Creates DOCR via targeted apply, pushes placeholders only if DOCR has no repos yet, re-plans, then applies
   #  (plan job artifact is not used here — state changes after registry bootstrap).
-  #  Only runs on push to main or manual workflow_dispatch with action=apply.
+  #  Only runs on workflow_dispatch with action=apply.
   #  Posts the Terraform outputs (registry URL, app URL) to the step summary.
   # ════════════════════════════════════════════════════════════════════════════
   apply:
@@ -402,9 +320,7 @@ jobs:
     needs: plan
     runs-on: ubuntu-latest
     environment: production # Requires manual approval in GitHub Environments
-    if: |
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply'
 
     steps:
       - uses: actions/checkout@v4
