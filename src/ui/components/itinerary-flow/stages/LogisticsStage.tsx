@@ -55,6 +55,30 @@ export function LogisticsStage({
     const currentDayData  = result?.days.find((d) => d.day === activeDay);
     const currentDayCost  = foodCost.perDay[(activeDay - 1)] ?? 0;
 
+    // ── Route efficiency (computed, not hardcoded) ───────────────────────────
+    const routeEfficiency = (() => {
+        if (!result) return 0;
+        const allActs = result.days.flatMap((d) => d.activities);
+        const nonMeal = allActs.filter((a) => !a.isMeal);
+        const ACTIVITY_MS = 120 * 60 * 1000; // assume 2h per activity
+        const totalActivityMs = nonMeal.length * ACTIVITY_MS;
+        const totalTravelMs   = allActs.reduce((s, a) => s + (a.travelTimeFromPrevMs ?? 0), 0);
+
+        if (totalTravelMs > 0) {
+            return Math.min(100, Math.round(totalActivityMs / (totalActivityMs + totalTravelMs) * 100));
+        }
+
+        // Fallback when agents don't emit travelTimeFromPrevMs:
+        // score from slot spread (≥2 slots/day) + meal coverage
+        const days = result.days;
+        const slotSpread = days.filter((d) => new Set(d.activities.map((a) => a.timeSlot)).size >= 2).length;
+        const mealDays   = days.filter((d) => d.activities.some((a) => a.isMeal)).length;
+        const ratio      = days.length > 0
+            ? (slotSpread / days.length) * 0.7 + (mealDays / days.length) * 0.3
+            : 0.75;
+        return Math.min(100, Math.round(ratio * 100));
+    })();
+
     const slots = ["morning", "afternoon", "evening"] as const;
 
     return (
@@ -300,11 +324,11 @@ export function LogisticsStage({
                                                 strokeLinecap="round"
                                                 strokeDasharray={`${2 * Math.PI * 14}`}
                                                 initial={{ strokeDashoffset: 2 * Math.PI * 14 }}
-                                                animate={{ strokeDashoffset: 2 * Math.PI * 14 * (1 - 0.82) }}
+                                                animate={{ strokeDashoffset: 2 * Math.PI * 14 * (1 - routeEfficiency / 100) }}
                                                 transition={{ duration: prefersReduced ? 0 : 1, delay: 0.3, ease: "easeOut" }}
                                                 transform="rotate(-90 18 18)"
                                             />
-                                            <text x="18" y="22" textAnchor="middle" fontSize="9" fill="white" fontWeight="bold">82%</text>
+                                            <text x="18" y="22" textAnchor="middle" fontSize="9" fill="white" fontWeight="bold">{routeEfficiency}%</text>
                                         </svg>
                                     </div>
                                 </div>

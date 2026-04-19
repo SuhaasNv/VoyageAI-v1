@@ -138,7 +138,8 @@ export function SafetyStage({
     ];
 
     const topCategory = scores.reduce((a, b) => (a.score > b.score ? a : b));
-    const insight = `Your trip is ${Math.round(topCategory.score)}% ${topCategory.label.toLowerCase()}-focused — consider balancing with more variety.`;
+    const dnaStyleLabel = preferences?.style ? `your ${preferences.style} travel style` : "your Travel DNA";
+    const insight = `Based on ${dnaStyleLabel}, your trip is ${Math.round(topCategory.score)}% ${topCategory.label.toLowerCase()}-focused — consider balancing with more variety.`;
 
     return (
         <AnimatePresence mode="wait">

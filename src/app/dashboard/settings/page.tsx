@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { motion } from "framer-motion";
-import { User, Bell, Shield, CreditCard, Loader2, CheckCircle, Sparkles, AlertCircle, Brain, RotateCcw } from "lucide-react";
+import { User, Bell, Shield, Loader2, CheckCircle, Sparkles, AlertCircle, Brain, RotateCcw } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { getCsrfToken } from "@/lib/api";
 
@@ -465,29 +465,6 @@ export default function SettingsPage() {
                                 <span className="text-sm font-medium text-slate-200">Change password</span>
                                 <span className="text-xs text-slate-500">→</span>
                             </button>
-                            <div className="w-full flex items-center justify-between p-4 rounded-xl bg-white/[0.01] border border-white/[0.04] opacity-50 cursor-not-allowed">
-                                <span className="text-sm font-medium text-slate-400">Two-factor authentication</span>
-                                <span className="text-xs text-slate-600">Not available</span>
-                            </div>
-                        </div>
-                    </motion.section>
-
-                    {/* Subscription */}
-                    <motion.section {...fadeIn} transition={{ ...fadeIn.transition, delay: 0.15 }} className="bg-white/[0.02] border border-white/[0.05] rounded-2xl p-6 shadow-sm backdrop-blur-sm">
-                        <div className="flex items-center gap-2 mb-6">
-                            <CreditCard className="w-5 h-5 text-emerald-500" />
-                            <h2 className="text-lg font-bold text-white">Subscription</h2>
-                        </div>
-                        <div className="p-5 rounded-xl bg-white/[0.02] border border-white/[0.05]">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm font-medium text-slate-200">Free Plan</p>
-                                    <p className="text-xs text-slate-400 mt-1">Upgrade to Pro for premium features and unlimited AI planning.</p>
-                                </div>
-                                <button className="px-4 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-sm font-medium text-emerald-400 transition-all shadow-[0_0_12px_rgba(16,185,129,0.1)]">
-                                    Upgrade to Pro
-                                </button>
-                            </div>
                         </div>
                     </motion.section>
                     </div>
@@ -714,13 +691,13 @@ export default function SettingsPage() {
                         </div>
                     </motion.section>
 
-                    {/* ── Behavioral Learning card ── */}
+                    {/* ── Travel Profile card ── */}
                     <motion.section {...fadeIn} transition={{ ...fadeIn.transition, delay: 0.04 }} className="bg-white/[0.02] border border-white/[0.05] rounded-2xl p-6 shadow-sm backdrop-blur-sm">
                         <div className="flex items-center gap-2 mb-4">
                             <Brain className="w-5 h-5 text-emerald-500" />
-                            <h2 className="text-lg font-bold text-white">Learning from your trips</h2>
+                            <h2 className="text-lg font-bold text-white">Your Travel Profile</h2>
                         </div>
-                        <p className="text-xs text-slate-500 mb-4">Patterns your AI has identified from your preferences.</p>
+                        <p className="text-xs text-slate-500 mb-4">Based on your Travel DNA, we personalize your trips to match what matters to you.</p>
                         <div className="space-y-2">
                             {behavioralInsights.map((insight, i) => (
                                 <div key={i} className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
