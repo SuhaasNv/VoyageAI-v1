@@ -1285,7 +1285,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: ZAP Full Scan — ${{ secrets.PRODUCTION_URL }}
-        uses: zaproxy/action-full-scan@v0.10.0
+        uses: zaproxy/action-full-scan@v0.13.0
         with:
           target: ${{ secrets.PRODUCTION_URL }}
           allow_issue_writing: true
