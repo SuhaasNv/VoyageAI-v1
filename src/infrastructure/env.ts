@@ -16,7 +16,7 @@ const EnvSchema = z
         NODE_ENV: z.enum(["development", "production", "test"]).optional(),
         ACCESS_TOKEN_EXPIRY_MS: z.coerce.number().optional(),
         REFRESH_TOKEN_EXPIRY_MS: z.coerce.number().optional(),
-        LLM_PROVIDER: z.enum(["gemini", "openai"]).optional(),
+        LLM_PROVIDER: z.enum(["gemini", "openai", "mock"]).optional(),
         OPENAI_API_KEY: z.string().optional(),
         GEMINI_API_KEY: z.string().optional(),
         GEMINI_MODEL: z.string().optional(),
@@ -37,7 +37,7 @@ const EnvSchema = z
     })
     .superRefine((data, ctx) => {
         if (!isProduction) return;
-        if (!data.LLM_PROVIDER || !["gemini", "openai"].includes(data.LLM_PROVIDER)) {
+        if (!data.LLM_PROVIDER || !["gemini", "openai", "mock"].includes(data.LLM_PROVIDER)) {
             ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["LLM_PROVIDER"], message: "LLM_PROVIDER must be openai or gemini in production" });
         }
         if (data.LLM_PROVIDER === "openai" && !(data.OPENAI_API_KEY?.trim())) {

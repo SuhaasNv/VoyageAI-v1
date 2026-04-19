@@ -89,6 +89,13 @@ export type EnrichedTripContext = Omit<TripContext, "days"> & {
 // ─── Logistics output ─────────────────────────────────────────────────────────
 
 export type ScheduledActivity = Activity & {
+    /**
+     * Stable, deterministic activity identifier.
+     * Computed by the Budget Agent as hash(name | type | startTime | day).
+     * Present on activities that have passed through the budget layer.
+     * Use for UI action payloads and applyAdjustment matching.
+     */
+    id?: string;
     timeSlot: "morning" | "afternoon" | "evening";
     startTime?: string;
     endTime?: string;
