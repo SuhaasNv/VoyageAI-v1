@@ -207,19 +207,19 @@ jobs:
       - run: npm ci
 
       - name: Download model approval report
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: model-approval-${{ github.sha }}
           path: reports/ai-gate/
 
       - name: Download data approval report
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: data-approval-${{ github.sha }}
           path: reports/ai-gate/
 
       - name: Download bias check report
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: bias-check-${{ github.sha }}
           path: reports/ai-gate/
@@ -257,7 +257,7 @@ jobs:
       - run: npm ci
 
       - name: Download risk score report
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: risk-score-${{ github.sha }}
           path: reports/ai-gate/

@@ -643,25 +643,25 @@ jobs:
       - run: npx prisma generate
 
       - name: Download coverage report
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: coverage-${{ github.sha }}
           path: coverage/
 
       - name: Download prompt validation report
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: prompt-validation-${{ github.sha }}
           path: reports/
 
       - name: Download prompt test report
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: prompt-tests-${{ github.sha }}
           path: reports/
 
       - name: Download safety test report
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: safety-tests-${{ github.sha }}
           path: reports/
@@ -862,7 +862,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Download image tarball
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: langgraph-image-${{ github.sha }}
           path: /tmp/
@@ -1082,7 +1082,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Download Next.js image tarball
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: nextjs-image-${{ github.sha }}
           path: /tmp/
