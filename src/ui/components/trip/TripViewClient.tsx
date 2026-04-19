@@ -532,6 +532,33 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
                 )}
             </AnimatePresence>
 
+            {/* Draft recovery overlay — shown when pipeline never completed */}
+            {trip.pipelineStatus === "draft" && !rawItinerary && !showFlow && (
+                <div className="absolute inset-0 z-30 flex items-center justify-center bg-[#0B0F14]/75 backdrop-blur-sm">
+                    <div className="max-w-sm w-full mx-4 bg-[#0F1520] border border-white/10 rounded-2xl p-6 shadow-2xl space-y-4">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/25 flex items-center justify-center shrink-0">
+                                <TriangleAlert className="w-5 h-5 text-amber-400" />
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-bold text-white">Itinerary not ready</h3>
+                                <p className="text-xs text-zinc-500">{trip.destination}</p>
+                            </div>
+                        </div>
+                        <p className="text-xs text-zinc-400 leading-relaxed">
+                            This trip&apos;s AI planning pipeline didn&apos;t finish. Resume to generate your full itinerary.
+                        </p>
+                        <button
+                            onClick={() => setShowFlow(true)}
+                            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[#10B981]/20 border border-[#10B981]/30 text-[#10B981] text-sm font-semibold hover:bg-[#10B981]/30 transition-all"
+                        >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            Resume itinerary generation
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Agent pipeline overlay — auto-launched for trips arriving from the landing page */}
             {showFlow && (() => {
                 const flowInput: FlowInput = {
@@ -540,7 +567,7 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
                     startDate: initialTrip.startDate,
                     imageUrl: initialTrip.imageUrl,
                     endDate: initialTrip.endDate,
-                    ...(flowStyleRef.current ? { style: flowStyleRef.current } : {}),
+                    style: flowStyleRef.current ?? trip.style,
                 };
                 return (
                     <ItineraryCreationFlow

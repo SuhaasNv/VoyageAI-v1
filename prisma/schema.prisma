@@ -237,6 +237,8 @@ model Trip {
   style          String? // relaxed | creative | exciting | luxury | budget
   imageUrl       String?
   shareToken     String?  @unique // UUID — null means private, set means publicly shareable
+  /// draft = pipeline never completed; completed = itinerary saved successfully
+  status         String   @default("draft")
   createdAt      DateTime @default(now())
 
   itineraries  Itinerary[]

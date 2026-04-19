@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { WifiOff } from "lucide-react";
+import { WifiOff, ArrowLeft } from "lucide-react";
 import confetti from "canvas-confetti";
 
 import { useFlowState } from "./useFlowState";
@@ -94,6 +94,8 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
     const [applyChanges, setApplyChanges] = useState<ApplyChange[]>([]);
     // Becomes true once the CSRF token is confirmed in the ref — gates the auto-start.
     const [csrfReady, setCsrfReady] = useState(false);
+    // Which completed stage the user is currently viewing (null = viewing the live stage).
+    const [viewingStage, setViewingStage] = useState<Exclude<FlowStage, "saved"> | null>(null);
 
     const csrfTokenRef = useRef<string>("");
 
@@ -407,7 +409,29 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
         setExplainOpen(true);
     }
 
+    function handleNavigate(stage: Exclude<FlowStage, "saved">) {
+        // Only allow navigating to stages that have a result already.
+        const hasResult =
+            (stage === "planner"   && !!state.plannerResult)  ||
+            (stage === "research"  && !!state.researchResult) ||
+            (stage === "logistics" && !!state.logisticsResult)||
+            (stage === "budget"    && !!state.budgetResult)   ||
+            (stage === "safety"    && !!state.safetyResult);
+        if (!hasResult) return;
+        // Toggle off if already viewing this stage.
+        setViewingStage((prev) => (prev === stage ? null : stage));
+    }
+
     const activeExplainStage: Exclude<FlowStage, "saved"> = explainStage;
+
+    // displayStage drives what's rendered in the center column.
+    const displayStage: FlowStage = viewingStage ?? state.stage;
+    // isViewMode = user is looking at a past completed stage, not the live one.
+    const isViewMode = viewingStage !== null && viewingStage !== state.stage;
+
+    const STAGE_LABELS_MAP: Record<Exclude<FlowStage, "saved">, string> = {
+        planner: "Plan", research: "Research", logistics: "Route", budget: "Budget", safety: "Safety",
+    };
 
     // Don't render on server — portal needs document.body
     if (!mounted) return null;
@@ -441,6 +465,8 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
                         meta={state.meta}
                         iteration={state.iteration}
                         onExplain={openExplain}
+                        onNavigate={handleNavigate}
+                        viewingStage={viewingStage}
                         layout="horizontal"
                         imageUrl={state.input.imageUrl}
                         destination={state.input.destination}
@@ -465,6 +491,8 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
                             meta={state.meta}
                             iteration={state.iteration}
                             onExplain={openExplain}
+                            onNavigate={handleNavigate}
+                            viewingStage={viewingStage}
                             layout="vertical"
                             imageUrl={state.input.imageUrl}
                             destination={state.input.destination}
@@ -478,9 +506,23 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
                     <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-gradient-to-b from-indigo-500/10 via-purple-500/5 to-transparent rounded-full blur-[100px] pointer-events-none opacity-50" />
                     
                     <div className="px-6 py-6 max-w-3xl mx-auto w-full relative z-10">
+                        {/* View mode banner */}
+                        {isViewMode && (
+                            <div className="flex items-center gap-2 mb-4 px-3 py-2 bg-white/[0.04] border border-white/[0.1] rounded-xl text-xs text-slate-400">
+                                <span className="w-1.5 h-1.5 rounded-full bg-white/40 flex-shrink-0" />
+                                Viewing <span className="text-white font-semibold mx-1">{STAGE_LABELS_MAP[viewingStage!]}</span> results — read only
+                                <button
+                                    onClick={() => setViewingStage(null)}
+                                    className="ml-auto text-slate-500 hover:text-white transition-colors"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+                        )}
+
                         <AnimatePresence mode="wait">
                             <motion.div
-                                key={state.stage}
+                                key={displayStage}
                                 variants={stageVariants}
                                 initial={prefersReduced ? {} : "initial"}
                                 animate="animate"
@@ -488,14 +530,16 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
                                 transition={stageTransition}
                             >
                                 {/* Planner */}
-                                {(state.stage === "planner") && (
+                                {displayStage === "planner" && (
                                     <PlannerStage
                                         input={flowInput}
                                         result={state.plannerResult}
                                         meta={state.meta.planner ?? null}
-                                        isLoading={isLoading}
-                                        error={state.error}
-                                        onApprove={(result) => { dispatch({ type: "ADVANCE" }); runResearch(result); }}
+                                        isLoading={isViewMode ? false : isLoading}
+                                        error={isViewMode ? null : state.error}
+                                        onApprove={isViewMode
+                                            ? () => setViewingStage(null)
+                                            : (result) => { dispatch({ type: "ADVANCE" }); runResearch(result); }}
                                         onAdjust={() => {}}
                                         onExplain={() => openExplain("planner")}
                                         onRetry={() => runPlanner()}
@@ -504,14 +548,16 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
                                 )}
 
                                 {/* Research */}
-                                {state.stage === "research" && (
+                                {displayStage === "research" && (
                                     <ResearchStage
                                         input={flowInput}
                                         result={state.researchResult}
                                         meta={state.meta.research ?? null}
-                                        isLoading={isLoading}
-                                        error={state.error}
-                                        onApprove={(result) => { dispatch({ type: "ADVANCE" }); runLogistics(result); }}
+                                        isLoading={isViewMode ? false : isLoading}
+                                        error={isViewMode ? null : state.error}
+                                        onApprove={isViewMode
+                                            ? () => setViewingStage(null)
+                                            : (result) => { dispatch({ type: "ADVANCE" }); runLogistics(result); }}
                                         onAdjust={() => {}}
                                         onExplain={() => openExplain("research")}
                                         onRetry={() => state.plannerResult && runResearch(state.plannerResult)}
@@ -520,14 +566,16 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
                                 )}
 
                                 {/* Logistics */}
-                                {state.stage === "logistics" && (
+                                {displayStage === "logistics" && (
                                     <LogisticsStage
                                         input={flowInput}
                                         result={state.logisticsResult}
                                         meta={state.meta.logistics ?? null}
-                                        isLoading={isLoading}
-                                        error={state.error}
-                                        onApprove={(result) => { dispatch({ type: "ADVANCE" }); runBudget(result); }}
+                                        isLoading={isViewMode ? false : isLoading}
+                                        error={isViewMode ? null : state.error}
+                                        onApprove={isViewMode
+                                            ? () => setViewingStage(null)
+                                            : (result) => { dispatch({ type: "ADVANCE" }); runBudget(result); }}
                                         onAdjust={() => {}}
                                         onExplain={() => openExplain("logistics")}
                                         onRetry={() => state.researchResult && runLogistics(state.researchResult)}
@@ -536,14 +584,16 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
                                 )}
 
                                 {/* Budget */}
-                                {state.stage === "budget" && (
+                                {displayStage === "budget" && (
                                     <BudgetStage
                                         input={flowInput}
                                         result={state.budgetResult}
                                         meta={state.meta.budget ?? null}
-                                        isLoading={isLoading}
-                                        error={state.error}
-                                        onApprove={(result) => { dispatch({ type: "ADVANCE" }); runSafety(result); }}
+                                        isLoading={isViewMode ? false : isLoading}
+                                        error={isViewMode ? null : state.error}
+                                        onApprove={isViewMode
+                                            ? () => setViewingStage(null)
+                                            : (result) => { dispatch({ type: "ADVANCE" }); runSafety(result); }}
                                         onAdjust={() => state.researchResult && runLogistics(state.researchResult)}
                                         onExplain={() => openExplain("budget")}
                                         onRetry={() => state.logisticsResult && runBudget(state.logisticsResult)}
@@ -556,29 +606,47 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
                                 )}
 
                                 {/* Safety */}
-                                {(state.stage === "safety" || state.stage === "saved") && (
+                                {(displayStage === "safety" || displayStage === "saved") && (
                                     <SafetyStage
                                         input={flowInput}
                                         result={state.safetyResult}
                                         meta={state.meta.safety ?? null}
-                                        isLoading={isLoading}
-                                        error={state.error}
-                                        onApprove={() => handleSave()}
+                                        isLoading={isViewMode ? false : isLoading}
+                                        error={isViewMode ? null : state.error}
+                                        onApprove={isViewMode ? () => setViewingStage(null) : () => handleSave()}
                                         onAdjust={() => {}}
                                         onExplain={() => openExplain("safety")}
                                         onRetry={() => state.budgetResult && runSafety(state.budgetResult)}
-                                        onSave={handleSave}
+                                        onSave={isViewMode ? () => setViewingStage(null) : handleSave}
                                         onRedo={() => {
                                             resetAllAndRestart();
                                             showToast("Starting over — Run #" + (state.iteration + 1), "info");
                                             setTimeout(() => runPlanner(), 100);
                                         }}
-                                        isSaving={isSaving}
+                                        isSaving={isViewMode ? false : isSaving}
                                     />
                                 )}
                             </motion.div>
                         </AnimatePresence>
                     </div>
+
+                    {/* Return-to-live-stage overlay — sits above each stage's fixed bottom bar (z-30) */}
+                    {isViewMode && (
+                        <div className="fixed bottom-0 inset-x-0 z-[35] bg-[#090C14]/90 backdrop-blur-xl border-t border-white/[0.08] px-4 py-4">
+                            <div className="max-w-2xl mx-auto">
+                                <button
+                                    onClick={() => setViewingStage(null)}
+                                    className="w-full py-3.5 rounded-2xl border border-white/[0.12] bg-white/[0.04] text-white font-semibold text-sm flex items-center justify-center gap-2 hover:bg-white/[0.08] transition-all duration-200"
+                                >
+                                    <ArrowLeft className="w-4 h-4" />
+                                    Back to {STAGE_LABELS_MAP[state.stage as Exclude<FlowStage, "saved">] ?? "current stage"}
+                                </button>
+                                <p className="text-center text-[10px] text-slate-600 mt-1.5">
+                                    Pipeline is still active — your progress is saved
+                                </p>
+                            </div>
+                        </div>
+                    )}
                 </main>
 
                 {/* ── RIGHT SIDEBAR ── Reasoning logs + AI suggestions ─────── */}

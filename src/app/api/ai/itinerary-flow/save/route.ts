@@ -72,11 +72,12 @@ export async function POST(req: NextRequest) {
                 },
             });
 
-            // Update the trip's budget total
+            // Update trip budget and mark pipeline as completed
             await prisma.trip.update({
                 where: { id: body.data.tripId },
                 data: {
                     budgetTotal: body.data.safetyResult.budget.totalEstimatedCost,
+                    status: "completed",
                 },
             });
 

@@ -31,7 +31,8 @@
       "Bash(npx tsc:*)",
       "Bash(grep -l \"GET\\\\|POST\" src/app/api/ai/*.ts)",
       "Bash(xargs -I {} basename {})",
-      "Bash(npx tsx:*)"
+      "Bash(npx tsx:*)",
+      "Bash(npx prisma *)"
     ]
   }
 }

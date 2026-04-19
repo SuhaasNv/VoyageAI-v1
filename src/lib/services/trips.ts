@@ -44,6 +44,9 @@ export interface TripDTO {
     startDate: string; // ISO date string (YYYY-MM-DD)
     endDate: string;   // ISO date string (YYYY-MM-DD)
     status: "upcoming" | "planning" | "past";
+    /** Pipeline completion status — draft means itinerary generation was not finished. */
+    pipelineStatus: "draft" | "completed";
+    style?: string;
     budget: {
         total: number;
         spent: number;
@@ -133,6 +136,8 @@ export function serializeTrip(trip: Trip, itinerary: ItineraryDay[] = [], rawJso
         startDate: toIsoDate(trip.startDate),
         endDate: toIsoDate(trip.endDate),
         status: deriveStatus(trip.startDate, trip.endDate),
+        pipelineStatus: (trip.status === "completed" ? "completed" : "draft") as "draft" | "completed",
+        style: trip.style ?? undefined,
         budget: {
             total: trip.budgetTotal,
             spent,

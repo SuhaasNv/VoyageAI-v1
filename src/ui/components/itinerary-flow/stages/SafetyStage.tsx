@@ -248,7 +248,7 @@ export function SafetyStage({
                     transition={{ delay: 0.15 }}
                     className="space-y-2"
                 >
-                    {safety.tips.map((t, i) => (
+                    {safety.tips.filter((t): t is string => typeof t === "string").map((t, i) => (
                         <div key={i} className="bg-emerald-500/[0.06] border border-emerald-500/20 rounded-xl px-3 py-2.5 flex items-start gap-2.5 text-sm text-emerald-300">
                             <Lightbulb className="w-4 h-4 mt-0.5 flex-shrink-0" />
                             <span>{t}</span>
