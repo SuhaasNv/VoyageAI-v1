@@ -652,7 +652,7 @@ export function BudgetStage({
                             <AnimatedNumber to={total} symbol={currency.symbol} />
                         </p>
                         <p className="text-xs text-slate-500 mt-1">
-                            Includes accommodation, food, activities, and transport estimates
+                            All costs are estimates based on available data.
                         </p>
                         {userBudget && (
                             <p className="text-sm text-slate-500 mt-2">

@@ -82,6 +82,7 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
     const { state, dispatch, resetAllAndRestart } = useFlowState(flowInput);
 
     const [isLoading, setIsLoading] = useState(false);
+    const [showExitModal, setShowExitModal] = useState(false);
     const [explainOpen, setExplainOpen] = useState(false);
     const [explainStage, setExplainStage] = useState<Exclude<FlowStage, "saved">>("planner");
     const [toast, setToast] = useState<{ message: string; variant?: "success" | "error" | "info" } | null>(null);
@@ -124,23 +125,15 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
         return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
     }, []);
 
-    // Close handler — deletes the stub trip when the user abandons the flow.
-    // The trip record is created in the DB the moment the flow starts, so we
-    // must clean it up on cancel.  Fire-and-forget: don't block the UI close.
+    // Close handler — shows confirmation modal when the pipeline is not yet saved.
+    // The trip record stays in the DB as a draft; users can find it on the dashboard.
     const handleClose = useCallback(() => {
-        if (state.stage !== "saved") {
-            ensureCsrfToken()
-                .then((token) =>
-                    fetch(`/api/trips/${tripId}`, {
-                        method: "DELETE",
-                        credentials: "include",
-                        headers: { "X-CSRF-Token": token },
-                    })
-                )
-                .catch(() => {});
+        if (state.stage === "saved") {
+            onClose();
+            return;
         }
-        onClose();
-    }, [state.stage, tripId, onClose]);
+        setShowExitModal(true);
+    }, [state.stage, onClose]);
 
     // Global keyboard shortcuts
     useEffect(() => {
@@ -149,16 +142,19 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
                 e.preventDefault();
                 setExplainOpen((o) => !o);
             }
-            if (e.key === "Escape" && !explainOpen) {
-                // Esc closes only if not in a text field
-                if (document.activeElement?.tagName !== "TEXTAREA" && document.activeElement?.tagName !== "INPUT") {
+            if (e.key === "Escape") {
+                if (showExitModal) {
+                    setShowExitModal(false);
+                    return;
+                }
+                if (!explainOpen && document.activeElement?.tagName !== "TEXTAREA" && document.activeElement?.tagName !== "INPUT") {
                     handleClose();
                 }
             }
         }
         document.addEventListener("keydown", handler);
         return () => document.removeEventListener("keydown", handler);
-    }, [explainOpen, handleClose]);
+    }, [explainOpen, handleClose, showExitModal]);
 
     function showToast(message: string, variant?: "success" | "error" | "info") {
         setToast({ message, variant });
@@ -689,6 +685,34 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
                 stage={activeExplainStage}
                 meta={state.meta[activeExplainStage] ?? null}
             />
+
+            {/* Exit confirmation modal */}
+            {showExitModal && (
+                <div className="fixed inset-0 z-[10000] flex items-center justify-center">
+                    <div
+                        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+                        onClick={() => setShowExitModal(false)}
+                    />
+                    <div className="relative bg-[#0E1118] border border-white/[0.1] rounded-2xl p-6 max-w-sm w-full mx-4 space-y-4 shadow-2xl">
+                        <h3 className="text-base font-bold text-white">Exit setup?</h3>
+                        <p className="text-sm text-slate-400">Your itinerary is not finished yet.</p>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setShowExitModal(false)}
+                                className="flex-1 py-2.5 rounded-xl border border-white/[0.1] text-sm text-slate-300 hover:bg-white/[0.04] transition-colors"
+                            >
+                                Continue editing
+                            </button>
+                            <button
+                                onClick={() => { setShowExitModal(false); onClose(); }}
+                                className="flex-1 py-2.5 rounded-xl bg-white/[0.06] border border-white/[0.1] text-sm text-white font-semibold hover:bg-white/[0.1] transition-colors"
+                            >
+                                Save as draft &amp; exit
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 

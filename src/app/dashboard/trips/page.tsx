@@ -45,13 +45,13 @@ const STATUS_STYLES: Record<Trip["status"], { ring: string; dot: string; text: s
     past:     { ring: "border-zinc-600/30 bg-zinc-700/20",       dot: "bg-zinc-500",    text: "text-zinc-400",    label: "Past"     },
 };
 
-const FATIGUE_LABEL: Record<Trip["fatigueLevel"], string> = {
+const FATIGUE_LABEL: Record<NonNullable<Trip["fatigueLevel"]>, string> = {
     low: "Relaxed pace",
     medium: "Moderate pace",
     high: "Fast pace",
 };
 
-const FATIGUE_COLOUR: Record<Trip["fatigueLevel"], string> = {
+const FATIGUE_COLOUR: Record<NonNullable<Trip["fatigueLevel"]>, string> = {
     low: "text-emerald-400",
     medium: "text-amber-400",
     high: "text-rose-400",
@@ -157,6 +157,12 @@ function TripCard({ trip, onDelete }: TripCardProps) {
                         {trip.title}
                     </h3>
 
+                    {trip.pipelineStatus === "draft" && (
+                        <span className="inline-flex items-center gap-1 self-start px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 border border-amber-500/30 text-amber-300">
+                            Draft
+                        </span>
+                    )}
+
                     <div className="flex flex-col gap-1.5 mt-auto">
                         <div className="flex items-center gap-1.5 text-zinc-500 text-xs">
                             <Calendar className="w-3 h-3 flex-shrink-0" />
@@ -169,10 +175,12 @@ function TripCard({ trip, onDelete }: TripCardProps) {
                                     {trip.budget.currency} {trip.budget.total.toLocaleString()}
                                 </span>
                             </div>
+                            {trip.fatigueLevel !== null && (
                             <span className={`text-[10px] font-medium flex items-center gap-1 ${FATIGUE_COLOUR[trip.fatigueLevel]}`}>
                                 <Zap className="w-2.5 h-2.5" />
                                 {FATIGUE_LABEL[trip.fatigueLevel]}
                             </span>
+                            )}
                         </div>
                     </div>
                 </div>

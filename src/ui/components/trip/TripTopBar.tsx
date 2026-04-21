@@ -64,6 +64,7 @@ export function TripTopBar({ trip, onTripUpdate, onShareExport }: TripTopBarProp
             </div>
 
             <div className="flex items-center gap-2 md:gap-6">
+                {trip.fatigueLevel !== null && (
                 <div className="hidden md:flex items-center gap-2.5 bg-black/[0.28] backdrop-blur-sm px-4 py-2 rounded-xl border border-white/[0.07] hover:bg-black/[0.38] hover:-translate-y-px transition-all duration-150 ease-out">
                     {isHighFatigue ? <BatteryWarning className="w-4 h-4 text-rose-500" /> : isMedFatigue ? <BatteryMedium className="w-4 h-4 text-amber-500" /> : <Battery className="w-4 h-4 text-[#10B981]" />}
                     <div>
@@ -73,6 +74,7 @@ export function TripTopBar({ trip, onTripUpdate, onShareExport }: TripTopBarProp
                         </div>
                     </div>
                 </div>
+                )}
 
                 <div className="hidden lg:flex items-center gap-3 bg-black/[0.28] backdrop-blur-sm px-4 py-2 rounded-xl border border-white/[0.07] hover:bg-black/[0.38] hover:-translate-y-px transition-all duration-150 ease-out w-64">
                     <div className="w-8 h-8 rounded-lg bg-[#10B981]/10 flex items-center justify-center flex-shrink-0 border border-[#10B981]/20">

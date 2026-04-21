@@ -399,7 +399,7 @@ export function SafetyStage({
                     </button>
                 </div>
                 <p className="text-center text-[10px] text-slate-600 mt-1 max-w-2xl mx-auto">
-                    Saving will create your trip in VoyageAI
+                    Your itinerary will be saved to this trip.
                 </p>
             </div>
         </motion.div>

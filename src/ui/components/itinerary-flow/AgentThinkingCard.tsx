@@ -173,6 +173,7 @@ export function AgentThinkingCard({
                         {/* Typewriter log lines */}
                         {!isError && (
                             <div className="mt-4 space-y-2 font-mono">
+                                <p className="text-[10px] text-slate-600 uppercase tracking-wider mb-2">Processing steps</p>
                                 {visibleLogs.map((line, i) => (
                                     <motion.div
                                         key={i}

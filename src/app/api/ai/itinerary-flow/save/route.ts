@@ -16,7 +16,10 @@ const Schema = z.object({
         startDate: z.string(),
         endDate: z.string(),
         durationDays: z.number(),
-        days: z.array(z.any()),
+        days: z.array(z.object({
+            day: z.number(),
+            activities: z.array(z.any()),
+        }).passthrough()),
         selectedHotel: z.any().optional(),
         budget: z.object({
             totalEstimatedCost: z.number(),

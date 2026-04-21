@@ -158,6 +158,11 @@ function TripCard({
             </div>
             <div className="flex flex-col gap-1.5 px-3 pb-3">
                 <h3 className="text-white font-bold text-lg leading-tight group-hover:text-[#10B981] transition-colors">{trip.title}</h3>
+                {trip.pipelineStatus === "draft" && (
+                    <span className="inline-flex items-center self-start gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 border border-amber-500/30 text-amber-300">
+                        Draft
+                    </span>
+                )}
                 <div className="text-zinc-400 text-xs flex items-center gap-1.5 font-medium"><MapPin className="w-3.5 h-3.5" /> {trip.destination}</div>
                 <div className="w-full h-px bg-white/5 my-2" />
                 {(() => {

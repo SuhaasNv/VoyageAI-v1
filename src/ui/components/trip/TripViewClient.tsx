@@ -541,20 +541,31 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
                                 <TriangleAlert className="w-5 h-5 text-amber-400" />
                             </div>
                             <div>
-                                <h3 className="text-sm font-bold text-white">Itinerary not ready</h3>
+                                <h3 className="text-sm font-bold text-white">This itinerary is not ready yet</h3>
                                 <p className="text-xs text-zinc-500">{trip.destination}</p>
                             </div>
                         </div>
                         <p className="text-xs text-zinc-400 leading-relaxed">
-                            This trip&apos;s AI planning pipeline didn&apos;t finish. Resume to generate your full itinerary.
+                            We were still building your trip.
                         </p>
-                        <button
-                            onClick={() => setShowFlow(true)}
-                            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[#10B981]/20 border border-[#10B981]/30 text-[#10B981] text-sm font-semibold hover:bg-[#10B981]/30 transition-all"
-                        >
-                            <Sparkles className="w-3.5 h-3.5" />
-                            Resume itinerary generation
-                        </button>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setShowFlow(true)}
+                                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[#10B981]/20 border border-[#10B981]/30 text-[#10B981] text-sm font-semibold hover:bg-[#10B981]/30 transition-all"
+                            >
+                                <Sparkles className="w-3.5 h-3.5" />
+                                Resume generation
+                            </button>
+                            <button
+                                onClick={() => {
+                                    try { localStorage.removeItem("voyageai_flow_session_v2"); } catch { /* ignore */ }
+                                    setShowFlow(true);
+                                }}
+                                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border border-white/[0.1] text-sm text-slate-300 hover:bg-white/[0.04] transition-all"
+                            >
+                                Start over
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

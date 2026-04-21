@@ -32,17 +32,6 @@ function generateInsights(state: FlowState): AIMessage[] {
         accent: "from-indigo-500 to-purple-500",
     });
     
-    // Random fact to "make it work" as requested by user
-    if (input.destination) {
-        msgs.push({
-            id: "destination-fact",
-            type: "fact",
-            text: `Did you know? ${input.destination} is known for its unique blend of traditional culture and modern efficiency. I'll make sure your itinerary reflects the best of both.`,
-            icon: <Lightbulb className="w-3.5 h-3.5" />,
-            accent: "from-cyan-500 to-blue-500",
-        });
-    }
-
     // ── Planner insights ────────────────────────────────────────────────────
     if (plannerResult) {
         const days = plannerResult.durationDays;

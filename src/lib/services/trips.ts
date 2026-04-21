@@ -52,7 +52,7 @@ export interface TripDTO {
         spent: number;
         currency: string;
     };
-    fatigueLevel: "low" | "medium" | "high";
+    fatigueLevel: "low" | "medium" | "high" | null;
     itinerary: ItineraryDay[];
     imageUrl: string | null;
     createdAt: string;
@@ -143,7 +143,7 @@ export function serializeTrip(trip: Trip, itinerary: ItineraryDay[] = [], rawJso
             spent,
             currency: trip.budgetCurrency,
         },
-        fatigueLevel: "low",
+        fatigueLevel: null,
         itinerary,
         imageUrl: trip.imageUrl ?? null,
         createdAt: trip.createdAt.toISOString(),
