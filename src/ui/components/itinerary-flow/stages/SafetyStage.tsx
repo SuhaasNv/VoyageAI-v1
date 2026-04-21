@@ -64,38 +64,13 @@ const WARNING_SEVERITY_STYLE: Record<SafetyWarning["severity"], string> = {
     medium: "bg-amber-500/[0.06] border-amber-500/20 text-amber-300",
 };
 
-const SCORE_CATEGORIES = [
-    { key: "adventure", label: "Adventure", color: "#3b82f6" },
-    { key: "culture", label: "Culture", color: "#6366f1" },
-    { key: "food", label: "Food", color: "#f59e0b" },
-    { key: "relaxation", label: "Relaxation", color: "#10b981" },
-    { key: "value", label: "Value", color: "#14b8a6" },
-];
+const WARNING_KEYWORD: Record<SafetyWarning["type"], string> = {
+    fatigue:  "High activity density",
+    travel:   "Long transit leg",
+    schedule: "Late-night finish",
+    meal:     "No meal scheduled",
+};
 
-function ScoreBar({ label, color, score, delay }: { label: string; color: string; score: number; delay: number }) {
-    const prefersReduced = useReducedMotion();
-    return (
-        <div className="space-y-1">
-            <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-400">{label}</span>
-                <span className="text-slate-500">{Math.round(score)}%</span>
-            </div>
-            <div className="h-2 bg-white/[0.06] rounded-full overflow-hidden">
-                <motion.div
-                    className="h-full rounded-full"
-                    initial={{ scaleX: 0 }}
-                    animate={{ scaleX: 1 }}
-                    transition={{
-                        duration: prefersReduced ? 0 : 0.6,
-                        delay: prefersReduced ? 0 : delay,
-                        ease: "easeOut",
-                    }}
-                    style={{ width: `${score}%`, transformOrigin: "left", backgroundColor: color }}
-                />
-            </div>
-        </div>
-    );
-}
 
 export function SafetyStage({
     input,
@@ -125,21 +100,9 @@ export function SafetyStage({
     const isOver = budget?.isOverBudget ?? false;
 
     const actTypes = days.flatMap((d) => d.activities.map((a) => a.type));
-    const attractionPct = (actTypes.filter((t) => t === "attraction").length / Math.max(actTypes.length, 1)) * 100;
-    const experiencePct = (actTypes.filter((t) => t === "experience").length / Math.max(actTypes.length, 1)) * 100;
-    const restaurantPct = (actTypes.filter((t) => t === "restaurant").length / Math.max(actTypes.length, 1)) * 100;
-
-    const scores = [
-        { ...SCORE_CATEGORIES[0], score: Math.min(experiencePct * 1.8, 100) },
-        { ...SCORE_CATEGORIES[1], score: Math.min(attractionPct * 1.5, 100) },
-        { ...SCORE_CATEGORIES[2], score: Math.min(restaurantPct * 2.5, 100) },
-        { ...SCORE_CATEGORIES[3], score: Math.max(100 - experiencePct * 1.2, 25) },
-        { ...SCORE_CATEGORIES[4], score: isOver ? 40 : 80 },
-    ];
-
-    const topCategory = scores.reduce((a, b) => (a.score > b.score ? a : b));
-    const dnaStyleLabel = preferences?.style ? `your ${preferences.style} travel style` : "your Travel DNA";
-    const insight = `Based on ${dnaStyleLabel}, your trip is ${Math.round(topCategory.score)}% ${topCategory.label.toLowerCase()}-focused — consider balancing with more variety.`;
+    const attractionCount = actTypes.filter((t) => t === "attraction").length;
+    const experienceCount = actTypes.filter((t) => t === "experience").length;
+    const restaurantCount  = actTypes.filter((t) => t === "restaurant").length;
 
     return (
         <AnimatePresence mode="wait">
@@ -211,7 +174,7 @@ export function SafetyStage({
                     {risk.label}
                 </span>
                 <p className="text-sm text-slate-300 flex-1">
-                    Overall risk assessment for {destination}
+                    Schedule-based risk analysis
                 </p>
             </motion.div>
 
@@ -229,11 +192,14 @@ export function SafetyStage({
                             className={`border rounded-xl px-3 py-2.5 flex items-start gap-2.5 text-sm ${WARNING_SEVERITY_STYLE[w.severity]}`}
                         >
                             <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                            <div className="flex flex-col gap-0.5 min-w-0">
+                            <div className="flex flex-col gap-1 min-w-0">
                                 <span className="text-[10px] font-semibold uppercase tracking-wider opacity-60">
                                     Day {w.day} · {WARNING_TYPE_LABEL[w.type]}
                                 </span>
-                                <span>{w.message}</span>
+                                <span className="font-semibold text-[13px] leading-tight">
+                                    {WARNING_KEYWORD[w.type]}
+                                </span>
+                                <span className="text-xs opacity-80">{w.message}</span>
                             </div>
                         </div>
                     ))}
@@ -241,7 +207,7 @@ export function SafetyStage({
             )}
 
             {/* Tips */}
-            {safety.tips.length > 0 && (
+            {safety.tips.length > 0 ? (
                 <motion.div
                     initial={prefersReduced ? {} : { opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -255,6 +221,8 @@ export function SafetyStage({
                         </div>
                     ))}
                 </motion.div>
+            ) : (
+                <p className="text-sm text-slate-500 italic px-1">All clear — no major risks detected in your itinerary.</p>
             )}
 
             {/* Section 2 — Complete Itinerary */}
@@ -358,21 +326,29 @@ export function SafetyStage({
                 </div>
             </div>
 
-            {/* Section 3 — Trip Score */}
-            <div className="card-premium p-5 space-y-4">
-                <p className="text-base font-bold text-white">How your trip scores</p>
-                <div className="space-y-3">
-                    {scores.map((s, idx) => (
-                        <ScoreBar
-                            key={s.key}
-                            label={s.label}
-                            color={s.color}
-                            score={s.score}
-                            delay={0.15 + days.length * 0.08 + 0.1 + idx * 0.12}
-                        />
-                    ))}
+            {/* Section 3 — Activity Breakdown */}
+            <div className="card-premium p-5 space-y-3">
+                <p className="text-base font-bold text-white">Activity breakdown</p>
+                <div className="space-y-2">
+                    {attractionCount > 0 && (
+                        <div className="flex items-center justify-between text-sm">
+                            <span className="text-indigo-400">Attractions</span>
+                            <span className="text-slate-300 font-medium">{attractionCount}</span>
+                        </div>
+                    )}
+                    {experienceCount > 0 && (
+                        <div className="flex items-center justify-between text-sm">
+                            <span className="text-teal-400">Experiences</span>
+                            <span className="text-slate-300 font-medium">{experienceCount}</span>
+                        </div>
+                    )}
+                    {restaurantCount > 0 && (
+                        <div className="flex items-center justify-between text-sm">
+                            <span className="text-amber-400">Restaurants</span>
+                            <span className="text-slate-300 font-medium">{restaurantCount}</span>
+                        </div>
+                    )}
                 </div>
-                <p className="text-xs text-slate-500 italic">{insight}</p>
             </div>
 
             {/* Sticky decision gate */}

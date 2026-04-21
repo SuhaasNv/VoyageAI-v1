@@ -232,8 +232,6 @@ export class SafetyAgent {
                     data: { error: trunc((err as Error).message), phase: "tips" },
                 });
             }
-        } else {
-            tips = ["Have a great trip! Stay hydrated and keep copies of important documents."];
         }
 
         const safety: SafetyResult = { riskLevel, warnings, tips };
