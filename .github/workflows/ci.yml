@@ -888,13 +888,10 @@ jobs:
           name: langgraph-image-${{ github.sha }}
           path: /tmp/
 
-      - name: Load image into Docker daemon
-        run: docker load --input /tmp/langgraph-image.tar
-
       - name: Trivy — SARIF report (all severities → Security tab)
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.IMAGE_NAME }}:latest
+          input: /tmp/langgraph-image.tar
           format: sarif
           output: trivy-results.sarif
           severity: "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"
@@ -914,7 +911,7 @@ jobs:
         # Non-blocking when skip_tests or ignore_test_failures is active
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.IMAGE_NAME }}:latest
+          input: /tmp/langgraph-image.tar
           format: table
           severity: CRITICAL
           ignore-unfixed: true
@@ -925,7 +922,7 @@ jobs:
       - name: Trivy — warn on HIGH CVEs (non-blocking)
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.IMAGE_NAME }}:latest
+          input: /tmp/langgraph-image.tar
           format: table
           severity: HIGH
           ignore-unfixed: true
@@ -936,7 +933,7 @@ jobs:
       - name: Trivy — secret scan inside image filesystem
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.IMAGE_NAME }}:latest
+          input: /tmp/langgraph-image.tar
           format: table
           scanners: "secret"
           exit-code: ${{ (github.event.inputs.skip_tests == 'true' || github.event.inputs.ignore_test_failures == 'true') && '0' || '1' }}
@@ -1108,13 +1105,10 @@ jobs:
           name: nextjs-image-${{ github.sha }}
           path: /tmp/
 
-      - name: Load image into Docker daemon
-        run: docker load --input /tmp/nextjs-image.tar
-
       - name: Trivy — SARIF (all severities → Security tab)
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.NEXTJS_IMAGE_NAME }}:latest
+          input: /tmp/nextjs-image.tar
           format: sarif
           output: trivy-nextjs.sarif
           severity: "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"
@@ -1133,7 +1127,7 @@ jobs:
       - name: Trivy — gate on CRITICAL CVEs
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.NEXTJS_IMAGE_NAME }}:latest
+          input: /tmp/nextjs-image.tar
           format: table
           severity: CRITICAL
           ignore-unfixed: true
@@ -1144,7 +1138,7 @@ jobs:
       - name: Trivy — warn on HIGH CVEs (non-blocking)
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.NEXTJS_IMAGE_NAME }}:latest
+          input: /tmp/nextjs-image.tar
           format: table
           severity: HIGH
           ignore-unfixed: true
@@ -1155,7 +1149,7 @@ jobs:
       - name: Trivy — secret scan inside image filesystem
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.NEXTJS_IMAGE_NAME }}:latest
+          input: /tmp/nextjs-image.tar
           format: table
           scanners: "secret"
           exit-code: ${{ (github.event.inputs.skip_tests == 'true' || github.event.inputs.ignore_test_failures == 'true') && '0' || '1' }}
@@ -1164,8 +1158,7 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: config
-          scan-ref: .
-          config: Dockerfile.app
+          scan-ref: Dockerfile.app
           format: table
           exit-code: ${{ (github.event.inputs.skip_tests == 'true' || github.event.inputs.ignore_test_failures == 'true') && '0' || '1' }}
           severity: "CRITICAL,HIGH"
