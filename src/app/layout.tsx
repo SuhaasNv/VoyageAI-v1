@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "mapbox-gl/dist/mapbox-gl.css";
 import "./globals.css";
 import { ServiceWorkerRegistration } from "@/ui/components/ServiceWorkerRegistration";
+import { HMRRecoveryGuard } from "@/ui/components/HMRRecoveryGuard";
 
 
 const geistSans = Geist({
@@ -62,6 +63,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <ServiceWorkerRegistration />
+        <HMRRecoveryGuard />
         {children}
       </body>
     </html>
