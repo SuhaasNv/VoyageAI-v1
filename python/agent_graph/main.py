@@ -24,8 +24,8 @@ from pydantic import BaseModel
 
 load_dotenv()
 
-from .contracts import Metrics, RunResponse, TraceEntry  # noqa: E402
-from .graph import compiled_graph                        # noqa: E402
+from contracts import Metrics, RunResponse, TraceEntry  # noqa: E402
+from graph import compiled_graph                        # noqa: E402
 
 app = FastAPI(
     title="VoyageAI LangGraph Orchestration Service",
