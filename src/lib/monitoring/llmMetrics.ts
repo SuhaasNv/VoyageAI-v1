@@ -5,64 +5,56 @@
  * cost estimates for every LLM call that goes through executeWithRetry().
  */
 
-import { Counter, Histogram, Gauge } from "prom-client";
-import { registry } from "./registry";
+import { getOrCreateCounter, getOrCreateHistogram, getOrCreateGauge } from "./registry";
 
 // ── Request latency ───────────────────────────────────────────────────────────
 
-export const aiRequestDurationSeconds = new Histogram({
+export const aiRequestDurationSeconds = getOrCreateHistogram({
     name: "ai_request_duration_seconds",
     help: "LLM request latency in seconds",
     labelNames: ["provider", "model", "agent", "endpoint"] as const,
     buckets: [0.5, 1, 2, 3, 5, 10, 20, 30, 60],
-    registers: [registry],
 });
 
 // ── Token usage ───────────────────────────────────────────────────────────────
 
-export const aiTokensTotal = new Counter({
+export const aiTokensTotal = getOrCreateCounter({
     name: "ai_tokens_total",
     help: "Cumulative LLM tokens (prompt + completion)",
     labelNames: ["provider", "model", "agent", "token_type"] as const,
-    registers: [registry],
 });
 
 // ── Call count ────────────────────────────────────────────────────────────────
 
-export const aiRequestsTotal = new Counter({
+export const aiRequestsTotal = getOrCreateCounter({
     name: "ai_requests_total",
     help: "Total LLM calls",
     labelNames: ["provider", "model", "agent", "status"] as const,
-    registers: [registry],
 });
 
 // ── Fallback usage ────────────────────────────────────────────────────────────
 
-export const aiFallbackTotal = new Counter({
+export const aiFallbackTotal = getOrCreateCounter({
     name: "ai_fallback_total",
     help: "Number of times the LLM provider fell back to a secondary model",
     labelNames: ["from_provider", "to_provider", "agent"] as const,
-    registers: [registry],
 });
 
 // ── Failure / timeout tracking ────────────────────────────────────────────────
 
-export const aiFailuresTotal = new Counter({
+export const aiFailuresTotal = getOrCreateCounter({
     name: "ai_failures_total",
     help: "LLM calls that ultimately failed after all retries",
     labelNames: ["provider", "model", "agent", "error_code"] as const,
-    registers: [registry],
 });
 
-export const aiTimeoutsTotal = new Counter({
+export const aiTimeoutsTotal = getOrCreateCounter({
     name: "ai_timeouts_total",
     help: "LLM requests that timed out",
     labelNames: ["provider", "model", "agent"] as const,
-    registers: [registry],
 });
 
 // ── Estimated cost (USD) ──────────────────────────────────────────────────────
-// Rough per-token prices; update when pricing changes.
 
 const TOKEN_COST_USD: Record<string, { prompt: number; completion: number }> = {
     "gpt-4.1":          { prompt: 0.000002,  completion: 0.000008  },
@@ -71,20 +63,18 @@ const TOKEN_COST_USD: Record<string, { prompt: number; completion: number }> = {
     default:            { prompt: 0.000001,  completion: 0.000003  },
 };
 
-export const aiCostUsdTotal = new Counter({
+export const aiCostUsdTotal = getOrCreateCounter({
     name: "ai_cost_usd_total",
     help: "Estimated cumulative LLM cost in USD",
     labelNames: ["provider", "model", "agent"] as const,
-    registers: [registry],
 });
 
 // ── Active (in-flight) LLM calls ──────────────────────────────────────────────
 
-export const aiActiveRequests = new Gauge({
+export const aiActiveRequests = getOrCreateGauge({
     name: "ai_active_requests",
     help: "Number of LLM requests currently in-flight",
     labelNames: ["provider", "agent"] as const,
-    registers: [registry],
 });
 
 // ── Helper: record a completed LLM call ──────────────────────────────────────

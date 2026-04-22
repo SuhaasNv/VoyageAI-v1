@@ -5,98 +5,88 @@
  * user engagement signals (plan regeneration = AI dissatisfaction).
  */
 
-import { Counter, Histogram, Gauge } from "prom-client";
-import { registry } from "./registry";
+import { getOrCreateCounter, getOrCreateHistogram, getOrCreateGauge } from "./registry";
 
 // ── Itinerary generation ──────────────────────────────────────────────────────
 
-export const plannerItineraryGeneratedTotal = new Counter({
+export const plannerItineraryGeneratedTotal = getOrCreateCounter({
     name: "planner_itinerary_generated_total",
     help: "Total itinerary generation attempts",
-    labelNames: ["status", "source"] as const, // source: langgraph | direct_llm
-    registers: [registry],
+    labelNames: ["status", "source"] as const,
 });
 
-export const plannerItineraryDurationSeconds = new Histogram({
+export const plannerItineraryDurationSeconds = getOrCreateHistogram({
     name: "planner_itinerary_duration_seconds",
     help: "End-to-end time for a full itinerary generation",
     labelNames: ["source", "status"] as const,
     buckets: [5, 10, 20, 30, 45, 60, 90, 120, 180],
-    registers: [registry],
 });
 
 // ── Trip CRUD ──────────────────────────────────────────────────────────────────
 
-export const plannerTripCreatedTotal = new Counter({
+export const plannerTripCreatedTotal = getOrCreateCounter({
     name: "planner_trip_created_total",
     help: "Number of trips created",
-    registers: [registry],
+    labelNames: [] as const,
 });
 
-export const plannerTripUpdatedTotal = new Counter({
+export const plannerTripUpdatedTotal = getOrCreateCounter({
     name: "planner_trip_updated_total",
     help: "Number of trips updated",
-    registers: [registry],
+    labelNames: [] as const,
 });
 
-export const plannerTripDeletedTotal = new Counter({
+export const plannerTripDeletedTotal = getOrCreateCounter({
     name: "planner_trip_deleted_total",
     help: "Number of trips deleted",
-    registers: [registry],
+    labelNames: [] as const,
 });
 
 // ── User sessions / activity ───────────────────────────────────────────────────
 
-export const plannerActiveUsers = new Gauge({
+export const plannerActiveUsers = getOrCreateGauge({
     name: "planner_active_users",
     help: "Number of users with an active session in the last 5 minutes",
-    registers: [registry],
+    labelNames: [] as const,
 });
 
-export const plannerAuthTotal = new Counter({
+export const plannerAuthTotal = getOrCreateCounter({
     name: "planner_auth_total",
     help: "Authentication events",
-    labelNames: ["event", "method"] as const, // event: login|logout|register|refresh, method: google|email
-    registers: [registry],
+    labelNames: ["event", "method"] as const,
 });
 
 // ── AI dissatisfaction proxy ───────────────────────────────────────────────────
-// A user regenerating a plan is a signal of dissatisfaction with the first result.
 
-export const plannerRegeneratedTotal = new Counter({
+export const plannerRegeneratedTotal = getOrCreateCounter({
     name: "planner_regenerated_total",
     help: "Number of times a user regenerated an AI plan (dissatisfaction proxy)",
-    registers: [registry],
+    labelNames: [] as const,
 });
 
 // ── LangGraph workflow business metrics ───────────────────────────────────────
 
-export const langgraphExecutionsTotal = new Counter({
+export const langgraphExecutionsTotal = getOrCreateCounter({
     name: "langgraph_executions_total",
     help: "Total LangGraph graph executions",
     labelNames: ["status", "outcome"] as const,
-    // outcome: ok | requires_human | error
-    registers: [registry],
 });
 
-export const langgraphExecutionDurationSeconds = new Histogram({
+export const langgraphExecutionDurationSeconds = getOrCreateHistogram({
     name: "langgraph_execution_duration_seconds",
     help: "Total LangGraph graph execution time in seconds",
     labelNames: ["outcome"] as const,
     buckets: [5, 10, 20, 30, 45, 60, 90, 120, 180],
-    registers: [registry],
 });
 
-export const langgraphRepairIterationsTotal = new Counter({
+export const langgraphRepairIterationsTotal = getOrCreateCounter({
     name: "langgraph_repair_iterations_total",
     help: "Number of budget/density repair loop iterations triggered",
-    labelNames: ["action"] as const, // reoptimize_budget | rerun_logistics | ask_user
-    registers: [registry],
+    labelNames: ["action"] as const,
 });
 
-export const plannerChatMessagesTotal = new Counter({
+export const plannerChatMessagesTotal = getOrCreateCounter({
     name: "planner_chat_messages_total",
     help: "Total AI chat messages exchanged",
-    labelNames: ["direction"] as const, // user | assistant
-    registers: [registry],
+    labelNames: ["direction"] as const,
 });
