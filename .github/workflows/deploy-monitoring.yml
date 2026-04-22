@@ -359,79 +359,84 @@ jobs:
         shell: bash
         run: |
           IP="${{ needs.provision.outputs.droplet_ip }}"
-          DOMAIN="${MONITORING_DOMAIN:-}"
-          EMAIL="${MONITORING_EMAIL:-admin@voyageai.app}"
-          SSH="ssh -i ~/.ssh/monitor_key -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 root@$IP"
 
-          $SSH bash -s -- "$DOMAIN" "$EMAIL" << 'DEPLOY'
-            set -euo pipefail
-            DOMAIN="$1"
-            EMAIL="$2"
-            cd /opt/voyageai-monitoring
+          # Pass domain/email as remote env vars — cleaner than positional args
+          # and avoids any quoting issues when the values contain spaces.
+          ssh -i ~/.ssh/monitor_key \
+            -o StrictHostKeyChecking=accept-new \
+            -o ConnectTimeout=60 \
+            "root@$IP" \
+            env \
+              DEPLOY_DOMAIN="${MONITORING_DOMAIN:-}" \
+              DEPLOY_EMAIL="${MONITORING_EMAIL:-admin@voyageai.app}" \
+            bash << 'DEPLOY'
+          set -euo pipefail
+          DOMAIN="${DEPLOY_DOMAIN:-}"
+          EMAIL="${DEPLOY_EMAIL:-admin@voyageai.app}"
+          cd /opt/voyageai-monitoring
 
-            # ── Nginx site config ────────────────────────────────────────────
-            SERVER_IP=$(curl -sf http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/address || echo "")
-            SERVE_HOST="${DOMAIN:-$SERVER_IP}"
+          # ── Nginx: resolve server_name ───────────────────────────────────
+          SERVER_IP=$(curl -sf http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/address || echo "")
+          SERVE_HOST="${DOMAIN:-$SERVER_IP}"
 
-            cat > /etc/nginx/sites-available/voyageai-monitoring << NGINX_CONF
-server {
-    listen 80;
-    server_name $SERVE_HOST;
-    location /.well-known/acme-challenge/ { root /var/www/html; }
-    location / {
-        proxy_pass         http://127.0.0.1:3001;
-        proxy_http_version 1.1;
-        proxy_set_header   Host              \$host;
-        proxy_set_header   X-Real-IP         \$remote_addr;
-        proxy_set_header   X-Forwarded-For   \$proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto \$scheme;
-        proxy_set_header   Upgrade           \$http_upgrade;
-        proxy_set_header   Connection        "upgrade";
-    }
-}
-NGINX_CONF
+          # Write nginx config using printf — avoids nested heredoc over SSH
+          printf 'server {\n\
+              listen 80;\n\
+              server_name %s;\n\
+              location /.well-known/acme-challenge/ { root /var/www/html; }\n\
+              location / {\n\
+                  proxy_pass         http://127.0.0.1:3001;\n\
+                  proxy_http_version 1.1;\n\
+                  proxy_set_header   Host              $host;\n\
+                  proxy_set_header   X-Real-IP         $remote_addr;\n\
+                  proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;\n\
+                  proxy_set_header   X-Forwarded-Proto $scheme;\n\
+                  proxy_set_header   Upgrade           $http_upgrade;\n\
+                  proxy_set_header   Connection        "upgrade";\n\
+              }\n\
+          }\n' "$SERVE_HOST" > /etc/nginx/sites-available/voyageai-monitoring
 
-            ln -sf /etc/nginx/sites-available/voyageai-monitoring \
-                   /etc/nginx/sites-enabled/voyageai-monitoring
-            rm -f /etc/nginx/sites-enabled/default
-            nginx -t && systemctl reload nginx
+          ln -sf /etc/nginx/sites-available/voyageai-monitoring \
+                 /etc/nginx/sites-enabled/voyageai-monitoring
+          rm -f /etc/nginx/sites-enabled/default
+          nginx -t && systemctl reload nginx
 
-            # ── TLS cert (only if we have a real domain) ─────────────────────
-            if [[ -n "$DOMAIN" ]]; then
-              if [[ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]]; then
-                echo "🔐 Obtaining Let's Encrypt cert for $DOMAIN ..."
-                certbot --nginx -d "$DOMAIN" \
-                  --non-interactive --agree-tos -m "$EMAIL" --redirect
-                (crontab -l 2>/dev/null; echo "0 3 * * * certbot renew --quiet && systemctl reload nginx") \
-                  | crontab - 2>/dev/null || true
-              else
-                certbot renew --quiet
-              fi
+          # ── TLS cert (only with a real domain) ──────────────────────────
+          if [[ -n "$DOMAIN" ]]; then
+            if [[ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]]; then
+              echo "Obtaining TLS cert for $DOMAIN ..."
+              certbot --nginx -d "$DOMAIN" \
+                --non-interactive --agree-tos -m "$EMAIL" --redirect
+              (crontab -l 2>/dev/null
+               echo "0 3 * * * certbot renew --quiet && systemctl reload nginx"
+              ) | crontab - 2>/dev/null || true
+            else
+              certbot renew --quiet
             fi
+          fi
 
-            # ── Pull latest images ───────────────────────────────────────────
-            echo "📦 Pulling Docker images..."
-            docker compose pull --quiet
+          # ── Docker stack ─────────────────────────────────────────────────
+          echo "Pulling images..."
+          docker compose pull --quiet
 
-            # ── Start / restart stack ────────────────────────────────────────
-            echo "🚀 Starting monitoring stack..."
-            docker compose up -d --remove-orphans
+          echo "Starting stack..."
+          docker compose up -d --remove-orphans
 
-            # ── Wait for health ──────────────────────────────────────────────
-            for i in $(seq 1 30); do
-              curl -sf http://127.0.0.1:9090/-/ready &>/dev/null && break
-              [[ $i -eq 30 ]] && echo "❌ Prometheus timeout" && exit 1
-              sleep 2
-            done
+          # ── Health checks ────────────────────────────────────────────────
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:9090/-/ready > /dev/null && break
+            [[ $i -eq 30 ]] && echo "Prometheus did not become ready" && exit 1
+            sleep 2
+          done
 
-            for i in $(seq 1 30); do
-              curl -sf http://127.0.0.1:3001/api/health &>/dev/null && break
-              [[ $i -eq 30 ]] && echo "❌ Grafana timeout" && exit 1
-              sleep 2
-            done
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:3001/api/health > /dev/null && break
+            [[ $i -eq 30 ]] && echo "Grafana did not become ready" && exit 1
+            sleep 2
+          done
 
-            curl -s -XPOST http://127.0.0.1:9090/-/reload || true
-            echo "✅ Stack is up!"
+          curl -s -XPOST http://127.0.0.1:9090/-/reload || true
+          echo "Stack is up!"
           DEPLOY
 
   # ── Stage 5: Smoke test ─────────────────────────────────────────────────────
