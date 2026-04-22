@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { X, Send, Sparkles, Loader2, AlertCircle, Zap, RefreshCw } from "lucide-react";
+import { X, Send, Sparkles, Loader2, AlertCircle, Zap, RefreshCw, Trash2 } from "lucide-react";
 import { Logo } from "@/ui/components/Logo";
 import { TextShimmer } from "@/ui/components/ui/text-shimmer";
 import { getCsrfToken } from "@/lib/api";
@@ -33,9 +33,33 @@ interface AIChatDrawerProps {
     onItineraryRefresh?: () => void;
     /** Called for map movements */
     onMapFocus?: (lat: number, lng: number, title: string) => void;
+    /** Called when the AI response mentions a specific day */
+    onDayHighlight?: (day: number) => void;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
+
+const ACTIONS_SEPARATOR = "---ACTIONS---";
+
+/**
+ * Strips the separator line and any trailing JSON from an LLM response.
+ * Handles the case where the model mangles the separator (e.g. "--- A[{...}]").
+ */
+function sanitizeFinalText(text: string): string {
+    // Official separator
+    const sepIdx = text.indexOf(ACTIONS_SEPARATOR);
+    if (sepIdx !== -1) return text.slice(0, sepIdx).trimEnd();
+    // Fallback: strip any trailing "--- ..." or "[{..." JSON leak
+    return text.replace(/\s*-{2,}\s*\S*\s*\[[\s\S]*$/, "").trimEnd();
+}
+
+const STARTER_QUESTIONS = (destination: string, totalDays: number) => [
+    `What's the plan for Day 1 in ${destination}?`,
+    `Which hotels am I staying at?`,
+    `How much should I budget for food?`,
+    `What's the best activity on this trip?`,
+    `Any safety tips for ${destination}?`,
+].slice(0, Math.min(5, totalDays + 2));
 
 export function AIChatDrawer({
     tripId,
@@ -44,7 +68,8 @@ export function AIChatDrawer({
     initialMessages,
     currentDay = 1,
     onItineraryRefresh,
-    onMapFocus
+    onMapFocus,
+    onDayHighlight,
 }: AIChatDrawerProps) {
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState<DisplayMessage[]>(() =>
@@ -72,7 +97,7 @@ export function AIChatDrawer({
     }, []);
 
     // ── Send chat message (streaming) ─────────────────────────────────────────
-    async function handleSend(overrideText?: string) {
+    async function handleSend(overrideText?: string, isRetry = false) {
         const text = (overrideText ?? input).trim();
         if (!text || isSending) return;
 
@@ -117,11 +142,7 @@ export function AIChatDrawer({
                 const reader = res.body.getReader();
                 const decoder = new TextDecoder();
                 let accumulated = "";
-                let actionsJson: { suggestedActions?: SuggestedAction[] } | null = null;
-
-                // Separator between plain-text response and trailing actions JSON.
-                // The API appends \x00ACTIONS:{...} after the separator content.
-                const ACTIONS_SEPARATOR = "---ACTIONS---";
+                let actionsJson: { suggestedActions?: SuggestedAction[]; messageText?: string } | null = null;
 
                 while (true) {
                     const { done, value } = await reader.read();
@@ -130,14 +151,12 @@ export function AIChatDrawer({
                     const chunk = decoder.decode(value, { stream: true });
 
                     // The \x00ACTIONS: sentinel is the very last thing the API sends.
-                    // Everything before it is the readable response (already contains
-                    // the text up to and including ---ACTIONS--- which we strip below).
                     const sentinelIdx = chunk.indexOf("\x00ACTIONS:");
                     if (sentinelIdx !== -1) {
                         accumulated += chunk.slice(0, sentinelIdx);
                         const actionsStr = chunk.slice(sentinelIdx + "\x00ACTIONS:".length);
                         try {
-                            actionsJson = JSON.parse(actionsStr) as { suggestedActions?: SuggestedAction[] };
+                            actionsJson = JSON.parse(actionsStr) as { suggestedActions?: SuggestedAction[]; messageText?: string };
                         } catch {
                             // Ignore parse error — suggestedActions will be empty
                         }
@@ -145,27 +164,20 @@ export function AIChatDrawer({
                         accumulated += chunk;
                     }
 
-                    // Strip the separator + anything after it from the live display
-                    // so users never see "---ACTIONS---" or raw JSON in the chat bubble.
-                    const sepIdx = accumulated.indexOf(ACTIONS_SEPARATOR);
-                    const displayText = sepIdx !== -1
-                        ? accumulated.slice(0, sepIdx).trimEnd()
-                        : accumulated;
-
+                    // Server already stops forwarding at the separator, but strip here
+                    // as a second defence so users never see separator/JSON mid-stream.
+                    const displayText = sanitizeFinalText(accumulated);
                     setMessages((prev) =>
                         prev.map((m) =>
-                            m.id === streamingId
-                                ? { ...m, content: displayText }
-                                : m
+                            m.id === streamingId ? { ...m, content: displayText } : m
                         )
                     );
                 }
 
-                // Finalise: extract clean message text and suggested actions.
-                const sepIdx = accumulated.indexOf(ACTIONS_SEPARATOR);
-                const finalMessage = sepIdx !== -1
-                    ? accumulated.slice(0, sepIdx).trim()
-                    : accumulated.trim();
+                // Finalise: prefer backend's authoritative stripped messageText,
+                // fall back to client sanitizer (handles mangled separator).
+                const finalMessage = actionsJson?.messageText
+                    ?? sanitizeFinalText(accumulated);
 
                 const suggestedActions: SuggestedAction[] = actionsJson?.suggestedActions ?? [];
 
@@ -176,27 +188,40 @@ export function AIChatDrawer({
                             : m
                     )
                 );
+
+                // Highlight the day mentioned in the response
+                const dayMatch = finalMessage.match(/\bDay\s+(\d+)\b/i);
+                if (dayMatch) onDayHighlight?.(parseInt(dayMatch[1], 10));
             } else {
                 // ── Fallback: non-streaming JSON response (Gemini path) ────
                 const json = await res.json() as { success?: boolean; error?: { message?: string }; data?: { message?: string; suggestedActions?: SuggestedAction[] } };
                 if (!json?.success) throw new Error(json?.error?.message ?? "AI response failed");
 
                 const data = json.data ?? {};
+                const fallbackMessage = data.message ?? "I couldn't generate a response. Please try again.";
                 setMessages((prev) =>
                     prev.map((m) =>
                         m.id === streamingId
                             ? {
                                 ...m,
-                                content: data.message ?? "I couldn't generate a response. Please try again.",
+                                content: fallbackMessage,
                                 suggestedActions: data.suggestedActions ?? [],
                             }
                             : m
                     )
                 );
+
+                const dayMatchFallback = fallbackMessage.match(/\bDay\s+(\d+)\b/i);
+                if (dayMatchFallback) onDayHighlight?.(parseInt(dayMatchFallback[1], 10));
             }
         } catch {
             setMessages((prev) => prev.filter((m) => m.id !== optimisticId && m.id !== streamingId));
-            setLastFailed({ type: "send", text });
+            if (!isRetry) {
+                // Auto-retry once silently before showing the error state
+                void handleSend(text, true);
+            } else {
+                setLastFailed({ type: "send", text });
+            }
         } finally {
             setIsSending(false);
         }
@@ -219,7 +244,12 @@ export function AIChatDrawer({
             }
             return;
         }
-        // For other action types: treat as a new user chat message
+        // For chat_response suggestions: auto-send the question immediately
+        if (action.action === "chat_response") {
+            void handleSend(action.label);
+            return;
+        }
+        // For unrecognised action types: pre-fill input
         setInput(action.label);
     }
 
@@ -304,6 +334,11 @@ export function AIChatDrawer({
         }
     }
 
+    function handleClearChat() {
+        setMessages([]);
+        setLastFailed(null);
+    }
+
     function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
         if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
@@ -339,13 +374,25 @@ export function AIChatDrawer({
                         <Logo size="sm" />
                         <span>VoyageAI Copilot</span>
                     </div>
-                    <button
-                        onClick={() => setIsOpen(false)}
-                        aria-label="Close chat"
-                        className="w-7 h-7 bg-white/[0.06] hover:bg-white/[0.1] rounded-full flex items-center justify-center text-slate-400 hover:text-white transition-all duration-200 ease-out"
-                    >
-                        <X className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                        {messages.length > 0 && (
+                            <button
+                                onClick={handleClearChat}
+                                aria-label="Clear chat"
+                                title="Clear chat"
+                                className="w-7 h-7 bg-white/[0.04] hover:bg-red-500/10 rounded-full flex items-center justify-center text-slate-500 hover:text-red-400 transition-all duration-200 ease-out"
+                            >
+                                <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                        )}
+                        <button
+                            onClick={() => setIsOpen(false)}
+                            aria-label="Close chat"
+                            className="w-7 h-7 bg-white/[0.06] hover:bg-white/[0.1] rounded-full flex items-center justify-center text-slate-400 hover:text-white transition-all duration-200 ease-out"
+                        >
+                            <X className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
                 </div>
 
                 {/* Reoptimizing overlay */}
@@ -364,11 +411,27 @@ export function AIChatDrawer({
                                 <Sparkles className="w-7 h-7 text-indigo-400" />
                             </div>
                             <div className="space-y-1">
-                                <p className="text-sm font-semibold text-white">Chat history empty</p>
-                                <p className="text-xs text-zinc-500 max-w-[240px] leading-relaxed">
-                                    Ask something — itinerary tweaks, local tips, budget advice.
+                                <p className="text-sm font-semibold text-white">VoyageAI Copilot</p>
+                                <p className="text-xs text-zinc-400 max-w-[240px] leading-relaxed">
+                                    {rawItinerary
+                                        ? `You're planning a ${rawItinerary.totalDays}-day trip to ${rawItinerary.destination}. Ask me anything about your itinerary.`
+                                        : "Ask me anything about your trip."}
                                 </p>
                             </div>
+                            {rawItinerary && (
+                                <div className="flex flex-col gap-1.5 w-full">
+                                    {STARTER_QUESTIONS(rawItinerary.destination, rawItinerary.totalDays).map((q) => (
+                                        <button
+                                            key={q}
+                                            onClick={() => void handleSend(q)}
+                                            disabled={isBusy}
+                                            className="text-left text-xs text-zinc-300 bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/[0.15] rounded-xl px-3 py-2 transition-all duration-200 disabled:opacity-50"
+                                        >
+                                            {q}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -385,28 +448,47 @@ export function AIChatDrawer({
 
                             {/* Suggested actions */}
                             {msg.role === "assistant" && msg.suggestedActions && msg.suggestedActions.length > 0 && (
-                                <div className="mt-2 flex flex-wrap gap-1.5 max-w-[85%]">
-                                    {msg.suggestedActions.map((action, idx) => {
-                                        const isApply = action.action === "apply_itinerary_update" || action.action === "reoptimize";
-                                        const isMap = action.action === "map_fly_to";
-
-                                        return (
-                                            <button
-                                                key={idx}
-                                                onClick={() => handleAction(action)}
-                                                disabled={isBusy}
-                                                className={`flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold px-3 py-1.5 rounded-lg border transition-all duration-200 disabled:opacity-50 ${isApply
-                                                    ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/30"
-                                                    : isMap
-                                                        ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/30"
-                                                        : "bg-white/[0.04] border-white/[0.08] text-zinc-300 hover:bg-white/[0.08] hover:text-white"
-                                                    }`}
-                                            >
-                                                {isApply && <Zap className="w-3 h-3" />}
-                                                {action.label}
-                                            </button>
-                                        );
-                                    })}
+                                <div className="mt-2 flex flex-col gap-1.5 max-w-[85%]">
+                                    {/* Action buttons (reoptimize / map / apply) */}
+                                    {msg.suggestedActions.filter(a => a.action !== "chat_response").length > 0 && (
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {msg.suggestedActions.filter(a => a.action !== "chat_response").map((action, idx) => {
+                                                const isApply = action.action === "apply_itinerary_update" || action.action === "reoptimize";
+                                                const isMap = action.action === "map_fly_to";
+                                                return (
+                                                    <button
+                                                        key={idx}
+                                                        onClick={() => handleAction(action)}
+                                                        disabled={isBusy}
+                                                        className={`flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold px-3 py-1.5 rounded-lg border transition-all duration-200 disabled:opacity-50 ${isApply
+                                                            ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/30"
+                                                            : isMap
+                                                                ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/30"
+                                                                : "bg-white/[0.04] border-white/[0.08] text-zinc-300 hover:bg-white/[0.08] hover:text-white"
+                                                            }`}
+                                                    >
+                                                        {isApply && <Zap className="w-3 h-3" />}
+                                                        {action.label}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                    {/* Follow-up question pills */}
+                                    {msg.suggestedActions.filter(a => a.action === "chat_response").length > 0 && (
+                                        <div className="flex flex-col gap-1">
+                                            {msg.suggestedActions.filter(a => a.action === "chat_response").map((action, idx) => (
+                                                <button
+                                                    key={idx}
+                                                    onClick={() => handleAction(action)}
+                                                    disabled={isBusy}
+                                                    className="text-left text-xs text-zinc-400 hover:text-white bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.06] hover:border-white/[0.12] rounded-xl px-3 py-2 transition-all duration-200 disabled:opacity-50"
+                                                >
+                                                    {action.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -433,7 +515,7 @@ export function AIChatDrawer({
                         <div className="flex flex-col gap-2 text-xs bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-3">
                             <div className="flex items-center gap-2 text-amber-300">
                                 <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                                <span>AI is busy, try again</span>
+                                <span>I&apos;m having trouble responding — try again.</span>
                             </div>
                             <button
                                 onClick={() => {
@@ -462,7 +544,7 @@ export function AIChatDrawer({
                         onChange={(e) => setInput(e.target.value)}
                         onKeyDown={handleKeyDown}
                         disabled={isBusy}
-                        placeholder="Ask AI to adjust plan…"
+                        placeholder="Ask about your trip…"
                         className="flex-1 bg-white/[0.04] border border-white/[0.08] focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/30 rounded-full px-4 py-2 text-sm text-white placeholder:text-slate-500 outline-none transition-all duration-200 disabled:opacity-50"
                     />
                     <button

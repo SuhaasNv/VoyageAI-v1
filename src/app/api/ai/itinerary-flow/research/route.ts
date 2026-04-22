@@ -25,6 +25,7 @@ const Schema = z.object({
         })
         .optional(),
     days: z.array(DaySchema),
+    _feedback: z.string().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -41,7 +42,8 @@ export async function POST(req: NextRequest) {
         try {
             const t0 = Date.now();
             const agent = new ResearchAgent();
-            const result = await agent.run(body.data, flowSessionId);
+            const { _feedback, ...tripContext } = body.data;
+            const result = await agent.run(tripContext, flowSessionId, _feedback);
             const durationMs = Date.now() - t0;
 
             const totalActivitiesCount = result.days.reduce((s, d) => s + d.activities.length, 0);

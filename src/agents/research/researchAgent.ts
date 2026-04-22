@@ -463,10 +463,15 @@ function mergeIntoContext(
         };
     });
 
+    const emptyDayNumbers = mergedDays.filter((d) => d.activities.length === 0).map((d) => d.day);
+
     return {
         ...context,
         days: mergedDays,
         hotels: enriched.hotels,
+        ...(emptyDayNumbers.length > 0
+            ? { warnings: [`Days [${emptyDayNumbers.join(", ")}] returned no activities from the research agent — using placeholder.`] }
+            : {}),
     };
 }
 
@@ -634,7 +639,7 @@ export class ResearchAgent {
      *
      * @throws if hotels cannot be populated after one retry
      */
-    async run(context: TripContext, requestId?: string): Promise<EnrichedTripContext & { _dataSource: "brightdata" | "unverified" }> {
+    async run(context: TripContext, requestId?: string, feedback?: string): Promise<EnrichedTripContext & { _dataSource: "brightdata" | "unverified" }> {
         logStructured({ layer: "agent", agent: "research", step: "start", requestId });
         logStructured({
             layer: "agent", agent: "research", step: "input", requestId,
@@ -657,6 +662,7 @@ export class ResearchAgent {
             style:        context.preferences?.style,
             pace:         context.preferences?.pace,
             budget:       context.preferences?.budget,
+            ...(feedback ? { feedback } : {}),
         });
 
         const cached = await getResearchCached(cacheKey);
@@ -808,7 +814,7 @@ Instructions:
 - Use the web search results above as your primary source of places.
 - Provide exactly 3–5 hotel options total (shared across all days).
 - Hotels are MANDATORY — you must include them.
-- Return ONLY the JSON object. No markdown, no commentary.${hotelOverride}
+- Return ONLY the JSON object. No markdown, no commentary.${hotelOverride}${feedback ? `\n\nUser feedback to incorporate: ${feedback}` : ""}
 `.trim();
 
             const fullPromptForAttempt = buildFullPrompt({

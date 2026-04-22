@@ -331,6 +331,7 @@ export class AgentOrchestrator {
                 } catch (err) {
                     this.logAgent("logistics", "error", (err as Error).message);
                     logStructured({ layer: "orchestrator", step: "error", requestId, data: { agent: "logistics", round: decisionRound, error: (err as Error).message } });
+                    break;
                 }
             }
 

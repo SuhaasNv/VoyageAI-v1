@@ -66,81 +66,83 @@ export async function GET(req: NextRequest) {
                 orderBy: { startDate: "asc" },
             });
 
-            // ── Trip-level AI suggestions ─────────────────────────────────────
-            const tripSuggestions: TripSuggestion[] = [];
+            // ── Trip suggestions + destination recommendations run concurrently ──
 
-            for (const trip of trips) {
-                const cacheKey = suggestionsCacheKey(trip.id);
-                const cached = await getSuggestionsCached(cacheKey);
-                if (cached && Array.isArray((cached as { suggestions: unknown[] }).suggestions)) {
-                    const raw = (cached as { suggestions: unknown[] }).suggestions as TripSuggestion["suggestions"];
-                    tripSuggestions.push({
-                        tripId: trip.id,
-                        suggestions: rankSuggestions(raw, dnaData),
-                    });
-                    continue;
-                }
-
-                try {
-                    const output = await generateSuggestionsForTrip(
-                        {
-                            tripId: trip.id,
-                            destination: trip.destination,
-                            style: trip.style,
-                            budgetTotal: trip.budgetTotal,
-                            budgetCurrency: trip.budgetCurrency,
-                        },
-                        dnaData
-                    );
-                    await setSuggestionsCached(cacheKey, output);
-                    tripSuggestions.push({ tripId: trip.id, suggestions: output.suggestions });
-                } catch (err) {
-                    logError(`[GET /api/suggestions] Failed for trip ${trip.id}`, err);
-                    tripSuggestions.push({ tripId: trip.id, suggestions: [] });
-                }
-            }
-
-            // ── Destination recommendations ────────────────────────────────────
-            // Pass all user trips (past + upcoming) for visited-country detection.
-            const allTrips = await prisma.trip.findMany({
+            // All trips needed for visited-country detection in destination scoring.
+            const allTripsPromise = prisma.trip.findMany({
                 where: { userId: auth.user.sub },
                 select: { destination: true },
             });
 
-            let destinations: DestinationSuggestion[] = [];
-            const destKey = destinationsCacheKey(auth.user.sub);
-            const destCached = await getDestinationsCached(destKey);
+            const tripSuggestionsPromise = Promise.all(
+                trips.map(async (trip): Promise<TripSuggestion> => {
+                    const cacheKey = suggestionsCacheKey(trip.id);
+                    const cached = await getSuggestionsCached(cacheKey);
+                    if (cached && Array.isArray((cached as { suggestions: unknown[] }).suggestions)) {
+                        const raw = (cached as { suggestions: unknown[] }).suggestions as TripSuggestion["suggestions"];
+                        return { tripId: trip.id, suggestions: rankSuggestions(raw, dnaData) };
+                    }
+                    try {
+                        const output = await generateSuggestionsForTrip(
+                            {
+                                tripId: trip.id,
+                                destination: trip.destination,
+                                style: trip.style,
+                                budgetTotal: trip.budgetTotal,
+                                budgetCurrency: trip.budgetCurrency,
+                            },
+                            dnaData
+                        );
+                        await setSuggestionsCached(cacheKey, output);
+                        return { tripId: trip.id, suggestions: output.suggestions };
+                    } catch (err) {
+                        logError(`[GET /api/suggestions] Failed for trip ${trip.id}`, err);
+                        return { tripId: trip.id, suggestions: [] };
+                    }
+                })
+            );
 
-            if (destCached) {
-                console.log("[REDIS] suggestions cache hit");
-                destinations = destCached.data as DestinationSuggestion[];
+            const destinationsPromise = (async (): Promise<DestinationSuggestion[]> => {
+                const destKey = destinationsCacheKey(auth.user.sub);
+                const destCached = await getDestinationsCached(destKey);
 
-                // Stale-while-revalidate: refresh silently if older than 5h.
-                // Mutex prevents concurrent requests from all firing a refresh.
-                const age = Date.now() - destCached.cachedAt;
-                if (age > STALE_DESTINATIONS_MS) {
-                    void (async () => {
-                        const acquired = await acquireRefreshMutex(auth.user.sub);
-                        if (!acquired) return; // Another request is already refreshing
-                        try {
-                            const fresh = await generateSuggestions(allTrips, dnaData, 5);
-                            await setDestinationsCached(destKey, fresh);
-                            console.log("[REDIS] suggestions cached (background refresh)");
-                        } catch {
-                            // Non-fatal — stale data already served
-                        }
-                    })();
+                if (destCached) {
+                    console.log("[REDIS] suggestions cache hit");
+                    const age = Date.now() - destCached.cachedAt;
+                    if (age > STALE_DESTINATIONS_MS) {
+                        void (async () => {
+                            const acquired = await acquireRefreshMutex(auth.user.sub);
+                            if (!acquired) return;
+                            try {
+                                const allTrips = await allTripsPromise;
+                                const fresh = await generateSuggestions(allTrips, dnaData, 5);
+                                await setDestinationsCached(destKey, fresh);
+                                console.log("[REDIS] suggestions cached (background refresh)");
+                            } catch {
+                                // Non-fatal — stale data already served
+                            }
+                        })();
+                    }
+                    return destCached.data as DestinationSuggestion[];
                 }
-            } else {
+
                 console.log("[REDIS] suggestions cache miss");
                 try {
-                    destinations = await generateSuggestions(allTrips, dnaData, 5);
+                    const allTrips = await allTripsPromise;
+                    const destinations = await generateSuggestions(allTrips, dnaData, 5);
                     await setDestinationsCached(destKey, destinations);
                     console.log("[REDIS] suggestions cached");
+                    return destinations;
                 } catch (err) {
                     logError("[GET /api/suggestions] Destination suggestions failed", err);
+                    return [];
                 }
-            }
+            })();
+
+            const [tripSuggestions, destinations] = await Promise.all([
+                tripSuggestionsPromise,
+                destinationsPromise,
+            ]);
 
             return successResponse({ tripSuggestions, destinations });
         } catch (err) {

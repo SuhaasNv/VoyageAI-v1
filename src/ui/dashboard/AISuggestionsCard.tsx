@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useLayoutEffect } from "react";
 import Link from "next/link";
 import { Sparkles, RefreshCw } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -58,26 +58,10 @@ interface AISuggestionsCardProps {
 }
 
 export function AISuggestionsCard({ onPlanTrip }: AISuggestionsCardProps = {}) {
+    // Initial state matches SSR output — no hydration mismatch.
     const [destinations, setDestinations] = useState<DestinationSuggestion[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
-
-    const loadDestinations = async (forceRefresh = false) => {
-        // Serve from sessionStorage instantly — no spinner on back-navigation
-        if (!forceRefresh) {
-            const cached = readSessionCache();
-            if (cached) {
-                setDestinations(cached);
-                setIsLoading(false);
-                // Background refresh (silent — no spinner)
-                void fetchAndCache(false);
-                return;
-            }
-        }
-
-        setIsRefreshing(true);
-        await fetchAndCache(true);
-    };
 
     const fetchAndCache = async (showSpinner: boolean) => {
         if (showSpinner) setIsRefreshing(true);
@@ -96,8 +80,30 @@ export function AISuggestionsCard({ onPlanTrip }: AISuggestionsCardProps = {}) {
         }
     };
 
-    useEffect(() => {
-        loadDestinations();
+    const loadDestinations = async (forceRefresh = false) => {
+        if (!forceRefresh) {
+            const cached = readSessionCache();
+            if (cached) {
+                // Cache served via useLayoutEffect — just background-refresh silently.
+                void fetchAndCache(false);
+                return;
+            }
+        }
+        setIsRefreshing(true);
+        await fetchAndCache(true);
+    };
+
+    // useLayoutEffect fires synchronously after hydration, before the browser paints.
+    // Cache is applied before the first visible frame — no skeleton flash for returning users.
+    useLayoutEffect(() => {
+        const cached = readSessionCache();
+        if (cached) {
+            setDestinations(cached);
+            setIsLoading(false);
+            void fetchAndCache(false);
+        } else {
+            void fetchAndCache(true);
+        }
     }, []);
 
     return (

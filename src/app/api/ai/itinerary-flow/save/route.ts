@@ -68,11 +68,14 @@ export async function POST(req: NextRequest) {
                 body.data.safetyResult as unknown as SafeTripContext,
             );
 
-            const itinerary = await prisma.itinerary.create({
-                data: {
-                    tripId: body.data.tripId,
-                    rawJson: itineraryData as object,
-                },
+            const itinerary = await prisma.$transaction(async (tx) => {
+                await tx.itinerary.deleteMany({ where: { tripId: body.data.tripId } });
+                return tx.itinerary.create({
+                    data: {
+                        tripId: body.data.tripId,
+                        rawJson: itineraryData as object,
+                    },
+                });
             });
 
             // Update trip budget and mark pipeline as completed

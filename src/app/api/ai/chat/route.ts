@@ -12,7 +12,7 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 
-import { ChatRequestSchema, type Itinerary, type TravelDNA } from "@/lib/ai/schemas";
+import { ChatRequestSchema, TravelDNASchema, type Itinerary, type TravelDNA } from "@/lib/ai/schemas";
 import { validateBody, getAuthContext } from "@/lib/api/request";
 import { formatErrorResponse } from "@/lib/errors";
 import { logError, logStructured } from "@/infrastructure/logger";
@@ -55,10 +55,17 @@ function buildStreamingChatPrompt(
     currentDay: number | undefined,
     userMessage: string,
 ): string {
-    const system = SYSTEM_PROMPTS.CHAT_COMPANION
-        ?? "You are VoyageAI's AI travel companion. Provide concise, friendly, and actionable answers.";
+    return `You are a travel copilot helping a user understand their trip.
 
-    return `${system}
+You are given the full trip context including itinerary, budget, and activities.
+
+Rules:
+- Answer ONLY using the provided trip context below.
+- Be concise, specific, and friendly. Respond in 2–4 sentences.
+- Do NOT hallucinate any information not present in the context.
+- If something is not covered by the context, say exactly: "I don't see that in your current plan."
+- Focus on Day ${currentDay ?? 1} by default unless the user asks about a different day.
+- Write PLAIN TEXT only — no markdown, no code blocks, no JSON anywhere in your answer.
 
 ---
 
@@ -66,16 +73,12 @@ ${contextString}
 
 ---
 
-## Answering Rules
-- Focus on Day ${currentDay ?? 1} unless the user specifies otherwise.
-- Respond with 2–5 sentences of clear, helpful travel advice.
-- Write PLAIN TEXT only. No JSON wrappers, no markdown code blocks, no schema syntax.
-- After your text response, on a new line write exactly: ${CHAT_ACTIONS_SEPARATOR}
-- Then write a JSON array of 0–3 suggested action buttons, or [] if none apply:
-  [{"label":"Button text", "action":"apply_itinerary_update|map_fly_to|reoptimize|chat_response", "payload":{}}]
+User question: ${userMessage}
 
-## User's Message
-${userMessage}`;
+Once your plain-text answer is complete, output this separator on its own line (copy it exactly, no changes):
+---ACTIONS---
+Then immediately output a JSON array of 3–4 short contextual follow-up questions (max 10 words each). Use action "chat_response". Output [] if nothing relevant.
+[{"label":"What is planned for Day 2?","action":"chat_response","payload":{}},{"label":"How much does this day cost?","action":"chat_response","payload":{}}]`;
 }
 
 // ─── Route handler ────────────────────────────────────────────────────────────
@@ -106,9 +109,12 @@ export async function POST(req: NextRequest): Promise<Response> {
             await checkRateLimit(`ai:${auth.user.sub}:chat`);
 
             const preferences = await prisma.travelPreference.findUnique({ where: { userId: auth.user.sub } });
-            const dna = preferences?.data as unknown as TravelDNA;
+            const dnaRaw = preferences?.data;
+            const dnaParsed = dnaRaw ? TravelDNASchema.safeParse(dnaRaw) : null;
+            const dna: TravelDNA | undefined = dnaParsed?.success ? dnaParsed.data : undefined;
             const memCtx = await buildMemoryContext(sessionId);
-            const latestItinerary = trip.itineraries[0]?.rawJson as unknown as Itinerary;
+            const latestItinerary = (trip.itineraries[0]?.rawJson as unknown as Itinerary)
+                ?? chatPayload.currentItinerary;
 
             // Cap chat history at 20 messages to bound prompt size and DB load.
             const recentMessages = chatPayload.messages.slice(-20);
@@ -149,10 +155,10 @@ export async function POST(req: NextRequest): Promise<Response> {
             }
 
             const openaiBody = {
-                model: "gpt-4.1-mini",
+                model: "gpt-4o-mini",
                 messages: [{ role: "user" as const, content: fullPrompt }],
-                temperature: 0.7,
-                max_tokens: 1024,
+                temperature: 0.3,
+                max_tokens: 512,
                 stream: true,
             };
 
@@ -201,8 +207,20 @@ export async function POST(req: NextRequest): Promise<Response> {
                                     };
                                     const token = parsed.choices?.[0]?.delta?.content;
                                     if (token) {
+                                        const prevLen = accumulatedContent.length;
                                         accumulatedContent += token;
-                                        controller.enqueue(encoder.encode(token));
+
+                                        // Only forward clean text — stop at separator so the
+                                        // model's action JSON never reaches the client stream.
+                                        const sepIdx = accumulatedContent.indexOf(CHAT_ACTIONS_SEPARATOR);
+                                        if (sepIdx === -1) {
+                                            controller.enqueue(encoder.encode(token));
+                                        } else if (sepIdx >= prevLen) {
+                                            // Separator starts within this token — forward only the clean prefix
+                                            const clean = accumulatedContent.slice(prevLen, sepIdx);
+                                            if (clean) controller.enqueue(encoder.encode(clean));
+                                        }
+                                        // else: separator already seen — don't forward
                                     }
                                 } catch {
                                     // Skip malformed SSE chunks
@@ -238,9 +256,11 @@ export async function POST(req: NextRequest): Promise<Response> {
                         // Malformed actions — leave empty
                     }
 
-                    // Send the final actions trailer so the client can render buttons
+                    // Send the final actions trailer so the client can render buttons.
+                    // messageText is the authoritative stripped response — client uses it
+                    // directly so it never shows raw separator/JSON from the LLM.
                     controller.enqueue(
-                        encoder.encode(`\x00ACTIONS:${JSON.stringify({ suggestedActions })}`)
+                        encoder.encode(`\x00ACTIONS:${JSON.stringify({ suggestedActions, messageText })}`)
                     );
 
                     // Persist clean message text (not the separator + actions fragment)

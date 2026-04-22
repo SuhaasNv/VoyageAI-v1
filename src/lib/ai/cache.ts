@@ -456,6 +456,7 @@ export function researchCacheKey(params: {
     style?:       string;
     pace?:        string;
     budget?:      number;
+    feedback?:    string;
 }): string {
     const payload = JSON.stringify({
         d:  params.destination.toLowerCase().trim(),
@@ -468,6 +469,8 @@ export function researchCacheKey(params: {
         p:  normalizePreference(params.pace),
         // Exact budget value when present — affects hotel/activity tier
         b:  params.budget ?? null,
+        // Feedback string busts the cache so retries with user input hit the LLM
+        f:  params.feedback ? params.feedback.trim().toLowerCase() : null,
     });
     return `${PREFIX}:research:v3:${hash(payload)}`;
 }

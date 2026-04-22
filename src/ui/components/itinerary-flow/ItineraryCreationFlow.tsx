@@ -243,8 +243,8 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
             const context = feedback
                 ? { ...mergedResult, _feedback: feedback }
                 : mergedResult;
-            const data = await callApi<EnrichedTripContext & { _meta: { durationMs: number; confidence: number; dataSources: string[]; decisionsLog: string[] } }>("research", context);
-            const { _meta, ...result } = data;
+            const data = await callApi<EnrichedTripContext & { _meta: { durationMs: number; confidence: number; dataSources: string[]; decisionsLog: string[] }; _dataSource?: string }>("research", context);
+            const { _meta, _dataSource: _ds, ...result } = data;
             dispatch({ type: "SET_RESEARCH", result, meta: _meta });
         } catch (err) {
             dispatch({ type: "SET_ERROR", error: (err as Error).message });
@@ -375,6 +375,13 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
             });
 
             dispatch({ type: "PATCH_BUDGET", result: updatedBudgetResult });
+            // Keep safetyResult.budget in sync so handleSave sends the post-adjustment cost.
+            if (state.safetyResult) {
+                dispatch({
+                    type: "PATCH_SAFETY",
+                    result: { ...state.safetyResult, budget: updatedBudgetResult.budget },
+                });
+            }
             setAppliedSavings(Math.max(0, originalTotal - newTotal));
             setApplyChanges(changes);
             setApplyPlanWarnings(data.warnings);
