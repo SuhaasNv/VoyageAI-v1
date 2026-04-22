@@ -212,7 +212,7 @@ describe("AgentOrchestrator", () => {
         });
         vi.mocked(deps.research!.run).mockImplementation(async () => {
             order.push("research");
-            return makeEnrichedContext();
+            return { ...makeEnrichedContext(), _dataSource: "unverified" as const };
         });
         vi.mocked(deps.logistics!.run).mockImplementation(async () => {
             order.push("logistics");
