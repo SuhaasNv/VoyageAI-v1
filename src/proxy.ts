@@ -12,12 +12,14 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { checkCsrf } from "@/middleware/csrf";
+import { recordRequest, normaliseRoute } from "@/lib/monitoring/apiMetrics";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Proxy
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function proxy(req: NextRequest): Promise<NextResponse> {
+    const proxyStart = performance.now();
     const { pathname } = req.nextUrl;
 
     // ── 1. CSRF validation for state-mutating API routes ──────────────────────
@@ -82,6 +84,19 @@ export async function proxy(req: NextRequest): Promise<NextResponse> {
     ].join("; ");
 
     response.headers.set("Content-Security-Policy", csp);
+
+    // ── Metrics: record this request after headers are set ────────────────────
+    // We hook into the response here; the actual duration is measured from the
+    // start of the proxy function via a timing header injected by Next.js, or
+    // we use the monotonic clock. For middleware, we capture wall-clock delta.
+    const durationMs = Math.round(performance.now() - proxyStart);
+    const statusCode = response.status ?? 200;
+    recordRequest({
+        method: req.method,
+        route:  normaliseRoute(pathname),
+        statusCode,
+        durationMs,
+    });
 
     return response;
 }

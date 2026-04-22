@@ -13,6 +13,7 @@ import { resolveRealLlmProvider } from "./resolveRealLlmProvider";
 import { logLLMCallFailure, logLLMUsage } from "../../services/logging/usageLogger";
 import { getRequestId, getRequestPathname } from "@/lib/requestContext";
 import { logInfo, logError, logStructured } from "@/infrastructure/logger";
+import { recordLLMCall, aiActiveRequests, aiTimeoutsTotal } from "@/lib/monitoring/llmMetrics";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { type LLMMessage, type LLMRequestOptions, type LLMResponse, type LLMClient } from "./types";
 
@@ -360,7 +361,8 @@ function clientProviderLabel(client: LLMClient): "openai" | "gemini" {
 export async function executeWithRetry(
     client: LLMClient,
     messages: LLMMessage[],
-    options: LLMRequestOptions = {}
+    options: LLMRequestOptions = {},
+    agentName?: string,
 ): Promise<LLMResponse> {
     const maxRetries = options.retries ?? 3;
     const retryDelays = [1000, 2000, 4000]; // Exponential backoff
@@ -370,17 +372,27 @@ export async function executeWithRetry(
     let shouldFallback = false;
 
     const resolvedProvider = clientProviderLabel(client);
-
     const modelUsed = options.model ?? "default";
+    const agent = agentName ?? "default";
+    const endpoint = getRequestPathname() ?? "unknown";
 
-    const logFinalFailure = () => {
+    aiActiveRequests.inc({ provider: resolvedProvider, agent });
+
+    const logFinalFailure = (errorCode?: string) => {
+        const latencyMs = Math.max(0, Date.now() - t0);
         void logLLMCallFailure({
             provider:  resolvedProvider,
             modelUsed,
-            latencyMs: Math.max(0, Date.now() - t0),
+            latencyMs,
             requestId: getRequestId(),
-            endpoint:  getRequestPathname() ?? undefined,
+            endpoint,
         });
+        recordLLMCall({
+            provider: resolvedProvider, model: modelUsed, agent, endpoint,
+            promptTokens: 0, completionTokens: 0, latencyMs,
+            status: "error", errorCode: errorCode ?? "LLM_ERROR",
+        });
+        aiActiveRequests.dec({ provider: resolvedProvider, agent });
     };
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -390,8 +402,14 @@ export async function executeWithRetry(
             logStructured({ layer: "llm", step: "llm-response", data: { provider: response.provider, model: response.modelUsed, latencyMs: response.latencyMs, totalTokens: response.totalTokens } });
             logLLMUsage(response, {
                 requestId: getRequestId(),
-                endpoint: getRequestPathname() ?? undefined,
+                endpoint,
             }).catch(() => { });
+            recordLLMCall({
+                provider: response.provider, model: response.modelUsed, agent, endpoint,
+                promptTokens: response.promptTokens, completionTokens: response.completionTokens,
+                latencyMs: response.latencyMs, status: "success",
+            });
+            aiActiveRequests.dec({ provider: resolvedProvider, agent });
             return response;
         } catch (err) {
             lastError = err as Error;
@@ -404,7 +422,7 @@ export async function executeWithRetry(
                     "CONTEXT_TOO_LARGE",
                 ];
                 if (nonRetryable.includes(err.code)) {
-                    logFinalFailure();
+                    logFinalFailure(err.code);
                     throw err; // these don't fallback since they are logic/data errors
                 }
 
@@ -417,7 +435,8 @@ export async function executeWithRetry(
                         shouldFallback = true;
                         break;
                     } else {
-                        logFinalFailure();
+                        aiTimeoutsTotal.inc({ provider: resolvedProvider, model: modelUsed, agent });
+                        logFinalFailure("RATE_LIMIT_EXCEEDED");
                         throw err;
                     }
                 }
@@ -452,10 +471,14 @@ export async function executeWithRetry(
                 const fallbackClient = new OpenAILLMClient(process.env.OPENAI_API_KEY);
                 const fallbackResponse = await fallbackClient.execute(messages, { ...options, timeoutMs: options.timeoutMs ?? 25_000 });
                 logStructured({ layer: "llm", step: "llm-response", data: { provider: fallbackResponse.provider, model: fallbackResponse.modelUsed, latencyMs: fallbackResponse.latencyMs, fallback: true } });
-                logLLMUsage(fallbackResponse, {
-                    requestId: getRequestId(),
-                    endpoint: getRequestPathname() ?? undefined,
-                }).catch(() => { });
+                logLLMUsage(fallbackResponse, { requestId: getRequestId(), endpoint }).catch(() => { });
+                recordLLMCall({
+                    provider: fallbackResponse.provider, model: fallbackResponse.modelUsed, agent, endpoint,
+                    promptTokens: fallbackResponse.promptTokens, completionTokens: fallbackResponse.completionTokens,
+                    latencyMs: fallbackResponse.latencyMs, status: "fallback",
+                    isFallback: true, fromProvider: resolvedProvider,
+                });
+                aiActiveRequests.dec({ provider: resolvedProvider, agent });
                 return fallbackResponse;
             } catch (fallbackErr) {
                 logError("[LLM] OpenAI fallback failed", fallbackErr);
@@ -469,14 +492,18 @@ export async function executeWithRetry(
                 const fallbackClient = new GeminiLLMClient(process.env.GEMINI_API_KEY);
                 const fallbackResponse = await fallbackClient.execute(messages, { ...options, timeoutMs: options.timeoutMs ?? 30_000 });
                 logStructured({ layer: "llm", step: "llm-response", data: { provider: fallbackResponse.provider, model: fallbackResponse.modelUsed, latencyMs: fallbackResponse.latencyMs, fallback: true } });
-                logLLMUsage(fallbackResponse, {
-                    requestId: getRequestId(),
-                    endpoint: getRequestPathname() ?? undefined,
-                }).catch(() => { });
+                logLLMUsage(fallbackResponse, { requestId: getRequestId(), endpoint }).catch(() => { });
+                recordLLMCall({
+                    provider: fallbackResponse.provider, model: fallbackResponse.modelUsed, agent, endpoint,
+                    promptTokens: fallbackResponse.promptTokens, completionTokens: fallbackResponse.completionTokens,
+                    latencyMs: fallbackResponse.latencyMs, status: "fallback",
+                    isFallback: true, fromProvider: resolvedProvider,
+                });
+                aiActiveRequests.dec({ provider: resolvedProvider, agent });
                 return fallbackResponse;
             } catch (fallbackErr) {
                 logError("[LLM] Gemini fallback failed", fallbackErr);
-                logFinalFailure();
+                logFinalFailure("LLM_ERROR");
                 throw new AIServiceError("LLM_ERROR", "All AI providers failed", {
                     primaryError: lastError?.message,
                     fallbackError: (fallbackErr as Error).message,
@@ -485,7 +512,7 @@ export async function executeWithRetry(
         }
     }
 
-    logFinalFailure();
+    logFinalFailure("LLM_ERROR");
     throw new AIServiceError(
         "LLM_ERROR",
         `LLM request failed after ${maxRetries} retries: ${lastError?.message}`,
