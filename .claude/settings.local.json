@@ -39,7 +39,8 @@
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
       "Bash(npm test *)",
-      "Bash(npx vitest *)"
+      "Bash(npx vitest *)",
+      "Bash(npm audit *)"
     ]
   }
 }

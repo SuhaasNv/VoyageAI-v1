@@ -17,5 +17,14 @@ export default defineConfig({
             "src/**/*.{test,spec}.{ts,tsx}",
             "tests/**/*.{test,spec}.{ts,tsx}",
         ],
+        // Exclude E2E suites from the default `npm test` run — they require
+        // a live dev server on localhost:3000 and must be run from a dedicated
+        // CI job that boots the server first.
+        exclude: [
+            "**/node_modules/**",
+            "**/dist/**",
+            "**/.next/**",
+            "tests/e2e/**/*.{test,spec}.{ts,tsx}",
+        ],
     },
 });

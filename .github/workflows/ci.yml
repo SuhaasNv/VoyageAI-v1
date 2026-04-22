@@ -405,6 +405,12 @@ jobs:
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v3
+        # Don't block CI when the repo has Code Scanning disabled at the
+        # settings level (upload step 403s with "Code scanning is not enabled").
+        # The scan itself still runs and prints findings to the job log.
+        # Re-enable strict mode by turning this off once Code scanning is
+        # enabled under Settings → Security → Code security and analysis.
+        continue-on-error: true
         with:
           category: /language:javascript-typescript
           # Always upload so results appear in the Security tab, not just on failure
