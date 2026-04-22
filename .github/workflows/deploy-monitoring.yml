@@ -272,13 +272,17 @@ jobs:
         run: |
           # Write SSH key
           mkdir -p ~/.ssh
-          echo "${{ secrets.MONITORING_SSH_PRIVATE_KEY }}" > ~/.ssh/monitor_key
+          printf '%s\n' "${{ secrets.MONITORING_SSH_PRIVATE_KEY }}" > ~/.ssh/monitor_key
           chmod 600 ~/.ssh/monitor_key
 
           IP="${{ needs.provision.outputs.droplet_ip }}"
-          SSH_OPTS="-i ~/.ssh/monitor_key -o StrictHostKeyChecking=no -o ConnectTimeout=15"
 
-          rsync -az --delete $SSH_OPTS \
+          # Add host key to known_hosts so rsync's underlying SSH trusts it
+          ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts 2>/dev/null
+
+          # SSH flags must be passed via -e "ssh …" — NOT as bare rsync args
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/monitor_key -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15" \
             monitoring/ \
             "root@$IP:${{ env.INSTALL_DIR }}/"
 
