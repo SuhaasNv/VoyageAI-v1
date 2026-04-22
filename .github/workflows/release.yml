@@ -733,6 +733,13 @@ jobs:
           provenance: true
           sbom: true
 
+      - name: Re-tag and push existing image to DOCR
+        id: retag
+        if: github.event.inputs.image_tag != ''
+        run: |
+          echo "ℹ️ Using existing DOCR tag '${{ github.event.inputs.image_tag }}' — skipping re-tag/push"
+          echo "  App Platform spec will be updated to use this tag directly."
+
       - name: Trivy — verify pushed registry image
         if: github.event.inputs.image_tag == '' && github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
@@ -750,6 +757,7 @@ jobs:
         if: github.event.inputs.image_tag == ''
         run: |
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          MODE=$([ -n "${{ github.event.inputs.image_tag }}" ] && echo "Deployed existing tag \`${{ github.event.inputs.image_tag }}\` (no re-tag)" || echo "Built from source")
           {
             echo "## 🐳 Docker — ✅ Pushed to DOCR"
             echo ""

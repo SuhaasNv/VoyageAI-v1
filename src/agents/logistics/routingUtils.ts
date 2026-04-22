@@ -202,6 +202,12 @@ function isInAnyMealWindow(mins: number): boolean {
     );
 }
 
+// Acceptable time windows for injected meals — prevents placing "dinner" at
+// 11:40 AM when all viable anchor slots cluster in the morning.
+const MIN_LUNCH_START_MINS  = 11 * 60;  // 11:00 — earliest acceptable lunch
+const MAX_LUNCH_START_MINS  = 16 * 60;  // 16:00 — latest acceptable lunch start
+const MIN_DINNER_START_MINS = 16 * 60;  // 16:00 — earliest acceptable dinner
+
 /** Parses a valid HH:mm string into total minutes since midnight. */
 function hhmmToMins(hhmm: string): number {
     const [hh, mm] = hhmm.split(":").map(Number);

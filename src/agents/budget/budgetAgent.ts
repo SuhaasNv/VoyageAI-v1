@@ -1,7 +1,9 @@
 import { LLMClientFactory, executeWithRetry, parseJSONResponse } from "@/lib/ai/llm";
 import { selectModelConfig } from "@/lib/ai/modelRouter";
 import { logError, logStructured, trunc } from "@/infrastructure/logger";
+import { computeFoodCost } from "@/agents/logistics/routingUtils";
 import type {
+    Activity,
     HotelOption,
     OptimizedDay,
     OptimizedTripContext,
