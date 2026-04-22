@@ -39,18 +39,25 @@ interface AIChatDrawerProps {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-const ACTIONS_SEPARATOR = "---ACTIONS---";
-
 /**
- * Strips the separator and any trailing JSON from an LLM response.
- * Matches both "---ACTIONS---" (intended) and "---ACTIONS[{" (mangled by model).
+ * Strips any separator artifact and trailing JSON from an LLM response.
+ *
+ * Handles every variant the model might generate:
+ *   - "---ACTIONS---"          (canonical)
+ *   - "--- ACTIONS---"         (space variant)
+ *   - "--- CTIONS---"          (partial — 'A' already forwarded as its own token)
+ *   - "---\nACTIONS---"        (newline variant)
+ *   - "[{...}]"                (stray trailing JSON array)
+ *
+ * The pattern matches "---" followed by optional whitespace and at least 3
+ * consecutive uppercase letters. Travel prose will never naturally produce
+ * "---" followed by an all-caps word, so false-positive risk is negligible.
  */
 function sanitizeFinalText(text: string): string {
-    // Prefix match — catches ---ACTIONS--- and ---ACTIONS[{ alike
-    const prefixIdx = text.indexOf("---ACTIONS");
-    if (prefixIdx !== -1) return text.slice(0, prefixIdx).trimEnd();
-    // Last-resort fallback: strip trailing bare JSON arrays
-    return text.replace(/\s*\[\s*\{[\s\S]*$/, "").trimEnd();
+    const match = /---\s*[A-Z]{3,}/.exec(text);
+    if (match) return text.slice(0, match.index).trimEnd();
+    // Strip trailing bare JSON arrays
+    return text.replace(/\n?\[\s*\{[\s\S]*$/, "").trimEnd();
 }
 
 const STARTER_QUESTIONS = (destination: string, totalDays: number) => [

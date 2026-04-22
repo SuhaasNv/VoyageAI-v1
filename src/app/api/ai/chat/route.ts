@@ -23,7 +23,6 @@ import { prisma } from "@/lib/prisma";
 import { assembleContext } from "@/lib/ai/context";
 import { updateMemory, buildMemoryContext } from "@/memory/memory";
 import { sanitizeUserInput, validateLLMOutput } from "@/security/safety";
-import { SYSTEM_PROMPTS } from "@/lib/ai/prompts/index";
 
 export const runtime = "nodejs";
 
@@ -32,55 +31,101 @@ const ChatRouteSchema = ChatRequestSchema.extend({
     tripId: z.string().cuid("tripId must be a valid CUID"),
 });
 
-// ─── Streaming helper ─────────────────────────────────────────────────────────
+// ─── Follow-up generator ───────────────────────────────────────────────────────
 
 /**
- * Separator used between the conversational text response and the trailing
- * actions JSON. The model frequently drops the trailing "---" so we match on
- * the prefix only ("---ACTIONS") when stripping and suppressing tokens.
+ * Kept for any external callers that imported this constant.
+ * The streaming path no longer relies on a separator inside LLM output.
  */
 export const CHAT_ACTIONS_SEPARATOR = "---ACTIONS---";
-const ACTIONS_PREFIX = "---ACTIONS"; // prefix match — handles both ---ACTIONS--- and ---ACTIONS[{
+
+type FollowUpAction = {
+    label: string;
+    action: "chat_response";
+    payload: Record<string, never>;
+};
 
 /**
- * Build the streaming-friendly prompt for the chat companion.
+ * Generates 3 contextual follow-up suggestions without any LLM call.
+ * Keyword-matches the user's question to avoid offering the same topic twice.
+ */
+function generateContextualFollowUps(
+    userMessage: string,
+    currentDay: number,
+    destination: string,
+    totalDays: number,
+): FollowUpAction[] {
+    const msg = userMessage.toLowerCase();
+    const nextDay = currentDay < totalDays ? currentDay + 1 : 1;
+
+    const candidates: FollowUpAction[] = [
+        { label: `What's the plan for Day ${nextDay} in ${destination}?`, action: "chat_response", payload: {} },
+        { label: `Which hotels am I staying at?`, action: "chat_response", payload: {} },
+        { label: `What's my total budget for this trip?`, action: "chat_response", payload: {} },
+        { label: `How much should I budget for food?`, action: "chat_response", payload: {} },
+        { label: `Any safety tips for ${destination}?`, action: "chat_response", payload: {} },
+        { label: `What's the best activity on this trip?`, action: "chat_response", payload: {} },
+    ];
+
+    const isAbout = (...kw: string[]) => kw.some((k) => msg.includes(k));
+
+    return candidates.filter(({ label }) => {
+        const l = label.toLowerCase();
+        if (isAbout("hotel", "accommodation", "stay") && l.includes("hotel")) return false;
+        if (isAbout("budget", "food", "cost", "money", "price", "spend") && (l.includes("budget") || l.includes("food"))) return false;
+        if (isAbout("safety", "safe", "tip") && l.includes("safety")) return false;
+        if (isAbout("activit", "best", "top", "highlight") && l.includes("activit")) return false;
+        return true;
+    }).slice(0, 3);
+}
+
+// ─── Prompt builder ────────────────────────────────────────────────────────────
+
+/**
+ * Builds the streaming chat prompt.
  *
- * The LLM is asked to respond in two parts separated by ---ACTIONS---:
- *   1. A plain-text conversational answer (shown token-by-token to the user).
- *   2. A JSON array of 0–3 suggested action buttons (parsed silently after stream).
- *
- * Critically, no JSON wrapper is asked for the message part — the user must
- * never see raw JSON tokens streaming in the chat bubble.
+ * Key design decisions:
+ * - No separator or JSON output requested. The LLM outputs ONLY plain-text prose.
+ *   Follow-ups are generated deterministically server-side after the stream ends.
+ *   This eliminates all separator-leak bugs at their root.
+ * - Explicit formatting rules prevent raw JSON field values (e.g. "0914") from
+ *   leaking into the response.
  */
 function buildStreamingChatPrompt(
     contextString: string,
     currentDay: number | undefined,
     userMessage: string,
 ): string {
-    return `You are a travel copilot helping a user understand their trip.
+    return `You are VoyageAI Copilot — a knowledgeable travel assistant for this specific trip.
 
-You are given the full trip context including itinerary, budget, and activities.
+ANSWER POLICY — two types of questions, two rules:
 
-Rules:
-- Answer ONLY using the provided trip context below.
-- Be concise, specific, and friendly. Respond in 2–4 sentences.
-- Do NOT hallucinate any information not present in the context.
-- If something is not covered by the context, say exactly: "I don't see that in your current plan."
-- Focus on Day ${currentDay ?? 1} by default unless the user asks about a different day.
-- Write PLAIN TEXT only — no markdown, no code blocks, no JSON anywhere in your answer.
+TYPE A — TRIP-SPECIFIC (activities, schedule, times, costs, hotels, budget):
+  → Answer ONLY from TRIP CONTEXT below. Do not invent.
+  → If hotels show "No hotel bookings listed in this itinerary", say:
+    "Your itinerary doesn't include hotel bookings yet. You may want to add accommodation near [destination area]."
+  → For other missing trip data, say: "That's not in your current itinerary."
 
----
+TYPE B — DESTINATION KNOWLEDGE (safety tips, culture, weather, local customs, transport, food recommendations):
+  → Use your general travel knowledge about the destination. Be specific and practical.
+  → You do NOT need to restrict yourself to the itinerary for these questions.
 
+Focus on Day ${currentDay ?? 1} unless the user asks about another day.
+
+FORMATTING — always follow:
+- Times: "9:14 AM" or "9:14 AM–11:14 AM" (colon + AM/PM required)
+- Costs: "$40" — omit if $0
+- Dates: "April 24" (no year)
+
+Write 2–4 sentences of plain prose. No bullet points, no markdown, no JSON.
+
+=== TRIP CONTEXT ===
 ${contextString}
-
----
+=== END CONTEXT ===
 
 User question: ${userMessage}
 
-Once your plain-text answer is complete, output this separator on its own line (copy it exactly, no changes):
----ACTIONS---
-Then immediately output a JSON array of 3–4 short contextual follow-up questions (max 10 words each). Use action "chat_response". Output [] if nothing relevant.
-[{"label":"What is planned for Day 2?","action":"chat_response","payload":{}},{"label":"How much does this day cost?","action":"chat_response","payload":{}}]`;
+Your answer:`;
 }
 
 // ─── Route handler ────────────────────────────────────────────────────────────
@@ -209,20 +254,12 @@ export async function POST(req: NextRequest): Promise<Response> {
                                     };
                                     const token = parsed.choices?.[0]?.delta?.content;
                                     if (token) {
-                                        const prevLen = accumulatedContent.length;
                                         accumulatedContent += token;
-
-                                        // Stop forwarding once "---ACTIONS" prefix appears.
-                                        // Matches both ---ACTIONS--- (intended) and ---ACTIONS[{ (mangled).
-                                        const prefixIdx = accumulatedContent.indexOf(ACTIONS_PREFIX);
-                                        if (prefixIdx === -1) {
-                                            controller.enqueue(encoder.encode(token));
-                                        } else if (prefixIdx >= prevLen) {
-                                            // Prefix starts within this token — forward only the clean part
-                                            const clean = accumulatedContent.slice(prevLen, prefixIdx);
-                                            if (clean) controller.enqueue(encoder.encode(clean));
-                                        }
-                                        // else: prefix already seen — don't forward
+                                        // Forward every token directly — no separator suppression.
+                                        // The LLM prompt no longer requests a separator, so the
+                                        // answer is plain prose. Any stray artifact is stripped
+                                        // server-side below before sending messageText to the client.
+                                        controller.enqueue(encoder.encode(token));
                                     }
                                 } catch {
                                     // Skip malformed SSE chunks
@@ -235,38 +272,33 @@ export async function POST(req: NextRequest): Promise<Response> {
                         reader.releaseLock();
                     }
 
-                    // ── Split on separator: text | actions JSON ──────────────
                     try {
                         validateLLMOutput(accumulatedContent, "text");
                     } catch (err) {
                         logError("[API] Chat LLM output validation warning", err);
                     }
 
-                    // Split on prefix match so we handle both ---ACTIONS--- and ---ACTIONS[{
-                    const prefixIdx = accumulatedContent.indexOf(ACTIONS_PREFIX);
-                    const messageText = prefixIdx !== -1
-                        ? accumulatedContent.slice(0, prefixIdx).trim()
-                        : accumulatedContent.trim();
-                    // Find the JSON array that starts after the prefix (skip past any trailing ---)
-                    const jsonStart = prefixIdx !== -1 ? accumulatedContent.indexOf("[", prefixIdx) : -1;
-                    const actionsRaw = jsonStart !== -1 ? accumulatedContent.slice(jsonStart).trim() : "[]";
+                    // Strip any stray separator artifact the model might still emit
+                    // (handles ---ACTIONS---, --- ACTIONS---, partial variants, trailing JSON).
+                    const messageText = accumulatedContent
+                        .replace(/\n?---\s*ACTIONS[\s\S]*/i, "")
+                        .replace(/\n?\[\s*\{[\s\S]*$/, "")
+                        .trim();
 
-                    let suggestedActions: unknown[] = [];
-                    try {
-                        const parsed = JSON.parse(actionsRaw);
-                        if (Array.isArray(parsed)) suggestedActions = parsed;
-                    } catch {
-                        // Malformed actions — leave empty
-                    }
+                    // Deterministic follow-ups — no LLM parsing, always correct.
+                    const suggestedActions = generateContextualFollowUps(
+                        safeUserContent,
+                        chatPayload.currentDay ?? 1,
+                        trip.destination,
+                        latestItinerary?.totalDays ?? 7,
+                    );
 
-                    // Send the final actions trailer so the client can render buttons.
-                    // messageText is the authoritative stripped response — client uses it
-                    // directly so it never shows raw separator/JSON from the LLM.
+                    // Send the final actions trailer. messageText is the authoritative
+                    // clean answer — client replaces the streamed display with this.
                     controller.enqueue(
                         encoder.encode(`\x00ACTIONS:${JSON.stringify({ suggestedActions, messageText })}`)
                     );
 
-                    // Persist clean message text (not the separator + actions fragment)
                     persistChat(sessionId, safeUserContent, messageText || accumulatedContent, latestUserMessage, tripId).catch(
                         (e) => logError("[API] Chat persist error", e)
                     );
