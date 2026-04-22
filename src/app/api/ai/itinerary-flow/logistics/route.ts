@@ -6,6 +6,7 @@ import { runWithRequestContext } from "@/lib/requestContext";
 import { formatErrorResponse } from "@/lib/errors";
 import { logStructured } from "@/infrastructure/logger";
 import { LogisticsAgent } from "@/agents/logistics/logisticsAgent";
+import { formatAIResponse } from "@/lib/ai/explainability";
 
 const ActivitySchema = z.object({
     name: z.string(),
@@ -70,24 +71,27 @@ export async function POST(req: NextRequest) {
             const result = await agent.run(body.data, flowSessionId);
             const durationMs = Date.now() - t0;
 
-            return successResponse({
-                ...result,
-                _meta: {
+            const totalActivities = body.data.days.reduce((s, d) => s + d.activities.length, 0);
+
+            const decisionsLog = [
+                `Grouped ${body.data.days.length} days by geography`,
+                `Assigned morning / afternoon / evening slots`,
+                `Selected hotel: ${result.selectedHotel?.name ?? "TBD"}`,
+                `Computed route efficiency`,
+                `Logistics optimized`,
+            ];
+
+            return successResponse(
+                formatAIResponse(result, {
+                    confidence: 1.0,
+                    reasoning: `Scheduled ${totalActivities} activities across ${body.data.days.length} days using ` +
+                        `deterministic geographic clustering and time-slot heuristics. ` +
+                        `Hotel selected: ${result.selectedHotel?.name ?? "TBD"}. No LLM involved.`,
+                    sources: ["Activity coordinates", "Geographic clustering", "Time-slot heuristics"],
                     durationMs,
-                    dataSources: [
-                        "Activity coordinates",
-                        "Geographic clustering",
-                        "Time-slot heuristics",
-                    ],
-                    decisionsLog: [
-                        `Grouped ${body.data.days.length} days by geography`,
-                        `Assigned morning / afternoon / evening slots`,
-                        `Selected hotel: ${result.selectedHotel?.name ?? "TBD"}`,
-                        `Computed route efficiency`,
-                        `Logistics optimized`,
-                    ],
-                },
-            });
+                    decisionsLog,
+                })
+            );
         } catch (err) {
             return formatErrorResponse(err);
         }

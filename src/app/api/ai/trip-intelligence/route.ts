@@ -17,7 +17,9 @@ const TripIntelligenceSchema = z.object({
     }).nullable().optional(),
     // Accept arbitrary DNA but cap the total serialised size so it cannot be
     // used to bloat the prompt or exfiltrate data via crafted payloads.
-    dna: z.record(z.unknown()).optional(),
+    // z.record() in Zod v4 requires TWO args: (keyType, valueType).
+    // Also nullable() because the client sends dna: null before preferences load.
+    dna: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
 // ─── Route handler ─────────────────────────────────────────────────────────────

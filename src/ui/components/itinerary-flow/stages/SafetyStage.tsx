@@ -379,7 +379,22 @@ export function SafetyStage({
                 </p>
             </div>
         </motion.div>
-            ) : null}
+            ) : (
+                <motion.div
+                    key="warmup"
+                    variants={stageContentVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={stageContentTransition}
+                >
+                    <AgentThinkingCard
+                        stage="safety"
+                        destination={input.destination}
+                        skeleton={<SafetySkeleton />}
+                    />
+                </motion.div>
+            )}
         </AnimatePresence>
     );
 }

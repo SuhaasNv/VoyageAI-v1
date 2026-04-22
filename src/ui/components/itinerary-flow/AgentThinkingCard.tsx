@@ -2,9 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { motion, useReducedMotion, AnimatePresence } from "framer-motion";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Clock } from "lucide-react";
 import { AGENT_REGISTRY, agentColorClasses } from "./agentRegistry";
 import type { FlowStage } from "./types";
+
+// Messages shown after the agent has been running for a while.
+// Each entry: show this message once elapsed seconds >= `after`.
+const SLOW_MESSAGES = [
+    { after: 35,  text: "Taking a little longer than usual — AI is being thorough." },
+    { after: 65,  text: "Still working — complex trips take more time to research." },
+    { after: 100, text: "Almost there — wrapping up the final checks." },
+] as const;
 
 interface AgentThinkingCardProps {
     stage: Exclude<FlowStage, "saved">;
@@ -44,6 +52,8 @@ export function AgentThinkingCard({
     const [visibleLogs, setVisibleLogs] = useState<string[]>([]);
     const [logIndex, setLogIndex] = useState(0);
     const [messageIndex, setMessageIndex] = useState(0);
+    // Elapsed seconds since this loading card was first shown (resets on stage change).
+    const [elapsedS, setElapsedS] = useState(0);
 
     useEffect(() => {
         if (isError) return;
@@ -53,7 +63,16 @@ export function AgentThinkingCard({
         setLogIndex(0);
          
         setMessageIndex(0);
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setElapsedS(0);
     }, [stage, isError]);
+
+    // Tick every second while loading so slow-request messages appear in real-time.
+    useEffect(() => {
+        if (isError) return;
+        const interval = setInterval(() => setElapsedS((s) => s + 1), 1000);
+        return () => clearInterval(interval);
+    }, [isError, stage]);
 
     useEffect(() => {
         if (isError || logIndex >= agent.logs.length) return;
@@ -198,6 +217,25 @@ export function AgentThinkingCard({
                                         transition={{ duration: 0.8, repeat: Infinity }}
                                     />
                                 )}
+
+                                {/* Slow-request status — only appears after a delay threshold */}
+                                <AnimatePresence>
+                                    {(() => {
+                                        const msg = SLOW_MESSAGES.filter((m) => elapsedS >= m.after).at(-1);
+                                        return msg ? (
+                                            <motion.div
+                                                key={msg.after}
+                                                initial={{ opacity: 0, y: 4 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                transition={{ duration: 0.5 }}
+                                                className="flex items-center gap-2 pt-2 text-[11px] text-amber-400/70"
+                                            >
+                                                <Clock className="w-3 h-3 flex-shrink-0" />
+                                                {msg.text}
+                                            </motion.div>
+                                        ) : null;
+                                    })()}
+                                </AnimatePresence>
                             </div>
                         )}
 

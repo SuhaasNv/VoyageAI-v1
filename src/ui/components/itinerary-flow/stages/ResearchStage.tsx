@@ -637,7 +637,23 @@ export function ResearchStage({
                     </AnimatePresence>
                 </div>
             </motion.div>
-                ) : null}
+                ) : (
+                    // Warmup: no result yet, not actively loading — show skeleton.
+                    <motion.div
+                        key="warmup"
+                        variants={stageContentVariants}
+                        initial="initial"
+                        animate="animate"
+                        exit="exit"
+                        transition={stageContentTransition}
+                    >
+                        <AgentThinkingCard
+                            stage="research"
+                            destination={input.destination}
+                            skeleton={<ResearchSkeleton />}
+                        />
+                    </motion.div>
+                )}
             </AnimatePresence>
 
             {/* Floating ghost card that follows the cursor during drag */}
