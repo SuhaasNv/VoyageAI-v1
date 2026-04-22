@@ -187,6 +187,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup SSH key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.MONITORING_SSH_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          mkdir -p ~/.ssh
+          if echo "$SSH_PRIVATE_KEY" | base64 -d 2>/dev/null | grep -q 'PRIVATE KEY'; then
+            echo "$SSH_PRIVATE_KEY" | base64 -d > ~/.ssh/monitor_key
+          else
+            printf '%s' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/monitor_key
+          fi
+          echo "" >> ~/.ssh/monitor_key
+          chmod 600 ~/.ssh/monitor_key
+          ssh-keygen -y -f ~/.ssh/monitor_key > /dev/null \
+            || { echo "❌ SSH key invalid. Re-encode with: cat KEY | base64 -w0"; exit 1; }
+
       - name: Wait for SSH to become available
         shell: bash
         run: |
@@ -200,15 +216,13 @@ jobs:
           echo "❌ SSH never became available" && exit 1
 
       - name: Run bootstrap script on Droplet
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ needs.provision.outputs.droplet_ip }}
-          username: root
-          key: ${{ secrets.MONITORING_SSH_PRIVATE_KEY }}
-          fingerprint: ${{ secrets.MONITORING_SSH_FINGERPRINT }}
-          script_stop: true
-          timeout: 300s
-          script: |
+        shell: bash
+        run: |
+          IP="${{ needs.provision.outputs.droplet_ip }}"
+          ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts 2>/dev/null
+          SSH="ssh -i ~/.ssh/monitor_key -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 root@$IP"
+
+          $SSH bash -s << 'BOOTSTRAP'
             set -euo pipefail
             export DEBIAN_FRONTEND=noninteractive
             apt-get update -qq
@@ -234,6 +248,7 @@ jobs:
             ufw --force enable
 
             echo "✅ Bootstrap done"
+          BOOTSTRAP
 
   # ── Stage 3: Upload config files ───────────────────────────────────────────
   upload:
@@ -322,48 +337,59 @@ jobs:
       MONITORING_EMAIL: ${{ vars.MONITORING_EMAIL || 'admin@voyageai.app' }}
 
     steps:
+      - name: Setup SSH key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.MONITORING_SSH_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          mkdir -p ~/.ssh
+          if echo "$SSH_PRIVATE_KEY" | base64 -d 2>/dev/null | grep -q 'PRIVATE KEY'; then
+            echo "$SSH_PRIVATE_KEY" | base64 -d > ~/.ssh/monitor_key
+          else
+            printf '%s' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/monitor_key
+          fi
+          echo "" >> ~/.ssh/monitor_key
+          chmod 600 ~/.ssh/monitor_key
+          ssh-keygen -y -f ~/.ssh/monitor_key > /dev/null \
+            || { echo "❌ SSH key invalid. Re-encode with: cat KEY | base64 -w0"; exit 1; }
+          IP="${{ needs.provision.outputs.droplet_ip }}"
+          ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts 2>/dev/null
+
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ needs.provision.outputs.droplet_ip }}
-          username: root
-          key: ${{ secrets.MONITORING_SSH_PRIVATE_KEY }}
-          fingerprint: ${{ secrets.MONITORING_SSH_FINGERPRINT }}
-          script_stop: true
-          timeout: 300s
-          envs: MONITORING_DOMAIN,MONITORING_EMAIL
-          script: |
+        shell: bash
+        run: |
+          IP="${{ needs.provision.outputs.droplet_ip }}"
+          DOMAIN="${MONITORING_DOMAIN:-}"
+          EMAIL="${MONITORING_EMAIL:-admin@voyageai.app}"
+          SSH="ssh -i ~/.ssh/monitor_key -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 root@$IP"
+
+          $SSH bash -s -- "$DOMAIN" "$EMAIL" << 'DEPLOY'
             set -euo pipefail
+            DOMAIN="$1"
+            EMAIL="$2"
             cd /opt/voyageai-monitoring
 
             # ── Nginx site config ────────────────────────────────────────────
-            DOMAIN="${MONITORING_DOMAIN:-}"
-            IP=$(curl -sf http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/address || echo "")
-
-            if [[ -n "$DOMAIN" ]]; then
-              SERVE_HOST="$DOMAIN"
-            else
-              # Fall back to bare IP (HTTP only — no TLS without a domain)
-              SERVE_HOST="$IP"
-            fi
+            SERVER_IP=$(curl -sf http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/address || echo "")
+            SERVE_HOST="${DOMAIN:-$SERVER_IP}"
 
             cat > /etc/nginx/sites-available/voyageai-monitoring << NGINX_CONF
-            server {
-                listen 80;
-                server_name $SERVE_HOST;
-                location /.well-known/acme-challenge/ { root /var/www/html; }
-                location / {
-                    proxy_pass         http://127.0.0.1:3001;
-                    proxy_http_version 1.1;
-                    proxy_set_header   Host              \$host;
-                    proxy_set_header   X-Real-IP         \$remote_addr;
-                    proxy_set_header   X-Forwarded-For   \$proxy_add_x_forwarded_for;
-                    proxy_set_header   X-Forwarded-Proto \$scheme;
-                    proxy_set_header   Upgrade           \$http_upgrade;
-                    proxy_set_header   Connection        "upgrade";
-                }
-            }
-            NGINX_CONF
+server {
+    listen 80;
+    server_name $SERVE_HOST;
+    location /.well-known/acme-challenge/ { root /var/www/html; }
+    location / {
+        proxy_pass         http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              \$host;
+        proxy_set_header   X-Real-IP         \$remote_addr;
+        proxy_set_header   X-Forwarded-For   \$proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto \$scheme;
+        proxy_set_header   Upgrade           \$http_upgrade;
+        proxy_set_header   Connection        "upgrade";
+    }
+}
+NGINX_CONF
 
             ln -sf /etc/nginx/sites-available/voyageai-monitoring \
                    /etc/nginx/sites-enabled/voyageai-monitoring
@@ -375,12 +401,10 @@ jobs:
               if [[ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]]; then
                 echo "🔐 Obtaining Let's Encrypt cert for $DOMAIN ..."
                 certbot --nginx -d "$DOMAIN" \
-                  --non-interactive --agree-tos -m "${MONITORING_EMAIL}" \
-                  --redirect
-                # Auto-renew
-                (crontab -l 2>/dev/null; echo "0 3 * * * certbot renew --quiet && systemctl reload nginx") | crontab - 2>/dev/null || true
+                  --non-interactive --agree-tos -m "$EMAIL" --redirect
+                (crontab -l 2>/dev/null; echo "0 3 * * * certbot renew --quiet && systemctl reload nginx") \
+                  | crontab - 2>/dev/null || true
               else
-                echo "🔐 TLS cert already present — renewing if needed..."
                 certbot renew --quiet
               fi
             fi
@@ -394,24 +418,21 @@ jobs:
             docker compose up -d --remove-orphans
 
             # ── Wait for health ──────────────────────────────────────────────
-            echo "⏳ Waiting for Prometheus..."
             for i in $(seq 1 30); do
               curl -sf http://127.0.0.1:9090/-/ready &>/dev/null && break
               [[ $i -eq 30 ]] && echo "❌ Prometheus timeout" && exit 1
               sleep 2
             done
 
-            echo "⏳ Waiting for Grafana..."
             for i in $(seq 1 30); do
               curl -sf http://127.0.0.1:3001/api/health &>/dev/null && break
               [[ $i -eq 30 ]] && echo "❌ Grafana timeout" && exit 1
               sleep 2
             done
 
-            # ── Hot-reload Prometheus config ─────────────────────────────────
             curl -s -XPOST http://127.0.0.1:9090/-/reload || true
-
             echo "✅ Stack is up!"
+          DEPLOY
 
   # ── Stage 5: Smoke test ─────────────────────────────────────────────────────
   smoke-test:
@@ -421,38 +442,57 @@ jobs:
     if: always() && needs.deploy.result == 'success'
 
     steps:
+      - name: Setup SSH key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.MONITORING_SSH_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          mkdir -p ~/.ssh
+          if echo "$SSH_PRIVATE_KEY" | base64 -d 2>/dev/null | grep -q 'PRIVATE KEY'; then
+            echo "$SSH_PRIVATE_KEY" | base64 -d > ~/.ssh/monitor_key
+          else
+            printf '%s' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/monitor_key
+          fi
+          echo "" >> ~/.ssh/monitor_key
+          chmod 600 ~/.ssh/monitor_key
+          ssh-keygen -y -f ~/.ssh/monitor_key > /dev/null \
+            || { echo "❌ SSH key invalid"; exit 1; }
+          IP="${{ needs.provision.outputs.droplet_ip }}"
+          ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts 2>/dev/null
+
       - name: Verify Prometheus API
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ needs.provision.outputs.droplet_ip }}
-          username: root
-          key: ${{ secrets.MONITORING_SSH_PRIVATE_KEY }}
-          fingerprint: ${{ secrets.MONITORING_SSH_FINGERPRINT }}
-          script_stop: true
-          script: |
+        shell: bash
+        run: |
+          IP="${{ needs.provision.outputs.droplet_ip }}"
+          SSH="ssh -i ~/.ssh/monitor_key -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 root@$IP"
+
+          $SSH bash -s << 'SMOKETEST'
             set -euo pipefail
 
-            # Prometheus ready
             STATUS=$(curl -sf http://127.0.0.1:9090/-/ready || echo "FAIL")
-            [[ "$STATUS" == *"Prometheus"* || "$STATUS" == "" ]] && echo "✅ Prometheus ready" || { echo "❌ Prometheus: $STATUS"; exit 1; }
+            [[ "$STATUS" == *"Prometheus"* || "$STATUS" == "" ]] \
+              && echo "✅ Prometheus ready" \
+              || { echo "❌ Prometheus: $STATUS"; exit 1; }
 
-            # Grafana health
-            GRAFANA=$(curl -sf http://127.0.0.1:3001/api/health | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('database',''))" 2>/dev/null || echo "FAIL")
-            [[ "$GRAFANA" == "ok" ]] && echo "✅ Grafana healthy" || { echo "❌ Grafana DB: $GRAFANA"; exit 1; }
+            GRAFANA=$(curl -sf http://127.0.0.1:3001/api/health \
+              | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('database',''))" 2>/dev/null || echo "FAIL")
+            [[ "$GRAFANA" == "ok" ]] \
+              && echo "✅ Grafana healthy" \
+              || { echo "❌ Grafana DB: $GRAFANA"; exit 1; }
 
-            # Prometheus targets (at least node-exporter should be up)
             TARGETS=$(curl -sf "http://127.0.0.1:9090/api/v1/targets" \
               | python3 -c "import sys,json; d=json.load(sys.stdin); active=[t for t in d['data']['activeTargets'] if t['health']=='up']; print(len(active))")
             echo "✅ Prometheus has $TARGETS healthy target(s)"
             [[ "$TARGETS" -ge 1 ]] || { echo "❌ No healthy Prometheus targets"; exit 1; }
 
+            SERVER_IP=$(curl -sf http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/address)
             echo ""
-            IP=$(curl -sf http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/address)
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "  Grafana       → http://$IP  (or https://<your-domain>)"
-            echo "  Prometheus    → http://$IP:9090  (loopback only)"
-            echo "  Alertmanager  → http://$IP:9093  (loopback only)"
+            echo "  Grafana       → http://$SERVER_IP"
+            echo "  Prometheus    → http://$SERVER_IP:9090  (loopback only)"
+            echo "  Alertmanager  → http://$SERVER_IP:9093  (loopback only)"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          SMOKETEST
 
   # ── Summary ─────────────────────────────────────────────────────────────────
   summary:
