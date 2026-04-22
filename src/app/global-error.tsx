@@ -10,13 +10,10 @@ export default function GlobalError({
     error: Error & { digest?: string };
     reset: () => void;
 }) {
-    const [isRecovering, setIsRecovering] = useState(false);
+    const [isRecovering] = useState(() => tryRecoverFromHMRStaleError(error));
 
     useEffect(() => {
         console.error("[GlobalErrorBoundary]", error);
-        if (tryRecoverFromHMRStaleError(error)) {
-            setIsRecovering(true);
-        }
     }, [error]);
 
     const isDev = process.env.NODE_ENV === "development";

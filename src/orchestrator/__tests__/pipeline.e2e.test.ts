@@ -330,7 +330,7 @@ describe("Full itinerary pipeline — end-to-end", () => {
     // ── 5. Final SafeTripContext completeness ─────────────────────────────────
 
     it("final context: destination, dates, and days are intact", () => {
-        if (!("context" in result)) throw new Error("No context in result");
+        if (!("ok" in result) || !result.ok) throw new Error("Expected ok=true result");
         const ctx = result.context;
 
         expect(ctx.destination).toBe("Bali, Indonesia");
@@ -340,7 +340,7 @@ describe("Full itinerary pipeline — end-to-end", () => {
     });
 
     it("final context: every day has theme, activities, and no null fields", () => {
-        if (!("context" in result)) throw new Error("No context in result");
+        if (!("ok" in result) || !result.ok) throw new Error("Expected ok=true result");
         const ctx = result.context;
 
         ctx.days.forEach((day, i) => {
@@ -357,7 +357,7 @@ describe("Full itinerary pipeline — end-to-end", () => {
     });
 
     it("final context: selectedHotel is complete", () => {
-        if (!("context" in result)) throw new Error("No context in result");
+        if (!("ok" in result) || !result.ok) throw new Error("Expected ok=true result");
         const { selectedHotel } = result.context;
 
         expect(selectedHotel).toBeDefined();
@@ -367,7 +367,7 @@ describe("Full itinerary pipeline — end-to-end", () => {
     });
 
     it("final context: budget is within user budget and ledger is balanced", () => {
-        if (!("context" in result)) throw new Error("No context in result");
+        if (!("ok" in result) || !result.ok) throw new Error("Expected ok=true result");
         const { budget, preferences } = result.context;
 
         expect(budget.isOverBudget).toBe(false);
@@ -388,7 +388,7 @@ describe("Full itinerary pipeline — end-to-end", () => {
     });
 
     it("final context: safety result has riskLevel and arrays defined", () => {
-        if (!("context" in result)) throw new Error("No context in result");
+        if (!("ok" in result) || !result.ok) throw new Error("Expected ok=true result");
         const { safety } = result.context;
 
         expect(safety).toBeDefined();
@@ -408,7 +408,7 @@ describe("Full itinerary pipeline — end-to-end", () => {
     // ── 6. Execution log completeness ─────────────────────────────────────────
 
     it("execution log records all 5 agents with status=success in pipeline order", () => {
-        if (!("context" in result)) throw new Error("No context in result");
+        if (!("ok" in result) || !result.ok) throw new Error("Expected ok=true result");
 
         const agentEntries = result.executionLog
             .filter((e): e is Extract<typeof e, { agent: string }> => "agent" in e);
@@ -441,7 +441,7 @@ describe("Full itinerary pipeline — end-to-end", () => {
     });
 
     it("no LLM-decision entries in the execution log (clean single pass)", () => {
-        if (!("context" in result)) throw new Error("No context in result");
+        if (!("ok" in result) || !result.ok) throw new Error("Expected ok=true result");
 
         const decisionEntries = result.executionLog.filter(
             (e): e is Extract<typeof e, { type: string }> => "type" in e && e.type === "llm-decision",
@@ -453,7 +453,7 @@ describe("Full itinerary pipeline — end-to-end", () => {
     // ── 7. No null / undefined on any critical output field ───────────────────
 
     it("no undefined values on critical context fields (null safety check)", () => {
-        if (!("context" in result)) throw new Error("No context in result");
+        if (!("ok" in result) || !result.ok) throw new Error("Expected ok=true result");
         const ctx = result.context;
 
         const critical: [string, unknown][] = [

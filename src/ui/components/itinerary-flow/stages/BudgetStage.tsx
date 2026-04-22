@@ -97,14 +97,14 @@ function DonutChart({
     const r = 58; const stroke = 24;
     const circumference = 2 * Math.PI * r;
 
-    let offset = 0;
     const slices = values.map((v, i) => {
         const pct = total > 0 ? v / total : 0;
         const dash = pct * circumference;
         const gap  = circumference - dash;
-        const s = { dash, gap, offset, pct, i };
-        offset += dash;
-        return s;
+        const offset = values
+            .slice(0, i)
+            .reduce((acc, prev) => acc + (total > 0 ? prev / total : 0) * circumference, 0);
+        return { dash, gap, offset, pct, i };
     });
 
     return (
