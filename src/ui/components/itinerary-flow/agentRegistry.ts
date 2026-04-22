@@ -75,7 +75,7 @@ export const AGENT_REGISTRY: Record<Exclude<FlowStage, "saved">, AgentConfig> = 
     },
 
     research: {
-        name: "Evan",
+        name: "Research",
         icon: Globe,
         color: "teal",
         glow: "rgba(20,184,166,0.35)",
@@ -103,7 +103,7 @@ export const AGENT_REGISTRY: Record<Exclude<FlowStage, "saved">, AgentConfig> = 
             "Assessing safety conditions",
             "Making final hotel selection",
         ],
-        role: "Evan (Research Agent) uses live web data from Bright Data to find real activities, experiences, and hotels that match your trip themes — not hallucinated guesses.",
+        role: "Research (Research Agent) uses live web data from Bright Data to find real activities, experiences, and hotels that match your trip themes — not hallucinated guesses.",
     },
 
     logistics: {
