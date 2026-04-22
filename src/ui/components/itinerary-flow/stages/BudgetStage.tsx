@@ -36,7 +36,7 @@ type Currency = (typeof CURRENCIES)[number];
 // ─── Category config (matches ledger categories exactly) ─────────────────────
 
 const CAT = {
-    hotel:    { label: "Hotel",      color: "#6366f1", text: "text-indigo-400", desc: "Per-night rate" },
+    hotel:    { label: "Hotel",      color: "#6366f1", text: "text-indigo-400", desc: "Total cost" },
     activity: { label: "Activities", color: "#14b8a6", text: "text-teal-400",   desc: "Tours & experiences" },
     food:     { label: "Food",       color: "#f59e0b", text: "text-amber-400",  desc: "Dining & snacks" },
     other:    { label: "Transport",  color: "#475569", text: "text-slate-400",  desc: "Local transit & transport" },
