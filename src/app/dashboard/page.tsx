@@ -29,6 +29,8 @@ export default function DashboardPage() {
     const [debouncedQuery, setDebouncedQuery] = useState("");
     /** Active flow session — when set, the full-screen pipeline overlay renders. */
     const [flowSession, setFlowSession] = useState<{ tripId: string; input: FlowInput } | null>(null);
+    const [mounted, setMounted] = useState(false);
+    useEffect(() => setMounted(true), []);
 
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -57,22 +59,37 @@ export default function DashboardPage() {
             .catch(console.error);
     }, []);
 
-    const { totalBudget, totalSpent, budgetCurrency } = useMemo(() => {
+    const { totalPlanned, budgetCurrency } = useMemo(() => {
         const baseCurrency: CurrencyCode = "USD";
         let totalB = 0;
-        let totalS = 0;
-        
         trips.forEach(t => {
             const tripCurrency = (t.budget?.currency || "USD") as CurrencyCode;
             totalB += CurrencyService.convert(t.budget?.total || 0, tripCurrency, baseCurrency);
-            totalS += CurrencyService.convert(t.budget?.spent || 0, tripCurrency, baseCurrency);
         });
+        return { totalPlanned: totalB, budgetCurrency: baseCurrency as string };
+    }, [trips]);
 
-        return {
-            totalBudget: totalB,
-            totalSpent: totalS,
-            budgetCurrency: baseCurrency as string
-        };
+    const aiStatusMessage = useMemo(() => {
+        if (trips.length === 0) return null;
+        const today = new Date();
+        const now   = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+        const next  = [...trips]
+            .filter(t => {
+                const [ey, em, ed] = t.endDate.split("-").map(Number);
+                return Date.UTC(ey!, em! - 1, ed!) >= now;
+            })
+            .sort((a, b) => a.startDate.localeCompare(b.startDate))[0];
+        if (!next) return null;
+        const [sy, sm, sd] = next.startDate.split("-").map(Number);
+        const start = Date.UTC(sy!, sm! - 1, sd!);
+        const daysUntil = Math.round((start - now) / 86_400_000);
+        const pct = next.budget.total > 0 ? Math.round((next.budget.spent / next.budget.total) * 100) : 0;
+        if (daysUntil < 0)  return `✦ ${next.destination} trip is underway`;
+        if (daysUntil === 0) return `✦ ${next.destination} starts today`;
+        if (daysUntil === 1) return `✦ ${next.destination} departs tomorrow — confirm your bookings`;
+        if (daysUntil <= 7)  return pct > 0 ? `✦ ${next.destination} in ${daysUntil} days — ${pct}% of budget used` : `✦ ${next.destination} departs in ${daysUntil} days`;
+        if (pct > 75)        return `✦ ${next.destination} budget ${pct}% used — review spending`;
+        return `✦ ${next.destination} in ${daysUntil} days`;
     }, [trips]);
 
     const handleTripCreated = (newTrip: Trip) =>
@@ -84,11 +101,19 @@ export default function DashboardPage() {
 
     return (
         <div className="h-full overflow-y-auto scroll-smooth hide-scrollbar">
-            <div className="min-h-full p-6 md:p-8 lg:p-10 max-w-[1440px] mx-auto space-y-8 relative mobile-container">
+            <div className="min-h-full p-6 md:p-8 lg:p-10 space-y-8 relative">
                 {/* ── Top bar ───────────────────────────────────────────────── */}
-                <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-2">
-                    <div className="flex items-center gap-4 flex-1 justify-end">
-                        <div className="relative max-w-xs w-full ml-8 hidden lg:block">
+                <header className="flex items-center justify-between gap-4 pb-2">
+                    {/* AI Status Strip — left, shown when trips are loaded */}
+                    {mounted && !isLoading && aiStatusMessage && (
+                        <div className="hidden md:flex items-center gap-2.5 bg-[#10B981]/[0.06] border border-[#10B981]/[0.12] rounded-full px-4 py-2 min-w-0 max-w-sm lg:max-w-lg xl:max-w-2xl">
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] animate-pulse shrink-0" />
+                            <span className="text-xs text-zinc-300 font-medium truncate">{aiStatusMessage}</span>
+                        </div>
+                    )}
+                    {/* Right: search + action buttons */}
+                    <div className="flex items-center gap-4 ml-auto">
+                        <div className="relative max-w-xs w-full hidden lg:block">
                             <input
                                 type="text"
                                 value={searchQuery}
@@ -101,7 +126,6 @@ export default function DashboardPage() {
                             </svg>
                         </div>
                         <div className="flex items-center gap-2">
-                            {/* Flight ticket import — magic feature */}
                             <button
                                 onClick={() => setShowTicketWizard(true)}
                                 title="Import from flight ticket"
@@ -132,20 +156,17 @@ export default function DashboardPage() {
                     isSearching={debouncedQuery.trim().length > 0}
                 />
 
-                {/* ── Row 2: Trip Intelligence + Budget ────────────────────── */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* ── Rows 2–3: 4 info cards ───────────────────────────────
+                     md: 2×2 grid  |  2xl: single row of 4 columns        */}
+                <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4 gap-6 items-start">
                     <TripIntelligencePanel trips={trips} isLoading={isLoading} />
                     <BudgetOverviewCard
-                        totalBudget={totalBudget}
-                        totalSpent={totalSpent}
+                        totalPlanned={totalPlanned}
+                        tripCount={trips.length}
                         currency={budgetCurrency}
                     />
-                </div>
-
-                {/* ── Row 3: Calendar + Suggestions ────────────────────────── */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <CalendarWidget trips={trips} />
-                    <AISuggestionsCard />
+                    <AISuggestionsCard onPlanTrip={(dest) => { setInitialDestination(dest); setIsModalOpen(true); }} />
                 </div>
             </div>
 

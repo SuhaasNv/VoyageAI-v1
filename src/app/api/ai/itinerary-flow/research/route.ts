@@ -6,6 +6,8 @@ import { runWithRequestContext } from "@/lib/requestContext";
 import { formatErrorResponse } from "@/lib/errors";
 import { logStructured } from "@/infrastructure/logger";
 import { ResearchAgent } from "@/agents/research/researchAgent";
+import { formatAIResponse } from "@/lib/ai/explainability";
+import { computeConfidence, lowGeoFraction } from "@/lib/ai/confidence";
 
 const DaySchema = z.object({
     day: z.number(),
@@ -25,6 +27,7 @@ const Schema = z.object({
         })
         .optional(),
     days: z.array(DaySchema),
+    _feedback: z.string().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -41,29 +44,47 @@ export async function POST(req: NextRequest) {
         try {
             const t0 = Date.now();
             const agent = new ResearchAgent();
-            const result = await agent.run(body.data, flowSessionId);
+            const { _feedback, ...tripContext } = body.data;
+            const result = await agent.run(tripContext, flowSessionId, _feedback);
             const durationMs = Date.now() - t0;
 
-            const totalActivities = result.days.reduce((s, d) => s + d.activities.length, 0);
+            const totalActivitiesCount = result.days.reduce((s, d) => s + d.activities.length, 0);
+            const usedBrightData = result._dataSource === "brightdata";
 
-            return successResponse({
-                ...result,
-                _meta: {
-                    durationMs,
-                    confidence: 0.85,
-                    dataSources: [
-                        "Bright Data web search",
-                        "Mapbox Geocoding",
-                        "Hotel directories",
-                        "Review aggregators",
-                    ],
-                    decisionsLog: [
-                        `+0ms Starting research for ${body.data.destination}`,
-                        `Found ${result.hotels.length} hotels and ${totalActivities} activities`,
-                        `+${durationMs}ms Research complete`,
-                    ],
-                },
-            });
+            const sources = [
+                usedBrightData ? "Bright Data web search" : "LLM knowledge base (unverified)",
+                "Mapbox Geocoding API",
+            ];
+
+            const decisionsLog = [
+                `Starting research for ${body.data.destination}`,
+                `Found ${result.hotels.length} hotels and ${totalActivitiesCount} activities`,
+                `Research complete`,
+            ];
+
+            return successResponse(
+                formatAIResponse(
+                    { ...result, groundedActivitiesCount: usedBrightData ? totalActivitiesCount : 0, totalActivitiesCount },
+                    {
+                        // LLM_GROUNDED when Bright Data succeeded (external web data verified the output).
+                        // LLM_ONLY when Bright Data was unavailable and we fell back to LLM knowledge.
+                        // Penalty: low geocode confidence on ≥ 50% of activities degrades score further.
+                        confidence: computeConfidence({
+                            mode: usedBrightData ? "LLM_GROUNDED" : "LLM_ONLY",
+                            usedFallback: !usedBrightData,
+                            lowGeoFraction: lowGeoFraction(
+                                result.days.flatMap((d) => d.activities)
+                            ),
+                        }),
+                        reasoning: `Researched ${body.data.destination}: found ${result.hotels.length} hotel option(s) and ` +
+                            `${totalActivitiesCount} activities across ${result.days.length} days. ` +
+                            `Data source: ${usedBrightData ? "Bright Data web search (real-world verified)" : "LLM knowledge base (unverified — Bright Data unavailable)"}.`,
+                        sources,
+                        durationMs,
+                        decisionsLog,
+                    }
+                )
+            );
         } catch (err) {
             return formatErrorResponse(err);
         }

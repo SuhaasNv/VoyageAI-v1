@@ -1,0 +1,310 @@
+groups:
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # 1. API Performance
+  # ────────────────────────────────────────────────────────────────────────────
+  - name: api_performance
+    rules:
+
+      - alert: HighAPIErrorRate
+        expr: |
+          (
+            sum(rate(http_errors_total{error_class="5xx"}[5m])) by (route)
+            /
+            sum(rate(http_requests_total[5m])) by (route)
+          ) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "High 5xx error rate on {{ $labels.route }}"
+          description: >
+            Route {{ $labels.route }} has a 5xx error rate of
+            {{ $value | humanizePercentage }} (threshold: 5%) over the last 5 minutes.
+          runbook: "https://github.com/SuhaasNv/VoyageAI-v1/wiki/runbooks/high-api-error-rate"
+
+      - alert: HighAPILatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (route, le)
+          ) > 3
+        for: 3m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "High p95 API latency on {{ $labels.route }}"
+          description: >
+            Route {{ $labels.route }} p95 latency is {{ $value | humanizeDuration }}
+            (threshold: 3s).
+
+      - alert: HighAPILatencyCritical
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (route, le)
+          ) > 10
+        for: 2m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "Critical p99 API latency on {{ $labels.route }}"
+          description: >
+            Route {{ $labels.route }} p99 latency is {{ $value | humanizeDuration }}
+            (threshold: 10s).
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # 2. AI / LLM
+  # ────────────────────────────────────────────────────────────────────────────
+  - name: ai_llm
+    rules:
+
+      - alert: HighAILatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(ai_request_duration_seconds_bucket[5m])) by (provider, model, le)
+          ) > 3
+        for: 3m
+        labels:
+          severity: warning
+          team: ai
+        annotations:
+          summary: "High AI response latency ({{ $labels.provider }}/{{ $labels.model }})"
+          description: >
+            p95 LLM latency for {{ $labels.provider }}/{{ $labels.model }} is
+            {{ $value | humanizeDuration }} (threshold: 3s).
+
+      - alert: AIProviderFailureSpike
+        expr: |
+          (
+            sum(rate(ai_failures_total[5m])) by (provider)
+            /
+            sum(rate(ai_requests_total[5m])) by (provider)
+          ) > 0.1
+        for: 2m
+        labels:
+          severity: critical
+          team: ai
+        annotations:
+          summary: "AI provider {{ $labels.provider }} failure rate spike"
+          description: >
+            {{ $labels.provider }} failure rate is {{ $value | humanizePercentage }}
+            (threshold: 10%). All LLM calls may be failing.
+
+      - alert: AIFallbackRateHigh
+        expr: |
+          (
+            sum(rate(ai_fallback_total[10m])) by (from_provider)
+            /
+            sum(rate(ai_requests_total[10m])) by (provider)
+          ) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+          team: ai
+        annotations:
+          summary: "High LLM fallback rate from {{ $labels.from_provider }}"
+          description: >
+            More than 20% of requests to {{ $labels.from_provider }} are falling
+            back to a secondary provider. Primary provider may be degraded.
+
+      - alert: AITokenBudgetSpike
+        expr: |
+          sum(rate(ai_tokens_total{token_type="total"}[5m])) > 10000
+        for: 5m
+        labels:
+          severity: warning
+          team: ai
+        annotations:
+          summary: "High LLM token consumption rate"
+          description: >
+            Token consumption rate is {{ $value | humanize }} tokens/s.
+            Monitor for cost explosion.
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # 3. LangGraph Workflow
+  # ────────────────────────────────────────────────────────────────────────────
+  - name: langgraph_workflow
+    rules:
+
+      - alert: LangGraphExecutionTimeout
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(langgraph_execution_duration_seconds_bucket[10m])) by (le)
+          ) > 120
+        for: 5m
+        labels:
+          severity: critical
+          team: ai
+        annotations:
+          summary: "LangGraph graph execution timeout (p95 > 2 min)"
+          description: >
+            p95 LangGraph execution time is {{ $value | humanizeDuration }}.
+            Graphs are taking too long to complete.
+
+      - alert: LangGraphNodeFailureSpike
+        expr: |
+          sum(rate(langgraph_node_executions_total{status="error"}[5m])) by (node) > 0.1
+        for: 2m
+        labels:
+          severity: critical
+          team: ai
+        annotations:
+          summary: "LangGraph node {{ $labels.node }} failure spike"
+          description: >
+            Node {{ $labels.node }} is failing at {{ $value | humanize }} errors/s.
+            Check Next.js /api/internal/agent/execute logs.
+
+      - alert: LangGraphHighRepairIterations
+        expr: |
+          sum(rate(langgraph_repair_iterations_total[10m])) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          team: ai
+        annotations:
+          summary: "LangGraph repair loop triggered frequently"
+          description: >
+            The budget/density repair loop is firing {{ $value | humanize }} times/s.
+            Budget or schedule optimization may be poor.
+
+      - alert: LangGraphServiceDown
+        expr: |
+          up{job="langgraph"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "LangGraph service is down"
+          description: >
+            Prometheus cannot reach the LangGraph /metrics endpoint.
+            The Python service may have crashed or been OOM-killed.
+
+      - alert: LangGraphHighActiveExecutions
+        expr: |
+          langgraph_active_executions > 10
+        for: 2m
+        labels:
+          severity: warning
+          team: ai
+        annotations:
+          summary: "LangGraph has too many concurrent executions"
+          description: >
+            {{ $value }} graph executions are currently in-flight.
+            This may indicate a queue backlog or runaway requests.
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # 4. System Infrastructure
+  # ────────────────────────────────────────────────────────────────────────────
+  - name: system_infrastructure
+    rules:
+
+      - alert: HighMemoryUsage
+        expr: |
+          (
+            1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)
+          ) > 0.80
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: >
+            Memory usage is {{ $value | humanizePercentage }} (threshold: 80%).
+
+      - alert: CriticalMemoryUsage
+        expr: |
+          (
+            1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)
+          ) > 0.95
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Critical memory usage — OOM risk on {{ $labels.instance }}"
+          description: >
+            Memory usage is {{ $value | humanizePercentage }}.
+            Container may be killed imminently.
+
+      - alert: HighCPUUsage
+        expr: |
+          100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: >
+            CPU utilisation is {{ $value | humanize }}% (threshold: 80%).
+
+      - alert: DiskSpaceLow
+        expr: |
+          (
+            node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.lxcfs"}
+            / node_filesystem_size_bytes{fstype!~"tmpfs|fuse.lxcfs"}
+          ) < 0.15
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Low disk space on {{ $labels.instance }} ({{ $labels.mountpoint }})"
+          description: >
+            Only {{ $value | humanizePercentage }} disk space remaining.
+
+      - alert: NextJSServiceDown
+        expr: |
+          up{job="nextjs"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Next.js service is unreachable"
+          description: >
+            Prometheus cannot scrape the Next.js /api/metrics endpoint.
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # 5. Business Metrics
+  # ────────────────────────────────────────────────────────────────────────────
+  - name: business_metrics
+    rules:
+
+      - alert: ItineraryGenerationSuccessRateLow
+        expr: |
+          (
+            sum(rate(planner_itinerary_generated_total{status="success"}[15m]))
+            /
+            sum(rate(planner_itinerary_generated_total[15m]))
+          ) < 0.80
+        for: 10m
+        labels:
+          severity: warning
+          team: product
+        annotations:
+          summary: "Itinerary generation success rate below 80%"
+          description: >
+            Success rate is {{ $value | humanizePercentage }} over the last 15 minutes.
+            AI planning pipeline may be degraded.
+
+      - alert: HighRegenerationRate
+        expr: |
+          (
+            sum(rate(planner_regenerated_total[30m]))
+            /
+            sum(rate(planner_itinerary_generated_total{status="success"}[30m]))
+          ) > 0.3
+        for: 15m
+        labels:
+          severity: warning
+          team: product
+        annotations:
+          summary: "High itinerary regeneration rate (AI dissatisfaction)"
+          description: >
+            {{ $value | humanizePercentage }} of successfully generated plans
+            are being regenerated — users may be unhappy with AI output quality.

@@ -16,7 +16,10 @@ const Schema = z.object({
         startDate: z.string(),
         endDate: z.string(),
         durationDays: z.number(),
-        days: z.array(z.any()),
+        days: z.array(z.object({
+            day: z.number(),
+            activities: z.array(z.any()),
+        }).passthrough()),
         selectedHotel: z.any().optional(),
         budget: z.object({
             totalEstimatedCost: z.number(),
@@ -25,7 +28,12 @@ const Schema = z.object({
         }),
         safety: z.object({
             riskLevel: z.enum(["low", "medium", "high"]),
-            warnings: z.array(z.string()),
+            warnings: z.array(z.object({
+                type:     z.enum(["fatigue", "travel", "schedule", "meal"]),
+                day:      z.number(),
+                severity: z.enum(["medium", "high"]),
+                message:  z.string(),
+            })),
             tips: z.array(z.string()),
         }),
     }),
@@ -57,21 +65,25 @@ export async function POST(req: NextRequest) {
             // This ensures TripViewPage / TripMap can always parse rawJson correctly.
             const itineraryData = safeTripContextToItinerary(
                 body.data.tripId,
-                body.data.safetyResult as SafeTripContext,
+                body.data.safetyResult as unknown as SafeTripContext,
             );
 
-            const itinerary = await prisma.itinerary.create({
-                data: {
-                    tripId: body.data.tripId,
-                    rawJson: itineraryData as object,
-                },
+            const itinerary = await prisma.$transaction(async (tx) => {
+                await tx.itinerary.deleteMany({ where: { tripId: body.data.tripId } });
+                return tx.itinerary.create({
+                    data: {
+                        tripId: body.data.tripId,
+                        rawJson: itineraryData as object,
+                    },
+                });
             });
 
-            // Update the trip's budget total
+            // Update trip budget and mark pipeline as completed
             await prisma.trip.update({
                 where: { id: body.data.tripId },
                 data: {
                     budgetTotal: body.data.safetyResult.budget.totalEstimatedCost,
+                    status: "completed",
                 },
             });
 

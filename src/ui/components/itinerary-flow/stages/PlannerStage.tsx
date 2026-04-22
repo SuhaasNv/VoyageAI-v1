@@ -692,7 +692,24 @@ export function PlannerStage({
                 </AnimatePresence>
             </div>
         </motion.div>
-            ) : null}
-        </AnimatePresence>
+        ) : (
+            // Warmup state: CSRF not yet ready or component just mounted.
+            // Show the loading card so there is never a blank screen.
+            <motion.div
+                key="warmup"
+                variants={stageContentVariants}
+                initial={prefersReduced ? false : "initial"}
+                animate="animate"
+                exit={prefersReduced ? undefined : "exit"}
+                transition={stageContentTransition}
+            >
+                <AgentThinkingCard
+                    stage="planner"
+                    destination={input.destination}
+                    skeleton={<PlannerSkeleton days={estimatedDays} />}
+                />
+            </motion.div>
+        )}
+    </AnimatePresence>
     );
 }

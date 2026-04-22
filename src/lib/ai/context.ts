@@ -109,14 +109,39 @@ export function buildItinerarySummaryContext(itinerary: Itinerary): string {
         `- **Dates**: ${itinerary.startDate} → ${itinerary.endDate} (${itinerary.totalDays} days)`,
         `- **Total Budget**: ${itinerary.totalEstimatedCost.amount} ${itinerary.totalEstimatedCost.currency}`,
         `- **Pacing Score**: ${itinerary.pacingAnalysis.overallScore}/10`,
-        "",
-        "**Daily Themes:**",
     ];
 
-    for (const day of itinerary.days) {
-        const activityNames = day.activities.map((a) => a.name).join(", ");
+    // Budget breakdown
+    const bd = itinerary.totalEstimatedCost.breakdown;
+    if (bd) {
         lines.push(
-            `  - Day ${day.day} (${day.date}): ${day.theme} — Activities: ${activityNames}`
+            `- **Budget Breakdown**: Accommodation ${bd.accommodation} | Food ${bd.food} | Activities ${bd.activities} | Transport ${bd.transport} ${itinerary.totalEstimatedCost.currency}`
+        );
+    }
+
+    // Hotels / accommodation — extracted from activities so the LLM can answer directly
+    const hotelLines: string[] = [];
+    for (const day of itinerary.days) {
+        for (const act of day.activities) {
+            if (act.type === "accommodation") {
+                hotelLines.push(`  - Day ${day.day} (${day.date}): ${act.name} — ${act.location.name}`);
+            }
+        }
+    }
+    lines.push("", "**Hotels / Accommodation:**");
+    if (hotelLines.length > 0) {
+        lines.push(...hotelLines);
+    } else {
+        lines.push("  - No hotel bookings listed in this itinerary.");
+    }
+
+    lines.push("", "**Daily Schedule:**");
+    for (const day of itinerary.days) {
+        const nonHotel = day.activities.filter((a) => a.type !== "accommodation");
+        const activityNames = nonHotel.map((a) => a.name).join(", ");
+        const dayCost = `${day.totalCost.amount} ${day.totalCost.currency}`;
+        lines.push(
+            `  - Day ${day.day} (${day.date}): ${day.theme} — ${activityNames} [Cost: ${dayCost}]`
         );
     }
 

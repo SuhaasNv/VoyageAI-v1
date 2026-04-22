@@ -6,9 +6,10 @@ import { runWithRequestContext } from "@/lib/requestContext";
 import { formatErrorResponse } from "@/lib/errors";
 import { logStructured } from "@/infrastructure/logger";
 import { LogisticsAgent } from "@/agents/logistics/logisticsAgent";
+import { formatAIResponse } from "@/lib/ai/explainability";
+import { computeConfidence, lowGeoFraction } from "@/lib/ai/confidence";
 
-// Forward-declared so ActivitySchema can reference itself for restaurantOptions.
-const BaseActivitySchema = z.object({
+const ActivitySchema = z.object({
     name: z.string(),
     type: z.enum(["attraction", "experience", "restaurant"]),
     description: z.string(),
@@ -16,17 +17,10 @@ const BaseActivitySchema = z.object({
     lat: z.number().optional(),
     lng: z.number().optional(),
     geoConfidence: z.enum(["high", "medium", "low"]).optional(),
-    // Phase 1: restaurant enrichment fields
     cuisine: z.string().optional(),
     shortDescription: z.string().optional(),
     priceLevel: z.enum(["$", "$$", "$$$"]).optional(),
 });
-
-// Phase 2: nested restaurantOptions (self-referential, one level deep)
-const ActivitySchema: z.ZodType<z.infer<typeof BaseActivitySchema> & { restaurantOptions?: z.infer<typeof BaseActivitySchema>[] }> =
-    BaseActivitySchema.extend({
-        restaurantOptions: z.lazy(() => z.array(BaseActivitySchema)).optional(),
-    });
 
 const HotelSchema = z.object({
     name: z.string(),
@@ -78,25 +72,36 @@ export async function POST(req: NextRequest) {
             const result = await agent.run(body.data, flowSessionId);
             const durationMs = Date.now() - t0;
 
-            return successResponse({
-                ...result,
-                _meta: {
+            const totalActivities = body.data.days.reduce((s, d) => s + d.activities.length, 0);
+
+            const decisionsLog = [
+                `Grouped ${body.data.days.length} days by geography`,
+                `Assigned morning / afternoon / evening slots`,
+                `Selected hotel: ${result.selectedHotel?.name ?? "TBD"}`,
+                `Computed route efficiency`,
+                `Logistics optimized`,
+            ];
+
+            return successResponse(
+                formatAIResponse(result, {
+                    // DETERMINISTIC: pure geographic clustering + time-slot heuristics — no LLM.
+                    // Penalties: low geo-confidence reduces routing accuracy;
+                    //            warnings indicate the scheduler hit edge cases.
+                    confidence: computeConfidence({
+                        mode: "DETERMINISTIC",
+                        lowGeoFraction: lowGeoFraction(
+                            body.data.days.flatMap((d) => d.activities)
+                        ),
+                        hasWarnings: Boolean(result.warnings?.length),
+                    }),
+                    reasoning: `Scheduled ${totalActivities} activities across ${body.data.days.length} days using ` +
+                        `deterministic geographic clustering and time-slot heuristics. ` +
+                        `Hotel selected: ${result.selectedHotel?.name ?? "TBD"}. No LLM involved.`,
+                    sources: ["Activity coordinates", "Geographic clustering", "Time-slot heuristics"],
                     durationMs,
-                    confidence: 0.90,
-                    dataSources: [
-                        "Activity coordinates",
-                        "Geographic clustering",
-                        "Time-slot heuristics",
-                    ],
-                    decisionsLog: [
-                        `+0ms Grouping ${body.data.days.length} days by geography`,
-                        `+50ms Assigning morning / afternoon / evening slots`,
-                        `+100ms Selecting hotel: ${result.selectedHotel?.name ?? "TBD"}`,
-                        `+150ms Computing route efficiency`,
-                        `+${durationMs}ms Logistics optimized`,
-                    ],
-                },
-            });
+                    decisionsLog,
+                })
+            );
         } catch (err) {
             return formatErrorResponse(err);
         }

@@ -12,12 +12,14 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { checkCsrf } from "@/middleware/csrf";
+import { recordRequest, normaliseRoute } from "@/lib/monitoring/apiMetrics";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Proxy
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function proxy(req: NextRequest): Promise<NextResponse> {
+    const proxyStart = performance.now();
     const { pathname } = req.nextUrl;
 
     // ── 1. CSRF validation for state-mutating API routes ──────────────────────
@@ -31,6 +33,12 @@ export async function proxy(req: NextRequest): Promise<NextResponse> {
     requestHeaders.set("x-pathname", pathname);
 
     // ── 3. Security headers ───────────────────────────────────────────────────
+    // Generate a per-request nonce for CSP script-src allowlisting.
+    // Next.js App Router reads x-nonce from the request headers and
+    // automatically applies it to the inline hydration scripts it emits.
+    const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
+    requestHeaders.set("x-nonce", nonce);
+
     const response = NextResponse.next({
         request: { headers: requestHeaders },
     });
@@ -48,28 +56,47 @@ export async function proxy(req: NextRequest): Promise<NextResponse> {
         "Strict-Transport-Security",
         "max-age=63072000; includeSubDomains; preload"
     );
-    const isProduction = process.env.NODE_ENV === "production";
-    const scriptSrc = isProduction
-        ? "'self'"
-        : "'self' 'unsafe-inline' 'unsafe-eval'";
-    const styleSrc = isProduction
-        ? "'self' https://fonts.googleapis.com"
-        : "'self' 'unsafe-inline' https://fonts.googleapis.com";
 
-    response.headers.set(
-        "Content-Security-Policy",
-        [
-            "default-src 'self'",
-            `script-src ${scriptSrc}`,
-            `style-src ${styleSrc}`,
-            "font-src 'self' https://fonts.gstatic.com",
-            "img-src 'self' data: blob: https://images.pexels.com https://images.unsplash.com https://i.pravatar.cc https://lh3.googleusercontent.com",
-            "connect-src 'self' https://api.mapbox.com https://*.tiles.mapbox.com https://events.mapbox.com https://generativelanguage.googleapis.com https://api.openai.com https://api.pexels.com",
-            "worker-src 'self' blob:",
-            "child-src blob:",
-            "frame-ancestors 'none'",
-        ].join("; ")
-    );
+    const isProduction = process.env.NODE_ENV === "production";
+
+    // 'strict-dynamic' lets the nonce-allowed scripts (Next.js runtime) load
+    // additional trusted scripts without needing individual allowlisting.
+    const scriptSrc = isProduction
+        ? `'self' 'nonce-${nonce}' 'strict-dynamic'`
+        : "'self' 'unsafe-inline' 'unsafe-eval'";
+
+    // framer-motion applies animation values as element style="" attributes —
+    // not <style> tags — so nonces cannot cover them. 'unsafe-inline' is the
+    // only viable option here; it carries minimal risk (CSS can't exfiltrate
+    // tokens or run code the way inline scripts can).
+    const styleSrc = `'self' 'unsafe-inline' https://fonts.googleapis.com`;
+
+    const csp = [
+        "default-src 'self'",
+        `script-src ${scriptSrc}`,
+        `style-src ${styleSrc}`,
+        "font-src 'self' https://fonts.gstatic.com",
+        "img-src 'self' data: blob: https://images.pexels.com https://images.unsplash.com https://lh3.googleusercontent.com",
+        "connect-src 'self' https://api.mapbox.com https://*.tiles.mapbox.com https://events.mapbox.com https://generativelanguage.googleapis.com https://api.openai.com https://api.pexels.com",
+        "worker-src 'self' blob:",
+        "child-src blob:",
+        "frame-ancestors 'none'",
+    ].join("; ");
+
+    response.headers.set("Content-Security-Policy", csp);
+
+    // ── Metrics: record this request after headers are set ────────────────────
+    // We hook into the response here; the actual duration is measured from the
+    // start of the proxy function via a timing header injected by Next.js, or
+    // we use the monotonic clock. For middleware, we capture wall-clock delta.
+    const durationMs = Math.round(performance.now() - proxyStart);
+    const statusCode = response.status ?? 200;
+    recordRequest({
+        method: req.method,
+        route:  normaliseRoute(pathname),
+        statusCode,
+        durationMs,
+    });
 
     return response;
 }

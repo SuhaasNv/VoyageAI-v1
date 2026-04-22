@@ -147,6 +147,31 @@ function BudgetBar({ util }: { util: number }) {
     );
 }
 
+// ─── Typewriter hook ─────────────────────────────────────────────────────────
+
+function useTypewriter(text: string | null, speed = 22): string {
+    const [displayed, setDisplayed] = useState(text ?? "");
+    useEffect(() => {
+        if (!text) { setDisplayed(""); return; }
+        setDisplayed("");
+        let i = 0;
+        const id = setInterval(() => {
+            i++;
+            setDisplayed(text.slice(0, i));
+            if (i >= text.length) clearInterval(id);
+        }, speed);
+        return () => clearInterval(id);
+    }, [text, speed]);
+    return displayed;
+}
+
+function formatAgo(ts: number): string {
+    const mins = Math.floor((Date.now() - ts) / 60_000);
+    if (mins < 1) return "just now";
+    if (mins === 1) return "1 min ago";
+    return `${mins} min ago`;
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function TripIntelligencePanel({ trips, isLoading = false }: TripIntelligencePanelProps) {
@@ -169,6 +194,13 @@ export function TripIntelligencePanel({ trips, isLoading = false }: TripIntellig
 
     const [aiInsight, setAiInsight] = useState<string | null>(null);
     const [isAiLoading, setIsAiLoading] = useState(false);
+    const [insightTimestamp, setInsightTimestamp] = useState<number | null>(null);
+    const [, tick] = useState(0);
+    useEffect(() => {
+        if (!insightTimestamp) return;
+        const id = setInterval(() => tick(n => n + 1), 60_000);
+        return () => clearInterval(id);
+    }, [insightTimestamp]);
 
     // Next upcoming or active trip
     const nextTrip = useMemo(() => {
@@ -196,6 +228,7 @@ export function TripIntelligencePanel({ trips, isLoading = false }: TripIntellig
                 const data = await res.json();
                 if (data.success && data.data?.insight) {
                     setAiInsight(data.data.insight);
+                    setInsightTimestamp(Date.now());
                 }
             } catch (err) {
                 console.error("AI Insight failed:", err);
@@ -216,8 +249,8 @@ export function TripIntelligencePanel({ trips, isLoading = false }: TripIntellig
         ? (nextTrip.budget.spent / nextTrip.budget.total) * 100
         : 0;
     
-    // Fallback to deterministic if AI fails or is loading
-    const recommendation = aiInsight || (nextTrip ? computeRecommendation(nextTrip, dna) : null);
+    const deterministicRec = nextTrip ? computeRecommendation(nextTrip, dna) : null;
+    const typedInsight = useTypewriter(aiInsight);
 
     return (
         <div className="w-full bg-white/[0.02] backdrop-blur-xl border border-white/5 rounded-[2rem] p-6 shadow-2xl transition-all hover:border-white/10 relative overflow-hidden">
@@ -257,6 +290,34 @@ export function TripIntelligencePanel({ trips, isLoading = false }: TripIntellig
             {/* ── Active / upcoming trip view ─────────────────────────────────── */}
             {!isLoading && hasTrips && (
                 <div className="flex flex-col gap-4">
+                    {/* AI Insight — PRIMARY, rendered first */}
+                    {isAiLoading && !aiInsight ? (
+                        <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-[#10B981]/[0.06] border border-[#10B981]/[0.12]">
+                            <div className="w-3.5 h-3.5 rounded-full border-2 border-[#10B981]/40 border-t-[#10B981] animate-spin shrink-0" />
+                            <span className="text-xs text-zinc-500 font-medium">Thinking…</span>
+                        </div>
+                    ) : aiInsight ? (
+                        <div className="flex items-start gap-3 px-4 py-3 rounded-2xl bg-[#10B981]/[0.06] border border-[#10B981]/[0.12]">
+                            <Lightbulb className="w-4 h-4 text-[#10B981] mt-0.5 shrink-0" />
+                            <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                                <p className="text-xs text-zinc-300 font-medium leading-relaxed">
+                                    {typedInsight}
+                                    {typedInsight.length < aiInsight.length && (
+                                        <span className="inline-block w-0.5 h-3 bg-[#10B981] ml-0.5 animate-pulse" />
+                                    )}
+                                </p>
+                                {insightTimestamp && typedInsight === aiInsight && (
+                                    <span className="text-[10px] text-zinc-600 font-medium">AI · {formatAgo(insightTimestamp)}</span>
+                                )}
+                            </div>
+                        </div>
+                    ) : deterministicRec ? (
+                        <div className="flex items-start gap-3 px-4 py-3 rounded-2xl bg-white/[0.04] border border-white/[0.08]">
+                            <Lightbulb className="w-4 h-4 text-zinc-500 mt-0.5 shrink-0" />
+                            <p className="text-xs text-zinc-400 font-medium leading-relaxed">{deterministicRec}</p>
+                        </div>
+                    ) : null}
+
                     {/* Destination */}
                     <div>
                         <p className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider mb-1">
@@ -282,16 +343,6 @@ export function TripIntelligencePanel({ trips, isLoading = false }: TripIntellig
                             accent
                         />
                     </div>
-
-                    {/* Recommendation */}
-                    {recommendation && (
-                        <div className="flex items-start gap-3 px-4 py-3 rounded-2xl bg-[#10B981]/[0.06] border border-[#10B981]/[0.12]">
-                            <Lightbulb className="w-4 h-4 text-[#10B981] mt-0.5 shrink-0" />
-                            <p className="text-xs text-zinc-300 font-medium leading-relaxed">
-                                {recommendation}
-                            </p>
-                        </div>
-                    )}
                 </div>
             )}
 

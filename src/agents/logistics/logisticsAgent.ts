@@ -270,6 +270,9 @@ export class LogisticsAgent {
 
         // ── 1. Hotel selection ───────────────────────────────────────────────
         const baseHotel = selectHotel(context);
+        if (context.hotels.length === 0) {
+            warnings.push("No hotel data available — placeholder used");
+        }
 
         // ── 2. Hotel coordinate fallback (no hardcodes) ──────────────────────
         // If the Research Agent was unable to geocode the hotel (Mapbox
@@ -366,9 +369,12 @@ export class LogisticsAgent {
         // Using Promise.allSettled so a matrix failure on one day does not
         // prevent routing on other days.
         let usedHaversineFallback = false;
+        let usedMapboxFallback = false;
+
+        type DayResult = { optimizedDay: OptimizedDay; droppedCount: number; usedFallback: boolean };
 
         const dayResults = await Promise.allSettled(
-            validatedDays.map(async (day): Promise<OptimizedDay> => {
+            validatedDays.map(async (day): Promise<DayResult> => {
                 // Build typed activity list with guaranteed valid coords
                 const dayActivities = day.activities.map((act, i) => ({
                     ...act,
@@ -388,17 +394,19 @@ export class LogisticsAgent {
                     data: { day: day.day, points: points.length },
                 });
 
-                const matrix = await getTravelTimeMatrix(points);
+                const { matrix, usedFallback } = await getTravelTimeMatrix(points);
                 const indexMap = new Map(points.map((p, i) => [p.id, i]));
 
+                const { scheduled, droppedCount } = buildScheduledDay(
+                    hotelCoord,
+                    dayActivities,
+                    { matrix, indexMap },
+                );
+
                 return {
-                    day:   day.day,
-                    theme: day.theme,
-                    activities: buildScheduledDay(
-                        hotelCoord,
-                        dayActivities,
-                        { matrix, indexMap },
-                    ),
+                    optimizedDay: { day: day.day, theme: day.theme, activities: scheduled },
+                    droppedCount,
+                    usedFallback,
                 };
             })
         );
@@ -408,10 +416,18 @@ export class LogisticsAgent {
             const originalDay = validatedDays[i]!;
 
             if (settled.status === "fulfilled") {
-                return settled.value;
+                const { optimizedDay, droppedCount, usedFallback: dayFallback } = settled.value;
+                if (dayFallback) usedMapboxFallback = true;
+                if (droppedCount > 0) {
+                    warnings.push(
+                        `Day ${originalDay.day}: ${droppedCount} ${droppedCount === 1 ? "activity was" : "activities were"} removed due to time constraints`,
+                    );
+                }
+                return optimizedDay;
             }
 
             // Matrix or routing threw — fall back to slot-assignment only
+            // (slot assignment keeps all activities, so droppedCount is 0)
             usedHaversineFallback = true;
             logError(`[Logistics] day ${originalDay.day} matrix failed — using deterministic fallback`, settled.reason);
             logStructured({
@@ -429,29 +445,52 @@ export class LogisticsAgent {
         if (usedHaversineFallback) {
             warnings.push("One or more days used slot-assignment fallback (Mapbox Matrix unavailable)");
         }
+        if (usedMapboxFallback) {
+            warnings.push("Travel times are estimated (fallback routing used)");
+        }
 
         // ── 7. Inject meals (lunch + dinner) per day ─────────────────────────
         // Runs after routing so meal times are anchored to real schedule slots.
         // injectMeals() is pure + deterministic — no API calls, no mutation.
-        let totalLunch  = 0;
-        let totalDinner = 0;
+        let totalLunch        = 0;
+        let totalDinner       = 0;
+        let totalLunchFallback  = 0;
+        let totalDinnerFallback = 0;
 
         const daysWithMeals = optimizedDays.map((day) => {
-            const { activities, lunchInserted, dinnerInserted } =
-                injectMeals(day.activities);
-            if (lunchInserted)  totalLunch++;
-            if (dinnerInserted) totalDinner++;
+            const { activities, lunchInserted, dinnerInserted, lunchWasFallback, dinnerWasFallback } =
+                injectMeals(day.activities, context.destination);
+            if (lunchInserted)      totalLunch++;
+            if (dinnerInserted)     totalDinner++;
+            if (lunchWasFallback)   totalLunchFallback++;
+            if (dinnerWasFallback)  totalDinnerFallback++;
             return { ...day, activities };
         });
 
         logStructured({
             layer: "agent", agent: "logistics", step: "meals_injected", requestId,
             data: {
-                lunchInserted:  totalLunch,
-                dinnerInserted: totalDinner,
-                totalDays:      daysWithMeals.length,
+                lunchInserted:    totalLunch,
+                dinnerInserted:   totalDinner,
+                lunchFallback:    totalLunchFallback,
+                dinnerFallback:   totalDinnerFallback,
+                totalDays:        daysWithMeals.length,
             },
         });
+
+        if (totalLunch < daysWithMeals.length) {
+            warnings.push("Lunch could not be scheduled on some days");
+        }
+        if (totalDinner < daysWithMeals.length) {
+            warnings.push("Dinner could not be scheduled on some days");
+        }
+        // Loud warning when the Research Agent's restaurant set didn't cover a
+        // meal slot — a contextual placeholder was inserted. Visible in the UI.
+        if (totalLunchFallback > 0 || totalDinnerFallback > 0) {
+            warnings.push(
+                `Some meal stops (${totalLunchFallback} lunch, ${totalDinnerFallback} dinner) use generic placeholders — Research Agent did not return a real restaurant for those slots.`
+            );
+        }
 
         // ── 8. Compute food cost ─────────────────────────────────────────────
         // Pure pass over injected meal activities — no API calls, no mutation.

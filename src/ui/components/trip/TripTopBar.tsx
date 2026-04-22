@@ -1,11 +1,10 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Battery, BatteryMedium, BatteryWarning, Wallet, ArrowLeft, MoreVertical, Pencil, Trash2, Share2 } from "lucide-react";
+import { Battery, BatteryMedium, BatteryWarning, Wallet, ArrowLeft, MoreVertical, Trash2, Share2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { updateTrip, type Trip } from "@/lib/api";
-import { EditTripModal } from "./EditTripModal";
+import { type Trip } from "@/lib/api";
 import { DeleteTripConfirmModal } from "./DeleteTripConfirmModal";
 
 interface TripTopBarProps {
@@ -16,7 +15,6 @@ interface TripTopBarProps {
 
 export function TripTopBar({ trip, onTripUpdate, onShareExport }: TripTopBarProps) {
     const [menuOpen, setMenuOpen] = useState(false);
-    const [editOpen, setEditOpen] = useState(false);
     const [deleteOpen, setDeleteOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
     const router = useRouter();
@@ -39,9 +37,6 @@ export function TripTopBar({ trip, onTripUpdate, onShareExport }: TripTopBarProp
         router.replace("/dashboard");
     }
 
-    function handleEditSaved(updated: Trip) {
-        onTripUpdate?.(updated);
-    }
     const isHighFatigue = trip.fatigueLevel === "high";
     const isMedFatigue = trip.fatigueLevel === "medium";
     const safeTotal = trip.budget?.total ?? 0;
@@ -64,6 +59,7 @@ export function TripTopBar({ trip, onTripUpdate, onShareExport }: TripTopBarProp
             </div>
 
             <div className="flex items-center gap-2 md:gap-6">
+                {trip.fatigueLevel !== null && (
                 <div className="hidden md:flex items-center gap-2.5 bg-black/[0.28] backdrop-blur-sm px-4 py-2 rounded-xl border border-white/[0.07] hover:bg-black/[0.38] hover:-translate-y-px transition-all duration-150 ease-out">
                     {isHighFatigue ? <BatteryWarning className="w-4 h-4 text-rose-500" /> : isMedFatigue ? <BatteryMedium className="w-4 h-4 text-amber-500" /> : <Battery className="w-4 h-4 text-[#10B981]" />}
                     <div>
@@ -73,6 +69,7 @@ export function TripTopBar({ trip, onTripUpdate, onShareExport }: TripTopBarProp
                         </div>
                     </div>
                 </div>
+                )}
 
                 <div className="hidden lg:flex items-center gap-3 bg-black/[0.28] backdrop-blur-sm px-4 py-2 rounded-xl border border-white/[0.07] hover:bg-black/[0.38] hover:-translate-y-px transition-all duration-150 ease-out w-64">
                     <div className="w-8 h-8 rounded-lg bg-[#10B981]/10 flex items-center justify-center flex-shrink-0 border border-[#10B981]/20">
@@ -114,13 +111,6 @@ export function TripTopBar({ trip, onTripUpdate, onShareExport }: TripTopBarProp
                     {menuOpen && (
                         <div className="absolute right-0 top-full mt-2 py-1.5 min-w-[160px] bg-[#0B0F14] border border-white/10 rounded-xl shadow-xl z-50">
                             <button
-                                onClick={() => { setMenuOpen(false); setEditOpen(true); }}
-                                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-300 hover:bg-white/[0.06] hover:text-white transition-colors"
-                            >
-                                <Pencil className="w-4 h-4" />
-                                Edit trip
-                            </button>
-                            <button
                                 onClick={handleDeleteClick}
                                 className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-rose-400 hover:bg-rose-500/10 transition-colors"
                             >
@@ -132,12 +122,6 @@ export function TripTopBar({ trip, onTripUpdate, onShareExport }: TripTopBarProp
                 </div>
             </div>
 
-            <EditTripModal
-                trip={trip}
-                isOpen={editOpen}
-                onClose={() => setEditOpen(false)}
-                onSaved={handleEditSaved}
-            />
 
             <DeleteTripConfirmModal
                 trip={trip}

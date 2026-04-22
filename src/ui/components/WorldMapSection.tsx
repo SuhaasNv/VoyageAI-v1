@@ -6,8 +6,7 @@ import { WorldMap } from "@/ui/components/ui/map";
 import { useState, useEffect, useRef } from "react";
 
 const MotionDiv = dynamic(
-  () => import("framer-motion").then((m) => m.motion.div),
-  { ssr: false }
+  () => import("framer-motion").then((m) => m.motion.div)
 );
 
 // Counts from 0 to target over duration seconds with cubic ease-out, starts when active.

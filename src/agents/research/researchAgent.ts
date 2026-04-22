@@ -261,172 +261,6 @@ function enrichRestaurantMetadata(
     return { cuisine, shortDescription, priceLevel, estimatedCost };
 }
 
-// ─── Nearby restaurant attachment ─────────────────────────────────────────────
-
-/** Maximum straight-line distance (km) to include a restaurant as "nearby". */
-const MAX_RESTAURANT_DISTANCE_KM = 2.5;
-
-/** Maximum number of restaurant options to attach per activity. */
-const MAX_RESTAURANT_OPTIONS = 3;
-
-/**
- * Returns the straight-line distance in kilometres between two lat/lng points.
- * Inline Haversine — avoids importing the travel-time variant from mapbox.ts
- * which returns minutes and applies an urban-speed factor, not raw km.
- */
-function haversineKm(
-    lat1: number, lng1: number,
-    lat2: number, lng2: number,
-): number {
-    const R    = 6_371;
-    const dLat = (lat2 - lat1) * (Math.PI / 180);
-    const dLng = (lng2 - lng1) * (Math.PI / 180);
-    const a    =
-        Math.sin(dLat / 2) ** 2 +
-        Math.cos(lat1 * (Math.PI / 180)) *
-        Math.cos(lat2 * (Math.PI / 180)) *
-        Math.sin(dLng / 2) ** 2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-/**
- * For every non-restaurant activity in a day's activity list, attaches up to
- * MAX_RESTAURANT_OPTIONS nearby restaurants sorted by straight-line distance.
- *
- * Rules:
- *   - Only activities with valid lat/lng are considered (restaurants without
- *     coordinates are silently skipped — no (0,0) pollution).
- *   - Restaurants within MAX_RESTAURANT_DISTANCE_KM are preferred.
- *   - If none fall within the radius, the closest available restaurants are
- *     used as a fallback (up to MAX_RESTAURANT_OPTIONS) so the field is never
- *     empty when restaurants exist.
- *   - Restaurant activities themselves receive no restaurantOptions field.
- *   - Returns a new array — no mutation of input objects.
- *
- * Called per-day AFTER attachCoordinates() so lat/lng are guaranteed to exist.
- */
-function attachNearbyRestaurants(activities: Activity[]): Activity[] {
-    const restaurants = activities.filter(
-        (a) => a.type === "restaurant" &&
-               typeof a.lat === "number" && isFinite(a.lat) &&
-               typeof a.lng === "number" && isFinite(a.lng) &&
-               !(a.lat === 0 && a.lng === 0),
-    );
-
-    // Nothing to attach if there are no geocoded restaurants in this day
-    if (restaurants.length === 0) return activities;
-
-    return activities.map((act) => {
-        // Restaurants don't get restaurantOptions
-        if (act.type === "restaurant") return act;
-
-        // Skip non-restaurant activities that lack coordinates
-        if (
-            typeof act.lat !== "number" || !isFinite(act.lat) ||
-            typeof act.lng !== "number" || !isFinite(act.lng) ||
-            (act.lat === 0 && act.lng === 0)
-        ) {
-            return act;
-        }
-
-        // Sort all restaurants by distance to this activity
-        const sorted = restaurants
-            .map((r) => ({
-                restaurant: r,
-                distKm: haversineKm(act.lat!, act.lng!, r.lat!, r.lng!),
-            }))
-            .sort((a, b) => a.distKm - b.distKm);
-
-        // Prefer restaurants within the radius; fall back to nearest if none qualify
-        const withinRadius = sorted.filter((r) => r.distKm <= MAX_RESTAURANT_DISTANCE_KM);
-        const candidates   = withinRadius.length > 0 ? withinRadius : sorted;
-
-        const restaurantOptions = candidates
-            .slice(0, MAX_RESTAURANT_OPTIONS)
-            .map((c) => c.restaurant);
-
-        return { ...act, restaurantOptions };
-    });
-}
-
-/**
- * Applies attachNearbyRestaurants to every day in an EnrichedTripContext,
- * returning a new context object with the same shape.
- *
- * For days that have NO restaurant activities (e.g. a pure "Culture & Landmarks"
- * day), the global restaurant pool (all geocoded restaurants from the entire trip)
- * is used as a fallback so that `injectMeals` can still insert lunch/dinner.
- */
-function withNearbyRestaurants(
-    context: EnrichedTripContext,
-    requestId?: string,
-): EnrichedTripContext {
-    let totalAttached = 0;
-    let attachedActivityCount = 0;
-
-    // Build a trip-wide pool of geocoded restaurants to use when a day
-    // has no day-local restaurant activities.
-    const globalRestaurantPool: Activity[] = context.days
-        .flatMap((d) => d.activities)
-        .filter(
-            (a) =>
-                a.type === "restaurant" &&
-                typeof a.lat === "number" && isFinite(a.lat) &&
-                typeof a.lng === "number" && isFinite(a.lng) &&
-                !(a.lat === 0 && a.lng === 0),
-        );
-
-    const days = context.days.map((day) => {
-        // Check whether this day has its own restaurant activities.
-        const dayHasRestaurants = day.activities.some(
-            (a) =>
-                a.type === "restaurant" &&
-                typeof a.lat === "number" && isFinite(a.lat) &&
-                typeof a.lng === "number" && isFinite(a.lng) &&
-                !(a.lat === 0 && a.lng === 0),
-        );
-
-        // For days without local restaurants, inject global pool options.
-        const activitiesForAttach = dayHasRestaurants
-            ? day.activities
-            : [
-                  ...day.activities,
-                  // Temporarily include global restaurants so attachNearbyRestaurants
-                  // can find nearest options. They won't appear in the output since
-                  // attachNearbyRestaurants skips restaurant-type activities.
-                  ...globalRestaurantPool,
-              ];
-
-        const enriched = attachNearbyRestaurants(activitiesForAttach)
-            // Strip the globally injected restaurants back out — only keep
-            // activities that were originally in this day.
-            .filter((a) => day.activities.some((orig) => orig.name === a.name));
-
-        enriched.forEach((act) => {
-            if (act.restaurantOptions && act.restaurantOptions.length > 0) {
-                totalAttached += act.restaurantOptions.length;
-                attachedActivityCount++;
-            }
-        });
-        return { ...day, activities: enriched };
-    });
-
-    const avg = attachedActivityCount > 0
-        ? parseFloat((totalAttached / attachedActivityCount).toFixed(2))
-        : 0;
-
-    logStructured({
-        layer: "agent", agent: "research", step: "restaurants_attached", requestId,
-        data: {
-            destination:          context.destination,
-            totalActivities:      attachedActivityCount,
-            totalOptionsAttached: totalAttached,
-            avgOptionsPerActivity: avg,
-        },
-    });
-
-    return { ...context, days };
-}
 
 /**
  * Validate, sanitise, and preference-filter raw LLM output.
@@ -503,12 +337,12 @@ function validateAndSanitize(
     const inputDays = new Map(context.days.map((d) => [d.day, d.theme]));
     const rawDays = Array.isArray(obj.days) ? (obj.days as unknown[]) : [];
 
-    const seenActivities = new Set<string>();
     let restaurantEnrichedCount = 0;
 
     const days: EnrichedDay[] = rawDays
         .filter((d): d is Record<string, unknown> => typeof d === "object" && d !== null)
         .map((d) => {
+            const seenActivities = new Map<string, { lat?: number; lng?: number }>();
             const dayNum = typeof d.day === "number" ? d.day : 0;
             const theme = (inputDays.get(dayNum) ?? (typeof d.theme === "string" ? d.theme : "")).trim();
 
@@ -523,16 +357,31 @@ function validateAndSanitize(
                     const name = (a.name as string | undefined) ?? "";
                     return name.trim().length > 0;
                 })
-                .filter((a) => {
-                    // For relaxed-only style, deprioritise adventure activities
-                    if (isRelaxedStyle && !isAdventureStyle && a.type === "adventure") return false;
-                    return true;
-                })
                 .reduce<Activity[]>((acc, a) => {
                     if (acc.length >= 8) return acc;
                     const key = normaliseName((a.name as string) ?? "");
-                    if (seenActivities.has(key)) return acc;
-                    seenActivities.add(key);
+                    const aLat = typeof a.lat === "number" ? a.lat : undefined;
+                    const aLng = typeof a.lng === "number" ? a.lng : undefined;
+                    if (seenActivities.has(key)) {
+                        const prev = seenActivities.get(key)!;
+                        // Both entries have coordinates — only dedupe when they are spatially close.
+                        // ~111 m threshold at equator; sufficient to distinguish nearby same-named places.
+                        if (
+                            aLat !== undefined && aLng !== undefined &&
+                            prev.lat !== undefined && prev.lng !== undefined
+                        ) {
+                            const COORD_THRESHOLD = 0.001;
+                            const isClose =
+                                Math.abs(aLat - prev.lat) < COORD_THRESHOLD &&
+                                Math.abs(aLng - prev.lng) < COORD_THRESHOLD;
+                            if (isClose) return acc; // same place — true duplicate
+                            // Different coords → distinct place with same name, allow through
+                        } else {
+                            return acc; // no coords to distinguish — name-only fallback
+                        }
+                    } else {
+                        seenActivities.set(key, { lat: aLat, lng: aLng });
+                    }
 
                     const validTypes: ActivityType[] = ["attraction", "experience", "restaurant"];
                     const type: ActivityType = validTypes.includes(a.type as ActivityType)
@@ -614,10 +463,15 @@ function mergeIntoContext(
         };
     });
 
+    const emptyDayNumbers = mergedDays.filter((d) => d.activities.length === 0).map((d) => d.day);
+
     return {
         ...context,
         days: mergedDays,
         hotels: enriched.hotels,
+        ...(emptyDayNumbers.length > 0
+            ? { warnings: [`Days [${emptyDayNumbers.join(", ")}] returned no activities from the research agent — using placeholder.`] }
+            : {}),
     };
 }
 
@@ -730,29 +584,65 @@ async function attachCoordinates(
 
     // ── Step 4: attach coords + geoConfidence ─────────────────────────────
     // Map GeocodedPlace.precision → GeoConfidence on the entity.
-    // Falls back to centroid with geoConfidence: "low" when geocoding failed.
-    const resolveCoord = (name: string): { lat: number; lng: number; geoConfidence: GeoConfidence } => {
+    // When geocoding fails OR returns a low-confidence (centroid-cluster) hit,
+    // leave lat/lng undefined so downstream (TripMap) can re-geocode or skip.
+    // Previously this collapsed every failed place to the centroid coord,
+    // which caused all markers to stack at one location after dedup.
+    const resolveCoord = (name: string): { lat?: number; lng?: number; geoConfidence: GeoConfidence } => {
         const geocoded = coordMap.get(name);
-        if (geocoded && isValidGeoCoord(geocoded.lat, geocoded.lng)) {
+        if (
+            geocoded &&
+            geocoded.precision !== "low" &&
+            isValidGeoCoord(geocoded.lat, geocoded.lng)
+        ) {
             return { lat: geocoded.lat, lng: geocoded.lng, geoConfidence: geocoded.precision };
         }
-        return { lat: fallback.lat, lng: fallback.lng, geoConfidence: "low" };
+        return { geoConfidence: "low" };
     };
 
     const days = result.days.map((day) => ({
         ...day,
         activities: day.activities.map((act) => {
             const { lat, lng, geoConfidence } = resolveCoord(act.name);
-            return { ...act, lat, lng, geoConfidence };
+            return {
+                ...act,
+                ...(typeof lat === "number" && typeof lng === "number" ? { lat, lng } : {}),
+                geoConfidence,
+            };
         }),
     }));
 
     const hotels = result.hotels.map((hotel) => {
         const { lat, lng, geoConfidence } = resolveCoord(hotel.name);
-        return { ...hotel, lat, lng, geoConfidence };
+        return {
+            ...hotel,
+            ...(typeof lat === "number" && typeof lng === "number" ? { lat, lng } : {}),
+            geoConfidence,
+        };
     });
 
     return { ...result, days, hotels };
+}
+
+// ─── Geo-warning helper ───────────────────────────────────────────────────────
+
+/**
+ * Derives geocoding-degradation warnings from an enriched day list.
+ * Called on both fresh runs and cache hits so behaviour is consistent.
+ */
+function computeGeoWarnings(days: EnrichedDay[]): string[] {
+    const activities = days.flatMap((d) => d.activities);
+    if (activities.length === 0) return [];
+    if (activities.every((a) => a.geoConfidence === undefined)) {
+        return ["Unable to resolve locations accurately for this destination."];
+    }
+    const lowCount = activities.filter(
+        (a) => a.geoConfidence === "low" || a.lat === undefined
+    ).length;
+    if (lowCount / activities.length > 0.3) {
+        return ["Location accuracy is reduced for some activities. Distances may be approximate."];
+    }
+    return [];
 }
 
 // ─── ResearchAgent ────────────────────────────────────────────────────────────
@@ -764,7 +654,7 @@ export class ResearchAgent {
      *
      * @throws if hotels cannot be populated after one retry
      */
-    async run(context: TripContext, requestId?: string): Promise<EnrichedTripContext> {
+    async run(context: TripContext, requestId?: string, feedback?: string): Promise<EnrichedTripContext & { _dataSource: "brightdata" | "unverified" }> {
         logStructured({ layer: "agent", agent: "research", step: "start", requestId });
         logStructured({
             layer: "agent", agent: "research", step: "input", requestId,
@@ -786,6 +676,8 @@ export class ResearchAgent {
             dayThemes:    context.days.map((d) => d.theme),
             style:        context.preferences?.style,
             pace:         context.preferences?.pace,
+            budget:       context.preferences?.budget,
+            ...(feedback ? { feedback } : {}),
         });
 
         const cached = await getResearchCached(cacheKey);
@@ -795,7 +687,27 @@ export class ResearchAgent {
                 data: { destination: context.destination, source: "research_result_cache" },
             });
             logInfo("[ResearchAgent] returning cached result — skipping LLM call");
-            return cached as EnrichedTripContext;
+            // Read groundingMode stored with the payload; fall back to "brightdata"
+            // for old cache entries that predate this field.
+            const cachedGroundingMode =
+                (cached as { groundingMode?: string }).groundingMode === "unverified"
+                    ? "unverified"
+                    : "brightdata";
+            const { groundingMode: _gm, ...cachedResult } =
+                cached as EnrichedTripContext & { groundingMode?: string };
+            const cachedGeoWarnings = computeGeoWarnings(cachedResult.days);
+            const cachedWarnings = [
+                ...(cachedResult.warnings ?? []),
+                ...(cachedGroundingMode === "unverified"
+                    ? ["Some activities are AI-generated and may not reflect real-world data."]
+                    : []),
+                ...cachedGeoWarnings,
+            ];
+            return {
+                ...cachedResult,
+                _dataSource: cachedGroundingMode,
+                ...(cachedWarnings.length > 0 ? { warnings: cachedWarnings } : {}),
+            };
         }
 
         logStructured({
@@ -832,13 +744,13 @@ export class ResearchAgent {
             restaurants  = getRes(restaurantsRes);
 
             const allFailed = [attractions, hotels, restaurants].every(
-                (r) => !r || r.status === "failed"
+                (r) => !r?.data?.length
             );
             if (allFailed) {
                 dataSource = "unverified";
                 logError("brightdata.all_searches_failed", {
                     destination: context.destination,
-                    message: "All Bright Data searches returned failed status. Operating in LLM-only mode.",
+                    message: "All Bright Data searches returned no usable data. Operating in LLM-only mode.",
                 });
             }
         }
@@ -877,7 +789,7 @@ export class ResearchAgent {
 
         const prefSummary = context.preferences
             ? [
-                context.preferences.budget != null ? `Budget: $${context.preferences.budget}/day` : null,
+                context.preferences.budget != null ? `Budget: $${context.preferences.budget} total (~$${Math.round(context.preferences.budget / context.durationDays)}/day)` : null,
                 context.preferences.style  ? `Style: ${context.preferences.style}` : null,
                 context.preferences.pace   ? `Pace: ${context.preferences.pace}` : null,
               ]
@@ -915,10 +827,9 @@ ${daysList}
 
 Instructions:
 - Use the web search results above as your primary source of places.
-- Provide 3–5 activities per day matching each day's theme.
 - Provide exactly 3–5 hotel options total (shared across all days).
 - Hotels are MANDATORY — you must include them.
-- Return ONLY the JSON object. No markdown, no commentary.${hotelOverride}
+- Return ONLY the JSON object. No markdown, no commentary.${hotelOverride}${feedback ? `\n\nUser feedback to incorporate: ${feedback}` : ""}
 `.trim();
 
             const fullPromptForAttempt = buildFullPrompt({
@@ -957,22 +868,43 @@ Instructions:
             return result;
         };
 
-        const runWithGeocode = async (enforceHotelCount = false): Promise<EnrichedTripContext> => {
+        const runWithGeocode = async (enforceHotelCount = false): Promise<EnrichedTripContext & { _dataSource: "brightdata" | "unverified" }> => {
             const result   = await attempt(enforceHotelCount);
-            const geocoded = await attachCoordinates(result, requestId);
+            const enriched = await attachCoordinates(result, requestId);
 
-            // Attach nearby restaurant options to every non-restaurant activity.
-            // Must happen AFTER attachCoordinates so lat/lng are valid for Haversine.
-            const enriched = withNearbyRestaurants(geocoded, requestId);
-
-            // Store the geocoded result so the next identical request is instant
-            await setResearchCached(cacheKey, enriched);
+            // Store the geocoded result so the next identical request is instant.
+            // groundingMode is persisted so cache hits don't need to infer provenance.
+            await setResearchCached(cacheKey, { ...enriched, groundingMode: dataSource });
             logStructured({
                 layer: "agent", agent: "research", step: "end", requestId,
                 data: { destination: context.destination, cached: true },
             });
 
-            return enriched;
+            // Warnings are run-specific (Bright Data / geocoding may be available on next request)
+            // so they are added after caching to avoid polluting cached results.
+            const geoWarnings = computeGeoWarnings(enriched.days);
+            const allActivities = enriched.days.flatMap((d) => d.activities);
+            logStructured({
+                layer: "agent", agent: "research", step: "geocoding_complete", requestId,
+                data: {
+                    totalActivities: allActivities.length,
+                    lowConfidenceCount: allActivities.filter((a) => a.geoConfidence === "low").length,
+                    missingCoordCount: allActivities.filter((a) => a.lat === undefined).length,
+                    geoWarnings: geoWarnings.length,
+                },
+            });
+            const allWarnings = [
+                ...(enriched.warnings ?? []),
+                ...(dataSource === "unverified"
+                    ? ["Some activities are AI-generated and may not reflect real-world data."]
+                    : []),
+                ...geoWarnings,
+            ];
+            return {
+                ...enriched,
+                _dataSource: dataSource,
+                ...(allWarnings.length > 0 ? { warnings: allWarnings } : {}),
+            };
         };
 
         try {

@@ -12,7 +12,7 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 
-import { ChatRequestSchema, type Itinerary, type TravelDNA } from "@/lib/ai/schemas";
+import { ChatRequestSchema, TravelDNASchema, type Itinerary, type TravelDNA } from "@/lib/ai/schemas";
 import { validateBody, getAuthContext } from "@/lib/api/request";
 import { formatErrorResponse } from "@/lib/errors";
 import { logError, logStructured } from "@/infrastructure/logger";
@@ -23,7 +23,6 @@ import { prisma } from "@/lib/prisma";
 import { assembleContext } from "@/lib/ai/context";
 import { updateMemory, buildMemoryContext } from "@/memory/memory";
 import { sanitizeUserInput, validateLLMOutput } from "@/security/safety";
-import { SYSTEM_PROMPTS } from "@/lib/ai/prompts/index";
 
 export const runtime = "nodejs";
 
@@ -32,50 +31,101 @@ const ChatRouteSchema = ChatRequestSchema.extend({
     tripId: z.string().cuid("tripId must be a valid CUID"),
 });
 
-// ─── Streaming helper ─────────────────────────────────────────────────────────
+// ─── Follow-up generator ───────────────────────────────────────────────────────
 
 /**
- * Separator used between the conversational text response and the trailing
- * actions JSON. Both API and client must agree on this exact string.
+ * Kept for any external callers that imported this constant.
+ * The streaming path no longer relies on a separator inside LLM output.
  */
 export const CHAT_ACTIONS_SEPARATOR = "---ACTIONS---";
 
+type FollowUpAction = {
+    label: string;
+    action: "chat_response";
+    payload: Record<string, never>;
+};
+
 /**
- * Build the streaming-friendly prompt for the chat companion.
+ * Generates 3 contextual follow-up suggestions without any LLM call.
+ * Keyword-matches the user's question to avoid offering the same topic twice.
+ */
+function generateContextualFollowUps(
+    userMessage: string,
+    currentDay: number,
+    destination: string,
+    totalDays: number,
+): FollowUpAction[] {
+    const msg = userMessage.toLowerCase();
+    const nextDay = currentDay < totalDays ? currentDay + 1 : 1;
+
+    const candidates: FollowUpAction[] = [
+        { label: `What's the plan for Day ${nextDay} in ${destination}?`, action: "chat_response", payload: {} },
+        { label: `Which hotels am I staying at?`, action: "chat_response", payload: {} },
+        { label: `What's my total budget for this trip?`, action: "chat_response", payload: {} },
+        { label: `How much should I budget for food?`, action: "chat_response", payload: {} },
+        { label: `Any safety tips for ${destination}?`, action: "chat_response", payload: {} },
+        { label: `What's the best activity on this trip?`, action: "chat_response", payload: {} },
+    ];
+
+    const isAbout = (...kw: string[]) => kw.some((k) => msg.includes(k));
+
+    return candidates.filter(({ label }) => {
+        const l = label.toLowerCase();
+        if (isAbout("hotel", "accommodation", "stay") && l.includes("hotel")) return false;
+        if (isAbout("budget", "food", "cost", "money", "price", "spend") && (l.includes("budget") || l.includes("food"))) return false;
+        if (isAbout("safety", "safe", "tip") && l.includes("safety")) return false;
+        if (isAbout("activit", "best", "top", "highlight") && l.includes("activit")) return false;
+        return true;
+    }).slice(0, 3);
+}
+
+// ─── Prompt builder ────────────────────────────────────────────────────────────
+
+/**
+ * Builds the streaming chat prompt.
  *
- * The LLM is asked to respond in two parts separated by ---ACTIONS---:
- *   1. A plain-text conversational answer (shown token-by-token to the user).
- *   2. A JSON array of 0–3 suggested action buttons (parsed silently after stream).
- *
- * Critically, no JSON wrapper is asked for the message part — the user must
- * never see raw JSON tokens streaming in the chat bubble.
+ * Key design decisions:
+ * - No separator or JSON output requested. The LLM outputs ONLY plain-text prose.
+ *   Follow-ups are generated deterministically server-side after the stream ends.
+ *   This eliminates all separator-leak bugs at their root.
+ * - Explicit formatting rules prevent raw JSON field values (e.g. "0914") from
+ *   leaking into the response.
  */
 function buildStreamingChatPrompt(
     contextString: string,
     currentDay: number | undefined,
     userMessage: string,
 ): string {
-    const system = SYSTEM_PROMPTS.CHAT_COMPANION
-        ?? "You are VoyageAI's AI travel companion. Provide concise, friendly, and actionable answers.";
+    return `You are VoyageAI Copilot — a knowledgeable travel assistant for this specific trip.
 
-    return `${system}
+ANSWER POLICY — two types of questions, two rules:
 
----
+TYPE A — TRIP-SPECIFIC (activities, schedule, times, costs, hotels, budget):
+  → Answer ONLY from TRIP CONTEXT below. Do not invent.
+  → If hotels show "No hotel bookings listed in this itinerary", say:
+    "Your itinerary doesn't include hotel bookings yet. You may want to add accommodation near [destination area]."
+  → For other missing trip data, say: "That's not in your current itinerary."
 
+TYPE B — DESTINATION KNOWLEDGE (safety tips, culture, weather, local customs, transport, food recommendations):
+  → Use your general travel knowledge about the destination. Be specific and practical.
+  → You do NOT need to restrict yourself to the itinerary for these questions.
+
+Focus on Day ${currentDay ?? 1} unless the user asks about another day.
+
+FORMATTING — always follow:
+- Times: "9:14 AM" or "9:14 AM–11:14 AM" (colon + AM/PM required)
+- Costs: "$40" — omit if $0
+- Dates: "April 24" (no year)
+
+Write 2–4 sentences of plain prose. No bullet points, no markdown, no JSON.
+
+=== TRIP CONTEXT ===
 ${contextString}
+=== END CONTEXT ===
 
----
+User question: ${userMessage}
 
-## Answering Rules
-- Focus on Day ${currentDay ?? 1} unless the user specifies otherwise.
-- Respond with 2–5 sentences of clear, helpful travel advice.
-- Write PLAIN TEXT only. No JSON wrappers, no markdown code blocks, no schema syntax.
-- After your text response, on a new line write exactly: ${CHAT_ACTIONS_SEPARATOR}
-- Then write a JSON array of 0–3 suggested action buttons, or [] if none apply:
-  [{"label":"Button text", "action":"apply_itinerary_update|map_fly_to|reoptimize|chat_response", "payload":{}}]
-
-## User's Message
-${userMessage}`;
+Your answer:`;
 }
 
 // ─── Route handler ────────────────────────────────────────────────────────────
@@ -106,9 +156,12 @@ export async function POST(req: NextRequest): Promise<Response> {
             await checkRateLimit(`ai:${auth.user.sub}:chat`);
 
             const preferences = await prisma.travelPreference.findUnique({ where: { userId: auth.user.sub } });
-            const dna = preferences?.data as unknown as TravelDNA;
+            const dnaRaw = preferences?.data;
+            const dnaParsed = dnaRaw ? TravelDNASchema.safeParse(dnaRaw) : null;
+            const dna: TravelDNA | undefined = dnaParsed?.success ? dnaParsed.data : undefined;
             const memCtx = await buildMemoryContext(sessionId);
-            const latestItinerary = trip.itineraries[0]?.rawJson as unknown as Itinerary;
+            const latestItinerary = (trip.itineraries[0]?.rawJson as unknown as Itinerary)
+                ?? chatPayload.currentItinerary;
 
             // Cap chat history at 20 messages to bound prompt size and DB load.
             const recentMessages = chatPayload.messages.slice(-20);
@@ -149,10 +202,10 @@ export async function POST(req: NextRequest): Promise<Response> {
             }
 
             const openaiBody = {
-                model: "gpt-4.1-mini",
+                model: "gpt-4o-mini",
                 messages: [{ role: "user" as const, content: fullPrompt }],
-                temperature: 0.7,
-                max_tokens: 1024,
+                temperature: 0.3,
+                max_tokens: 512,
                 stream: true,
             };
 
@@ -181,14 +234,16 @@ export async function POST(req: NextRequest): Promise<Response> {
                 async start(controller) {
                     const reader = openaiRes.body!.getReader();
                     const decoder = new TextDecoder();
+                    let sseBuffer = "";
 
                     try {
                         while (true) {
                             const { done, value } = await reader.read();
                             if (done) break;
 
-                            const chunk = decoder.decode(value, { stream: true });
-                            const lines = chunk.split("\n");
+                            sseBuffer += decoder.decode(value, { stream: true });
+                            const lines = sseBuffer.split("\n");
+                            sseBuffer = lines.pop() ?? "";
 
                             for (const line of lines) {
                                 if (!line.startsWith("data: ")) continue;
@@ -202,6 +257,10 @@ export async function POST(req: NextRequest): Promise<Response> {
                                     const token = parsed.choices?.[0]?.delta?.content;
                                     if (token) {
                                         accumulatedContent += token;
+                                        // Forward every token directly — no separator suppression.
+                                        // The LLM prompt no longer requests a separator, so the
+                                        // answer is plain prose. Any stray artifact is stripped
+                                        // server-side below before sending messageText to the client.
                                         controller.enqueue(encoder.encode(token));
                                     }
                                 } catch {
@@ -215,35 +274,33 @@ export async function POST(req: NextRequest): Promise<Response> {
                         reader.releaseLock();
                     }
 
-                    // ── Split on separator: text | actions JSON ──────────────
                     try {
                         validateLLMOutput(accumulatedContent, "text");
                     } catch (err) {
                         logError("[API] Chat LLM output validation warning", err);
                     }
 
-                    const sepIdx = accumulatedContent.indexOf(CHAT_ACTIONS_SEPARATOR);
-                    const messageText = sepIdx !== -1
-                        ? accumulatedContent.slice(0, sepIdx).trim()
-                        : accumulatedContent.trim();
-                    const actionsRaw = sepIdx !== -1
-                        ? accumulatedContent.slice(sepIdx + CHAT_ACTIONS_SEPARATOR.length).trim()
-                        : "[]";
+                    // Strip any stray separator artifact the model might still emit
+                    // (handles ---ACTIONS---, --- ACTIONS---, partial variants, trailing JSON).
+                    const messageText = accumulatedContent
+                        .replace(/\n?---\s*ACTIONS[\s\S]*/i, "")
+                        .replace(/\n?\[\s*\{[\s\S]*$/, "")
+                        .trim();
 
-                    let suggestedActions: unknown[] = [];
-                    try {
-                        const parsed = JSON.parse(actionsRaw);
-                        if (Array.isArray(parsed)) suggestedActions = parsed;
-                    } catch {
-                        // Malformed actions — leave empty
-                    }
-
-                    // Send the final actions trailer so the client can render buttons
-                    controller.enqueue(
-                        encoder.encode(`\x00ACTIONS:${JSON.stringify({ suggestedActions })}`)
+                    // Deterministic follow-ups — no LLM parsing, always correct.
+                    const suggestedActions = generateContextualFollowUps(
+                        safeUserContent,
+                        chatPayload.currentDay ?? 1,
+                        trip.destination,
+                        latestItinerary?.totalDays ?? 7,
                     );
 
-                    // Persist clean message text (not the separator + actions fragment)
+                    // Send the final actions trailer. messageText is the authoritative
+                    // clean answer — client replaces the streamed display with this.
+                    controller.enqueue(
+                        encoder.encode(`\x00ACTIONS:${JSON.stringify({ suggestedActions, messageText })}`)
+                    );
+
                     persistChat(sessionId, safeUserContent, messageText || accumulatedContent, latestUserMessage, tripId).catch(
                         (e) => logError("[API] Chat persist error", e)
                     );

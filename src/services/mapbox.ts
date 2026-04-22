@@ -97,8 +97,8 @@ async function fetchWithRetry(url: string): Promise<Response> {
  *
  * Never throws.
  */
-export async function getTravelTimeMatrix(coords: GeoCoordinate[]): Promise<number[][]> {
-    if (coords.length < 2) return [[0]];
+export async function getTravelTimeMatrix(coords: GeoCoordinate[]): Promise<{ matrix: number[][]; usedFallback: boolean }> {
+    if (coords.length < 2) return { matrix: [[0]], usedFallback: false };
 
     let workingCoords = coords;
     if (coords.length > MAX_COORDS) {
@@ -126,7 +126,12 @@ export async function getTravelTimeMatrix(coords: GeoCoordinate[]): Promise<numb
                     layer: "service", service: "mapbox", step: "matrix_cache_hit",
                     data: { size: workingCoords.length },
                 });
-                return JSON.parse(cached) as number[][];
+                const parsed = JSON.parse(cached) as number[][] | { matrix: number[][]; usedFallback: boolean };
+                const isLegacy = Array.isArray(parsed);
+                return {
+                    matrix:      isLegacy ? parsed : parsed.matrix,
+                    usedFallback: isLegacy ? false : (parsed.usedFallback ?? false),
+                };
             }
         }
     } catch {
@@ -141,7 +146,7 @@ export async function getTravelTimeMatrix(coords: GeoCoordinate[]): Promise<numb
             layer: "service", service: "mapbox", step: "fallback_used",
             data: { reason: "no Mapbox token configured" },
         });
-        return haversineMatrix(workingCoords);
+        return { matrix: haversineMatrix(workingCoords), usedFallback: true };
     }
 
     try {
@@ -172,19 +177,19 @@ export async function getTravelTimeMatrix(coords: GeoCoordinate[]): Promise<numb
         // Cache write (non-fatal)
         if (redis) {
             try {
-                await redis.setex(cacheKey, MATRIX_CACHE_TTL_S, JSON.stringify(matrixMins));
+                await redis.setex(cacheKey, MATRIX_CACHE_TTL_S, JSON.stringify({ matrix: matrixMins, usedFallback: false }));
             } catch {
                 // Cache write failure is non-fatal
             }
         }
 
-        return matrixMins;
+        return { matrix: matrixMins, usedFallback: false };
     } catch (err) {
         logError("mapbox.matrix_failed", { error: (err as Error).message });
         logStructured({
             layer: "service", service: "mapbox", step: "fallback_used",
             data: { reason: (err as Error).message },
         });
-        return haversineMatrix(workingCoords);
+        return { matrix: haversineMatrix(workingCoords), usedFallback: true };
     }
 }

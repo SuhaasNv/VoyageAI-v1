@@ -14,7 +14,14 @@ Output rules:
 - Keep all description fields to a single concise sentence.
 - Use realistic cost estimates in USD.
 - Avoid duplicate names across the entire output.
-- Avoid vague names like "Local Market", "City Tour", or "Nice Restaurant".
+- HARD BAN on generic placeholder names. NEVER output any of:
+    "Local Restaurant", "Local Market", "Local Cafe", "City Tour",
+    "Nice Restaurant", "Good Restaurant", "Traditional Restaurant",
+    "Breakfast near X", "Lunch near X", "Dinner near X", "Restaurant near X",
+    or any name containing the word "near" followed by another activity.
+  Every name MUST be a specific, verifiable venue or landmark (e.g. "Morning
+  Glory Restaurant", "Mia Coffee", "Banh Mi Phuong"). If you cannot source a
+  real name for a given slot, OMIT that slot entirely — do not invent a generic.
 
 CRITICAL — Activity type diversity (MANDATORY, no exceptions):
 - Every day MUST contain a mix of activity types.

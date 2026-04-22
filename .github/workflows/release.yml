@@ -49,12 +49,12 @@ name: Release — VoyageAI Production Deployment
 #    DO_TF_MANAGE_PROJECT        Repo Variable — set true only so Terraform creates the DO project (greenfield); omit = use existing project (default)
 #    DO_SPACES_ACCESS_KEY        Spaces access key (Terraform state)
 #    DO_SPACES_SECRET_KEY        Spaces secret key (Terraform state)
-#    TF_VAR_next_internal_url    DO App Platform public URL of the Next.js app (used by LangGraph)
+#    TF_VAR_next_internal_url    Optional — override LangGraph NEXT_INTERNAL_URL (default: Terraform uses Next live_url)
 #    TF_VAR_internal_agent_secret Shared secret for Next.js ↔ LangGraph auth
 #
 #  Next.js runtime (injected via Terraform → App Platform env vars)
-#    DATABASE_URL                Railway Postgres connection string (pooler URL)
-#    DIRECT_URL                  Railway Postgres direct URL (Prisma migrate deploy)
+#    DATABASE_URL                Postgres connection string (pooler URL for the app)
+#    DIRECT_URL                  Postgres direct URL (Prisma migrate deploy)
 #    JWT_ACCESS_SECRET           JWT access token signing secret
 #    JWT_REFRESH_SECRET          JWT refresh token signing secret
 #    CSRF_SECRET                 CSRF HMAC secret
@@ -64,8 +64,9 @@ name: Release — VoyageAI Production Deployment
 #    GEMINI_API_KEY              Google Gemini API key (if LLM_PROVIDER=gemini)
 #    NEXT_PUBLIC_MAPBOX_TOKEN    Mapbox public token
 #    PEXELS_API_KEY              Pexels image API key
-#    UPSTASH_REDIS_REST_URL      Upstash Redis REST URL (optional)
-#    UPSTASH_REDIS_REST_TOKEN    Upstash Redis REST token (optional)
+#    REDIS_URL                   Redis TCP URL for ioredis (rate limits, AI cache) — e.g. Upstash rediss://
+#    UPSTASH_REDIS_REST_URL      Optional; not used by src/lib/redis.ts (REST only)
+#    UPSTASH_REDIS_REST_TOKEN    Optional; same as above
 #    LANGGRAPH_SERVICE_URL       DO LangGraph App Platform URL
 #
 #  Smoke tests + DAST
@@ -182,6 +183,7 @@ env:
   TF_VAR_gemini_api_key: ${{ secrets.GEMINI_API_KEY || '' }}
   TF_VAR_mapbox_token: ${{ secrets.NEXT_PUBLIC_MAPBOX_TOKEN || '' }}
   TF_VAR_pexels_api_key: ${{ secrets.PEXELS_API_KEY || '' }}
+  TF_VAR_redis_url: ${{ secrets.REDIS_URL || '' }}
   TF_VAR_upstash_redis_rest_url: ${{ secrets.UPSTASH_REDIS_REST_URL || '' }}
   TF_VAR_upstash_redis_rest_token: ${{ secrets.UPSTASH_REDIS_REST_TOKEN || '' }}
   TF_VAR_langgraph_service_url: ${{ secrets.LANGGRAPH_SERVICE_URL || '' }}
@@ -601,9 +603,11 @@ jobs:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
       - name: Set up Docker Buildx
+        if: github.event.inputs.image_tag == ''
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to DigitalOcean Container Registry (PAT as password)
+        if: github.event.inputs.image_tag == ''
         uses: docker/login-action@v3
         with:
           registry: registry.digitalocean.com
@@ -612,6 +616,7 @@ jobs:
 
       # ── Build (export as tarball — no push yet) ───────────────────────────
       - name: Compute image metadata
+        if: github.event.inputs.image_tag == ''
         id: meta-local
         uses: docker/metadata-action@v5
         with:
@@ -637,18 +642,9 @@ jobs:
         if: github.event.inputs.image_tag == ''
         run: docker load --input /tmp/langgraph-image.tar
 
-      # ── Pull existing tag from DOCR (skip build) ───────────────────────────
-      - name: Pull existing LangGraph image from DOCR
-        if: github.event.inputs.image_tag != ''
-        run: |
-          REGISTRY="registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}"
-          docker pull "${REGISTRY}:${{ github.event.inputs.image_tag }}"
-          docker tag  "${REGISTRY}:${{ github.event.inputs.image_tag }}" "${{ env.IMAGE_NAME }}:latest"
-          echo "ℹ️ Using existing DOCR tag: ${{ github.event.inputs.image_tag }}"
-
-      # ── Trivy scans ───────────────────────────────────────────────────────
+      # ── Trivy scans (build path only — skipped when redeploying existing tag) ─
       - name: Trivy — SARIF report (all severities → Security tab)
-        if: github.event.inputs.skip_trivy != 'true'
+        if: github.event.inputs.image_tag == '' && github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.IMAGE_NAME }}:latest
@@ -661,14 +657,14 @@ jobs:
 
       - name: Upload SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v4
-        if: always() && github.event.inputs.skip_trivy != 'true'
+        if: always() && github.event.inputs.image_tag == '' && github.event.inputs.skip_trivy != 'true'
         with:
           sarif_file: trivy-results.sarif
           category: trivy-release
         continue-on-error: true
 
       - name: Trivy — gate on CRITICAL CVEs
-        if: github.event.inputs.skip_trivy != 'true'
+        if: github.event.inputs.image_tag == '' && github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.IMAGE_NAME }}:latest
@@ -680,7 +676,7 @@ jobs:
           exit-code: "1"
 
       - name: Trivy — warn on HIGH CVEs
-        if: github.event.inputs.skip_trivy != 'true'
+        if: github.event.inputs.image_tag == '' && github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.IMAGE_NAME }}:latest
@@ -692,7 +688,7 @@ jobs:
           exit-code: "0"
 
       - name: Trivy — secret scan inside image
-        if: github.event.inputs.skip_trivy != 'true'
+        if: github.event.inputs.image_tag == '' && github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.IMAGE_NAME }}:latest
@@ -701,7 +697,7 @@ jobs:
           exit-code: "1"
 
       - name: Trivy — Dockerfile misconfig scan
-        if: github.event.inputs.skip_trivy != 'true'
+        if: github.event.inputs.image_tag == '' && github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: config
@@ -712,6 +708,7 @@ jobs:
 
       # ── Push to DOCR ──────────────────────────────────────────────────────
       - name: Compute DOCR image metadata
+        if: github.event.inputs.image_tag == ''
         id: meta-docr
         uses: docker/metadata-action@v5
         with:
@@ -744,10 +741,10 @@ jobs:
           echo "  App Platform spec will be updated to use this tag directly."
 
       - name: Trivy — verify pushed registry image
-        if: github.event.inputs.skip_trivy != 'true'
+        if: github.event.inputs.image_tag == '' && github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.image_tag || 'latest' }}
+          image-ref: registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}:latest
           format: table
           severity: CRITICAL
           ignore-unfixed: true
@@ -757,6 +754,7 @@ jobs:
           TRIVY_PASSWORD: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
       - name: Write Docker summary
+        if: github.event.inputs.image_tag == ''
         run: |
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           MODE=$([ -n "${{ github.event.inputs.image_tag }}" ] && echo "Deployed existing tag \`${{ github.event.inputs.image_tag }}\` (no re-tag)" || echo "Built from source")
@@ -768,7 +766,7 @@ jobs:
             echo "| **Registry** | \`registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}\` |"
             echo "| **Image** | \`${{ env.IMAGE_NAME }}\` |"
             echo "| **Tags** | \`latest\`, \`sha-${SHORT_SHA}\`, \`${{ github.run_number }}\` |"
-            echo "| **Mode** | ${MODE} |"
+            echo "| **Mode** | Built from source |"
             echo "| **Digest** | \`${{ steps.push.outputs.digest }}\` |"
             echo "| **Trivy** | ✅ No CRITICAL CVEs |"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -801,6 +799,7 @@ jobs:
             echo "⚠️ Could not find LangGraph app ID — skipping redeploy trigger"
             exit 0
           fi
+          doctl auth init --access-token "$DIGITALOCEAN_ACCESS_TOKEN"
           IMAGE_TAG="${{ github.event.inputs.image_tag }}"
           if [ -n "$IMAGE_TAG" ]; then
             echo "📌 Updating App Platform spec to use existing tag: ${IMAGE_TAG}"
@@ -811,10 +810,35 @@ jobs:
                  | .[0].spec' > "$TMPSPEC"
             doctl apps update "$APP_ID" --spec "$TMPSPEC"
             rm -f "$TMPSPEC"
+            # doctl apps update auto-triggers a deployment — give it a moment to register
+            echo "⏳ Spec updated — waiting for auto-triggered deployment..."
+            sleep 8
+          else
+            echo "🚀 Triggering App Platform deployment for LangGraph app ${APP_ID}"
+            doctl apps create-deployment "$APP_ID"
+            sleep 5
           fi
-          echo "🚀 Triggering App Platform deployment for LangGraph app ${APP_ID}"
-          doctl auth init --access-token "$DIGITALOCEAN_ACCESS_TOKEN"
-          doctl apps create-deployment "$APP_ID" --wait
+          # Poll the latest deployment (handles SUPERSEDED by following the newest deployment)
+          for i in $(seq 1 90); do
+            DEPLOY=$(doctl apps list-deployments "$APP_ID" --output json \
+              | jq -c 'if type=="array" then . else (.app_deployments // []) end
+                       | sort_by(.created_at) | reverse | .[0]')
+            DEPLOY_ID=$(echo "$DEPLOY" | jq -r '.id // empty')
+            PHASE=$(echo "$DEPLOY"     | jq -r '.phase // "UNKNOWN"')
+            OK_S=$(echo "$DEPLOY"      | jq -r '.progress.success_steps // 0')
+            TOTAL=$(echo "$DEPLOY"     | jq -r '.progress.total_steps // "?"')
+            echo "  [${i}/90] ${DEPLOY_ID}: ${PHASE} (${OK_S}/${TOTAL} steps)"
+            case "$PHASE" in
+              ACTIVE)    echo "✅ LangGraph deployment is ACTIVE"; break ;;
+              ERROR)     echo "❌ LangGraph deployment failed"; exit 1 ;;
+              CANCELED)  echo "❌ LangGraph deployment canceled"; exit 1 ;;
+              SUPERSEDED)
+                # A newer deployment superseded this one — loop picks it up next iteration
+                sleep 5; continue ;;
+              *) sleep 10 ;;
+            esac
+            [ "$i" = "90" ] && { echo "❌ Timed out (15 min) waiting for LangGraph deployment"; exit 1; }
+          done
 
   # ════════════════════════════════════════════════════════════════════════════
   #  STAGE 2b-NX — DOCKER: BUILD → TRIVY SCAN → PUSH NEXT.JS TO DOCR
@@ -845,9 +869,11 @@ jobs:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
       - name: Set up Docker Buildx
+        if: github.event.inputs.image_tag == ''
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to DigitalOcean Container Registry (PAT as password)
+        if: github.event.inputs.image_tag == ''
         uses: docker/login-action@v3
         with:
           registry: registry.digitalocean.com
@@ -856,6 +882,7 @@ jobs:
 
       # ── Build (tarball — no push yet) ─────────────────────────────────────
       - name: Compute image metadata
+        if: github.event.inputs.image_tag == ''
         id: meta-local
         uses: docker/metadata-action@v5
         with:
@@ -882,18 +909,9 @@ jobs:
         if: github.event.inputs.image_tag == ''
         run: docker load --input /tmp/nextjs-image.tar
 
-      # ── Pull existing tag from DOCR (skip build) ───────────────────────────
-      - name: Pull existing Next.js image from DOCR
-        if: github.event.inputs.image_tag != ''
-        run: |
-          REGISTRY="registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.NEXTJS_IMAGE_NAME }}"
-          docker pull "${REGISTRY}:${{ github.event.inputs.image_tag }}"
-          docker tag  "${REGISTRY}:${{ github.event.inputs.image_tag }}" "${{ env.NEXTJS_IMAGE_NAME }}:latest"
-          echo "ℹ️ Using existing DOCR tag: ${{ github.event.inputs.image_tag }}"
-
-      # ── Trivy scans ───────────────────────────────────────────────────────
+      # ── Trivy scans (build path only — skipped when redeploying existing tag) ─
       - name: Trivy — SARIF report (all severities → Security tab)
-        if: github.event.inputs.skip_trivy != 'true'
+        if: github.event.inputs.image_tag == '' && github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.NEXTJS_IMAGE_NAME }}:latest
@@ -906,14 +924,14 @@ jobs:
 
       - name: Upload SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v4
-        if: always() && github.event.inputs.skip_trivy != 'true'
+        if: always() && github.event.inputs.image_tag == '' && github.event.inputs.skip_trivy != 'true'
         with:
           sarif_file: trivy-nextjs-results.sarif
           category: trivy-nextjs-release
         continue-on-error: true
 
       - name: Trivy — gate on CRITICAL CVEs
-        if: github.event.inputs.skip_trivy != 'true'
+        if: github.event.inputs.image_tag == '' && github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.NEXTJS_IMAGE_NAME }}:latest
@@ -925,7 +943,7 @@ jobs:
           exit-code: "1"
 
       - name: Trivy — warn on HIGH CVEs
-        if: github.event.inputs.skip_trivy != 'true'
+        if: github.event.inputs.image_tag == '' && github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.NEXTJS_IMAGE_NAME }}:latest
@@ -937,7 +955,7 @@ jobs:
           exit-code: "0"
 
       - name: Trivy — secret scan inside image
-        if: github.event.inputs.skip_trivy != 'true'
+        if: github.event.inputs.image_tag == '' && github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.NEXTJS_IMAGE_NAME }}:latest
@@ -946,7 +964,7 @@ jobs:
           exit-code: "1"
 
       - name: Trivy — Dockerfile misconfig scan
-        if: github.event.inputs.skip_trivy != 'true'
+        if: github.event.inputs.image_tag == '' && github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: config
@@ -958,6 +976,7 @@ jobs:
 
       # ── Push to DOCR ──────────────────────────────────────────────────────
       - name: Compute DOCR image metadata
+        if: github.event.inputs.image_tag == ''
         id: meta-docr
         uses: docker/metadata-action@v5
         with:
@@ -984,18 +1003,11 @@ jobs:
           build-args: |
             NEXT_PUBLIC_MAPBOX_TOKEN=${{ secrets.NEXT_PUBLIC_MAPBOX_TOKEN }}
 
-      - name: Re-tag and push existing Next.js image to DOCR
-        id: retag
-        if: github.event.inputs.image_tag != ''
-        run: |
-          echo "ℹ️ Using existing DOCR tag '${{ github.event.inputs.image_tag }}' — skipping re-tag/push"
-          echo "  App Platform spec will be updated to use this tag directly."
-
       - name: Trivy — verify pushed Next.js registry image
-        if: github.event.inputs.skip_trivy != 'true'
+        if: github.event.inputs.image_tag == '' && github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.NEXTJS_IMAGE_NAME }}:${{ github.event.inputs.image_tag || 'latest' }}
+          image-ref: registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.NEXTJS_IMAGE_NAME }}:latest
           format: table
           severity: CRITICAL
           ignore-unfixed: true
@@ -1030,6 +1042,7 @@ jobs:
             echo "⚠️ Could not find Next.js app ID — skipping redeploy trigger"
             exit 0
           fi
+          doctl auth init --access-token "$DIGITALOCEAN_ACCESS_TOKEN"
           IMAGE_TAG="${{ github.event.inputs.image_tag }}"
           if [ -n "$IMAGE_TAG" ]; then
             echo "📌 Updating App Platform spec to use existing tag: ${IMAGE_TAG}"
@@ -1040,15 +1053,40 @@ jobs:
                  | .[0].spec' > "$TMPSPEC"
             doctl apps update "$APP_ID" --spec "$TMPSPEC"
             rm -f "$TMPSPEC"
+            # doctl apps update auto-triggers a deployment — give it a moment to register
+            echo "⏳ Spec updated — waiting for auto-triggered deployment..."
+            sleep 8
+          else
+            echo "🚀 Triggering App Platform deployment for Next.js app ${APP_ID}"
+            doctl apps create-deployment "$APP_ID"
+            sleep 5
           fi
-          echo "🚀 Triggering App Platform deployment for Next.js app ${APP_ID}"
-          doctl auth init --access-token "$DIGITALOCEAN_ACCESS_TOKEN"
-          doctl apps create-deployment "$APP_ID" --wait
+          # Poll the latest deployment (handles SUPERSEDED by following the newest deployment)
+          for i in $(seq 1 90); do
+            DEPLOY=$(doctl apps list-deployments "$APP_ID" --output json \
+              | jq -c 'if type=="array" then . else (.app_deployments // []) end
+                       | sort_by(.created_at) | reverse | .[0]')
+            DEPLOY_ID=$(echo "$DEPLOY" | jq -r '.id // empty')
+            PHASE=$(echo "$DEPLOY"     | jq -r '.phase // "UNKNOWN"')
+            OK_S=$(echo "$DEPLOY"      | jq -r '.progress.success_steps // 0')
+            TOTAL=$(echo "$DEPLOY"     | jq -r '.progress.total_steps // "?"')
+            echo "  [${i}/90] ${DEPLOY_ID}: ${PHASE} (${OK_S}/${TOTAL} steps)"
+            case "$PHASE" in
+              ACTIVE)    echo "✅ Next.js deployment is ACTIVE"; break ;;
+              ERROR)     echo "❌ Next.js deployment failed"; exit 1 ;;
+              CANCELED)  echo "❌ Next.js deployment canceled"; exit 1 ;;
+              SUPERSEDED)
+                # A newer deployment superseded this one — loop picks it up next iteration
+                sleep 5; continue ;;
+              *) sleep 10 ;;
+            esac
+            [ "$i" = "90" ] && { echo "❌ Timed out (15 min) waiting for Next.js deployment"; exit 1; }
+          done
 
       - name: Write Next.js Docker summary
+        if: github.event.inputs.image_tag == ''
         run: |
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          MODE=$([ -n "${{ github.event.inputs.image_tag }}" ] && echo "Deployed existing tag \`${{ github.event.inputs.image_tag }}\` (no re-tag)" || echo "Built from source")
           {
             echo "## 🐳 Next.js Container — ✅ Pushed to DOCR"
             echo ""
@@ -1057,9 +1095,162 @@ jobs:
             echo "| **Registry** | \`registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}\` |"
             echo "| **Image** | \`${{ env.NEXTJS_IMAGE_NAME }}\` |"
             echo "| **Tags** | \`latest\`, \`sha-${SHORT_SHA}\`, \`${{ github.run_number }}\` |"
-            echo "| **Mode** | ${MODE} |"
+            echo "| **Mode** | Built from source |"
             echo "| **Digest** | \`${{ steps.push.outputs.digest }}\` |"
             echo "| **Trivy** | ✅ No CRITICAL CVEs |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ════════════════════════════════════════════════════════════════════════════
+  #  STAGE 2e — WIRE SERVICES
+  #
+  #  Runs after both Docker jobs (LangGraph + Next.js) are deployed.
+  #  Ensures cross-service env vars are correct so the two apps can talk:
+  #
+  #    Next.js   → LangGraph : LANGGRAPH_SERVICE_URL   (Next.js spec env var)
+  #    LangGraph → Next.js   : NEXT_INTERNAL_URL       (LangGraph spec env var)
+  #
+  #  Terraform auto-sets NEXT_INTERNAL_URL from nextjs.live_url, but
+  #  LANGGRAPH_SERVICE_URL in Next.js comes from a static GitHub secret
+  #  (var.langgraph_service_url) that can be stale or empty.
+  #  This job reads the *live* App Platform URLs via the DO API and patches
+  #  either spec if the stored value doesn't match — triggering a minimal
+  #  redeploy only when something actually changed.
+  # ════════════════════════════════════════════════════════════════════════════
+  wire-services:
+    name: "2e · Wire Services — Sync cross-service URLs"
+    needs: [docker-push, docker-push-nextjs, resolve-urls]
+    if: |
+      always() &&
+      (needs.docker-push.result == 'success' || needs.docker-push.result == 'skipped') &&
+      (needs.docker-push-nextjs.result == 'success' || needs.docker-push-nextjs.result == 'skipped') &&
+      needs.resolve-urls.result == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      # ── Next.js → LangGraph ───────────────────────────────────────────────
+      # Ensure LANGGRAPH_SERVICE_URL in the Next.js App Platform spec matches
+      # the actual live LangGraph URL.  Only triggers a redeployment if the
+      # value is wrong; a no-op update costs nothing.
+      - name: Sync LANGGRAPH_SERVICE_URL into Next.js spec
+        run: |
+          set -euo pipefail
+          NX_APP_ID="${{ needs.resolve-urls.outputs.nextjs_app_id }}"
+          LG_URL="${{ needs.resolve-urls.outputs.langgraph_url }}"
+
+          if [ -z "$NX_APP_ID" ] || [ -z "$LG_URL" ]; then
+            echo "⚠️ Missing Next.js app ID or LangGraph URL — skipping LANGGRAPH_SERVICE_URL sync"
+            exit 0
+          fi
+
+          CURRENT=$(doctl apps get "$NX_APP_ID" --output json \
+            | jq -r '.[0].spec.services[0].envs[]? | select(.key=="LANGGRAPH_SERVICE_URL") | .value // empty')
+
+          echo "Stored  LANGGRAPH_SERVICE_URL : '${CURRENT}'"
+          echo "Actual  LangGraph live URL     : '${LG_URL}'"
+
+          if [ "$CURRENT" = "$LG_URL" ]; then
+            echo "✅ LANGGRAPH_SERVICE_URL already correct — no update needed"
+            exit 0
+          fi
+
+          echo "📌 Updating LANGGRAPH_SERVICE_URL in Next.js spec..."
+          TMPSPEC=$(mktemp)
+          doctl apps get "$NX_APP_ID" --output json \
+            | jq --arg url "$LG_URL" \
+              '.[0].spec.services = (.[0].spec.services | map(
+                 .envs = (.envs | map(if .key == "LANGGRAPH_SERVICE_URL" then .value = $url else . end))
+               )) | .[0].spec' > "$TMPSPEC"
+          doctl apps update "$NX_APP_ID" --spec "$TMPSPEC"
+          rm -f "$TMPSPEC"
+
+          echo "⏳ Spec updated — waiting for Next.js to redeploy with correct LANGGRAPH_SERVICE_URL..."
+          sleep 8
+          for i in $(seq 1 60); do
+            DEPLOY=$(doctl apps list-deployments "$NX_APP_ID" --output json \
+              | jq -c 'if type=="array" then . else (.app_deployments // []) end
+                       | sort_by(.created_at) | reverse | .[0]')
+            PHASE=$(echo "$DEPLOY" | jq -r '.phase // "UNKNOWN"')
+            echo "  [${i}/60] Next.js: ${PHASE}"
+            case "$PHASE" in
+              ACTIVE)    echo "✅ Next.js ACTIVE with correct LANGGRAPH_SERVICE_URL"; break ;;
+              ERROR)     echo "❌ Next.js deployment failed after URL sync"; exit 1 ;;
+              CANCELED)  echo "❌ Next.js deployment canceled"; exit 1 ;;
+              SUPERSEDED) sleep 5; continue ;;
+              *) sleep 10 ;;
+            esac
+            [ "$i" = "60" ] && { echo "❌ Timed out waiting for Next.js URL sync deployment"; exit 1; }
+          done
+
+      # ── LangGraph → Next.js ───────────────────────────────────────────────
+      # Terraform normally fills NEXT_INTERNAL_URL from nextjs.live_url, but
+      # when Terraform is skipped (image_tag redeploy) the value can be stale.
+      - name: Sync NEXT_INTERNAL_URL into LangGraph spec
+        run: |
+          set -euo pipefail
+          LG_APP_ID="${{ needs.resolve-urls.outputs.langgraph_app_id }}"
+          NX_URL="${{ needs.resolve-urls.outputs.nextjs_url }}"
+
+          if [ -z "$LG_APP_ID" ] || [ -z "$NX_URL" ]; then
+            echo "⚠️ Missing LangGraph app ID or Next.js URL — skipping NEXT_INTERNAL_URL sync"
+            exit 0
+          fi
+
+          CURRENT=$(doctl apps get "$LG_APP_ID" --output json \
+            | jq -r '.[0].spec.services[0].envs[]? | select(.key=="NEXT_INTERNAL_URL") | .value // empty')
+
+          echo "Stored  NEXT_INTERNAL_URL : '${CURRENT}'"
+          echo "Actual  Next.js live URL   : '${NX_URL}'"
+
+          if [ "$CURRENT" = "$NX_URL" ]; then
+            echo "✅ NEXT_INTERNAL_URL already correct — no update needed"
+            exit 0
+          fi
+
+          echo "📌 Updating NEXT_INTERNAL_URL in LangGraph spec..."
+          TMPSPEC=$(mktemp)
+          doctl apps get "$LG_APP_ID" --output json \
+            | jq --arg url "$NX_URL" \
+              '.[0].spec.services = (.[0].spec.services | map(
+                 .envs = (.envs | map(if .key == "NEXT_INTERNAL_URL" then .value = $url else . end))
+               )) | .[0].spec' > "$TMPSPEC"
+          doctl apps update "$LG_APP_ID" --spec "$TMPSPEC"
+          rm -f "$TMPSPEC"
+
+          echo "⏳ Spec updated — waiting for LangGraph to redeploy with correct NEXT_INTERNAL_URL..."
+          sleep 8
+          for i in $(seq 1 60); do
+            DEPLOY=$(doctl apps list-deployments "$LG_APP_ID" --output json \
+              | jq -c 'if type=="array" then . else (.app_deployments // []) end
+                       | sort_by(.created_at) | reverse | .[0]')
+            PHASE=$(echo "$DEPLOY" | jq -r '.phase // "UNKNOWN"')
+            echo "  [${i}/60] LangGraph: ${PHASE}"
+            case "$PHASE" in
+              ACTIVE)    echo "✅ LangGraph ACTIVE with correct NEXT_INTERNAL_URL"; break ;;
+              ERROR)     echo "❌ LangGraph deployment failed after URL sync"; exit 1 ;;
+              CANCELED)  echo "❌ LangGraph deployment canceled"; exit 1 ;;
+              SUPERSEDED) sleep 5; continue ;;
+              *) sleep 10 ;;
+            esac
+            [ "$i" = "60" ] && { echo "❌ Timed out waiting for LangGraph URL sync deployment"; exit 1; }
+          done
+
+      - name: Write wire-services summary
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          ICON=$([ "$STATUS" = "success" ] && echo "✅" || echo "❌")
+          {
+            echo "## 🔗 Wire Services — ${ICON} ${STATUS^}"
+            echo ""
+            echo "| Direction | Env Var | Value |"
+            echo "|-----------|---------|-------|"
+            echo "| Next.js → LangGraph | \`LANGGRAPH_SERVICE_URL\` | \`${{ needs.resolve-urls.outputs.langgraph_url }}\` |"
+            echo "| LangGraph → Next.js | \`NEXT_INTERNAL_URL\` | \`${{ needs.resolve-urls.outputs.nextjs_url }}\` |"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ════════════════════════════════════════════════════════════════════════════
@@ -1137,10 +1328,11 @@ jobs:
   # ══════════════════════════════════════════════════════════════════════════
   deploy-nextjs-do:
     name: "3 · Deploy — Next.js → DigitalOcean App Platform"
-    needs: [docker-push-nextjs, migrate, resolve-urls]
+    needs: [docker-push-nextjs, wire-services, migrate, resolve-urls]
     if: |
       always() &&
       needs.docker-push-nextjs.result == 'success' &&
+      needs.wire-services.result == 'success' &&
       needs.migrate.result == 'success' &&
       needs.resolve-urls.result == 'success'
     runs-on: ubuntu-latest
@@ -1184,13 +1376,14 @@ jobs:
   #  running DAST. Retries each endpoint up to 5 times with 10s back-off.
   #
   #  Checks:
-  #    • Next.js root page         — GET /          (200)
-  #    • CSRF endpoint             — GET /api/auth/csrf  (200 + token in body)
-  #    • LangGraph health          — GET <langgraph_url>/health (200 + status:ok)
+  #    • Next.js root page         — GET /                    (200)
+  #    • CSRF endpoint             — GET /api/auth/csrf       (200 + token in body)
+  #    • Next.js service health    — GET /api/health          (200 + status:ok + langgraph:ok)
+  #    • LangGraph direct health   — GET <langgraph_url>/health (200 + status:ok)
   # ════════════════════════════════════════════════════════════════════════════
   health-check:
     name: "4 · Health Check (Production Smoke Tests)"
-    needs: deploy-nextjs-do
+    needs: [deploy-nextjs-do, resolve-urls]
     if: |
       always() &&
       needs.deploy-nextjs-do.result == 'success'
@@ -1199,7 +1392,7 @@ jobs:
       app_url:      ${{ needs.deploy-nextjs-do.outputs.app_url }}
 
     steps:
-      - name: Wait 60s for App Platform deploy propagation
+      - name: Wait for App Platform deploy propagation
         run: sleep 30
 
       - name: Smoke test — Next.js root page
@@ -1231,21 +1424,51 @@ jobs:
             sleep 10
           done
 
-      - name: Smoke test — LangGraph /health
+      - name: Smoke test — Next.js service health (includes LangGraph connectivity)
         run: |
-          LG_URL="${{ secrets.LANGGRAPH_SERVICE_URL }}"
+          # /api/health probes LANGGRAPH_SERVICE_URL internally and returns:
+          #   { "status": "ok", "langgraph": "ok" | "unreachable" }
+          # A 503 from this endpoint means Next.js cannot reach LangGraph.
+          URL="${{ needs.deploy-nextjs-do.outputs.app_url }}/api/health"
+          for i in 1 2 3 4 5; do
+            BODY=$(curl -s --max-time 10 "${URL}" || echo "")
+            HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${URL}" || echo "000")
+            echo "  Attempt ${i}/5 — HTTP ${HTTP} — body: ${BODY}"
+            if echo "$BODY" | grep -q '"status":"ok"'; then
+              LG_STATUS=$(echo "$BODY" | jq -r '.langgraph // "not_checked"' 2>/dev/null || echo "unknown")
+              if [ "$LG_STATUS" = "ok" ]; then
+                echo "✅ Next.js is healthy and can reach LangGraph"
+                break
+              elif [ "$LG_STATUS" = "not_checked" ]; then
+                echo "✅ Next.js is healthy (LangGraph probe not available — LANGGRAPH_SERVICE_URL may not be set)"
+                break
+              else
+                echo "⚠️ Next.js is up but cannot reach LangGraph (langgraph=${LG_STATUS})"
+                [ "$i" = "5" ] && { echo "❌ Cross-service connectivity check failed after 5 attempts"; exit 1; }
+              fi
+            else
+              [ "$i" = "5" ] && { echo "❌ Next.js /api/health check failed after 5 attempts"; exit 1; }
+            fi
+            sleep 10
+          done
+
+      - name: Smoke test — LangGraph direct /health
+        run: |
+          # Use the live URL resolved from the DO API, not the static secret
+          LG_URL="${{ needs.resolve-urls.outputs.langgraph_url }}"
           if [ -z "$LG_URL" ]; then
-            echo "⏭️ LANGGRAPH_SERVICE_URL secret not set — skipping LangGraph health check"
+            echo "⏭️ LangGraph URL could not be resolved — skipping direct health check"
             exit 0
           fi
+          echo "Testing: ${LG_URL}/health"
           for i in 1 2 3 4 5; do
             BODY=$(curl -s --max-time 10 "${LG_URL}/health" || echo "")
             if echo "$BODY" | grep -q '"status":"ok"'; then
-              echo "✅ LangGraph health endpoint is healthy"
+              echo "✅ LangGraph /health → ${BODY}"
               break
             fi
             echo "Attempt ${i}/5 — LangGraph not ready — retrying in 10s..."
-            [ "$i" = "5" ] && echo "⚠️ LangGraph health check inconclusive (may be warming up)"
+            [ "$i" = "5" ] && { echo "❌ LangGraph direct health check failed after 5 attempts"; exit 1; }
             sleep 10
           done
 
@@ -1261,7 +1484,8 @@ jobs:
             echo "|----------|-------|"
             echo "| \`GET /\` | Next.js root page — HTTP 200 |"
             echo "| \`GET /api/auth/csrf\` | CSRF token present |"
-            echo "| \`GET <langgraph>/health\` | status: ok |"
+            echo "| \`GET /api/health\` | status:ok + langgraph:ok (cross-service) |"
+            echo "| \`GET <langgraph>/health\` | LangGraph direct — status:ok |"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ════════════════════════════════════════════════════════════════════════════
@@ -1359,7 +1583,7 @@ jobs:
   # ════════════════════════════════════════════════════════════════════════════
   release-summary:
     name: "6 · Release Summary"
-    needs: [ai-gate, ai-gate-skipped, infra-apply, docker-push, docker-push-nextjs, migrate, deploy-nextjs-do, health-check, dast, dast-skipped]
+    needs: [ai-gate, ai-gate-skipped, infra-apply, docker-push, docker-push-nextjs, wire-services, migrate, deploy-nextjs-do, health-check, dast, dast-skipped]
     runs-on: ubuntu-latest
     if: always()
     permissions:

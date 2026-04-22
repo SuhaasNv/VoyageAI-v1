@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
+import { tryRecoverFromHMRStaleError } from "@/lib/isHMRStaleError";
 
 export default function Error({
     error,
@@ -10,11 +11,23 @@ export default function Error({
     error: Error & { digest?: string };
     reset: () => void;
 }) {
+    const [isRecovering] = useState(() => tryRecoverFromHMRStaleError(error));
+
     useEffect(() => {
         console.error("[ErrorBoundary]", error);
     }, [error]);
 
     const isDev = process.env.NODE_ENV === "development";
+
+    if (isRecovering) {
+        return (
+            <main className="min-h-screen bg-[#0A0D12] flex items-center justify-center px-6">
+                <p className="text-sm font-mono text-slate-400">
+                    Stale dev module detected. Reloading…
+                </p>
+            </main>
+        );
+    }
 
     return (
         <main className="min-h-screen bg-[#0A0D12] flex items-center justify-center px-6 selection:bg-white/20">

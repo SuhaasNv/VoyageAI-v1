@@ -1,0 +1,84 @@
+global:
+  resolve_timeout: 5m
+  smtp_from:       "alerts@voyageai.app"
+  smtp_smarthost:  "smtp.sendgrid.net:587"
+  smtp_auth_username: "apikey"
+  smtp_auth_password: "${SENDGRID_API_KEY}"
+  smtp_require_tls: true
+
+# ── Routing tree ──────────────────────────────────────────────────────────────
+route:
+  receiver: default-email
+  group_by: [alertname, service, env]
+  group_wait:      30s
+  group_interval:  5m
+  repeat_interval: 4h
+
+  routes:
+    # Critical alerts → immediate email + webhook
+    - match:
+        severity: critical
+      receiver: critical-alerts
+      group_wait: 10s
+      repeat_interval: 1h
+
+    # AI-specific alerts → AI team
+    - match:
+        team: ai
+      receiver: ai-team-email
+
+    # Platform/infrastructure → platform team
+    - match:
+        team: platform
+      receiver: platform-team-email
+
+# ── Receivers ─────────────────────────────────────────────────────────────────
+receivers:
+
+  - name: default-email
+    email_configs:
+      - to: "team@voyageai.app"
+        send_resolved: true
+        headers:
+          Subject: "[VoyageAI] {{ .GroupLabels.alertname }} — {{ .Status | toUpper }}"
+        html: |
+          <h2>{{ .GroupLabels.alertname }}</h2>
+          {{ range .Alerts }}
+          <p><b>{{ .Annotations.summary }}</b><br>{{ .Annotations.description }}</p>
+          <p>Labels: {{ range .Labels.SortedPairs }}{{ .Name }}={{ .Value }} {{ end }}</p>
+          {{ end }}
+
+  - name: critical-alerts
+    email_configs:
+      - to: "oncall@voyageai.app"
+        send_resolved: true
+        headers:
+          Subject: "🚨 CRITICAL [VoyageAI] {{ .GroupLabels.alertname }}"
+    webhook_configs:
+      - url: "${SLACK_WEBHOOK_URL}"
+        send_resolved: true
+        http_config:
+          bearer_token: "${SLACK_BOT_TOKEN}"
+
+  - name: ai-team-email
+    email_configs:
+      - to: "ai-team@voyageai.app"
+        send_resolved: true
+        headers:
+          Subject: "[VoyageAI/AI] {{ .GroupLabels.alertname }}"
+
+  - name: platform-team-email
+    email_configs:
+      - to: "platform@voyageai.app"
+        send_resolved: true
+        headers:
+          Subject: "[VoyageAI/Platform] {{ .GroupLabels.alertname }}"
+
+# ── Inhibition rules ──────────────────────────────────────────────────────────
+inhibit_rules:
+  # Suppress warning-severity alerts when the same service is already critical
+  - source_match:
+      severity: critical
+    target_match:
+      severity: warning
+    equal: [alertname, service]

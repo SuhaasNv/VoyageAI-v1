@@ -31,7 +31,13 @@
       "Bash(npx tsc:*)",
       "Bash(grep -l \"GET\\\\|POST\" src/app/api/ai/*.ts)",
       "Bash(xargs -I {} basename {})",
-      "Bash(npx tsx:*)"
+      "Bash(npx tsx:*)",
+      "Bash(npx prisma *)",
+      "Bash(xargs kill *)",
+      "Bash(pkill -f \"next dev\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ]
   }
 }

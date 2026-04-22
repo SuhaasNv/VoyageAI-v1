@@ -5,13 +5,11 @@ import dynamic from "next/dynamic";
 import { Plus, Minus } from "lucide-react";
 
 const MotionDiv = dynamic(
-    () => import("framer-motion").then((m) => m.motion.div),
-    { ssr: false }
+    () => import("framer-motion").then((m) => m.motion.div)
 );
 
 const AnimatePresence = dynamic(
-    () => import("framer-motion").then((m) => m.AnimatePresence),
-    { ssr: false }
+    () => import("framer-motion").then((m) => m.AnimatePresence)
 );
 
 const faqs = [

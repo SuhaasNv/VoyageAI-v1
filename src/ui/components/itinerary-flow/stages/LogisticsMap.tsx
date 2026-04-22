@@ -43,7 +43,8 @@ function isValidCoord(lat?: number, lng?: number): boolean {
         lng !== undefined &&
         Number.isFinite(lat) &&
         Number.isFinite(lng) &&
-        !(lat === 0 && lng === 0) &&
+        lat !== 0 &&
+        lng !== 0 &&
         lat >= -90  && lat <= 90 &&
         lng >= -180 && lng <= 180
     );
@@ -203,12 +204,6 @@ export function LogisticsMap({
 
     const [mapLoaded,   setMapLoaded]   = useState(false);
     const [isLocating,  setIsLocating]  = useState(false);
-    const [debugInfo,   setDebugInfo]   = useState<{
-        destination: string;
-        lat?: number;
-        lng?: number;
-        markers: number;
-    } | null>(null);
 
     const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
@@ -297,17 +292,6 @@ export function LogisticsMap({
 
             if (cancelled.value) return;
             setIsLocating(false);
-
-            if (process.env.NODE_ENV === "development") {
-                console.log(
-                    `[LogisticsMap] ${destination} · Day ${dayNum} · ${points.length} markers`,
-                    points.map((p) =>
-                        `${p.name}: [${p.lng.toFixed(4)}, ${p.lat.toFixed(4)}]`
-                    ),
-                );
-            }
-
-            setDebugInfo((prev) => ({ ...prev!, markers: points.length }));
 
             if (points.length === 0) return;
 
@@ -424,17 +408,6 @@ export function LogisticsMap({
 
             destCentroid.current = dc ?? undefined;
 
-            if (process.env.NODE_ENV === "development") {
-                console.log("[LogisticsMap] Destination centroid:", dc, destination);
-            }
-
-            setDebugInfo({
-                destination,
-                lat: dc?.lat,
-                lng: dc?.lng,
-                markers: 0,
-            });
-
             // 2. Import Mapbox GL JS
             const mod = await import("mapbox-gl");
             if (cancelled.value || !containerRef.current) return;
@@ -517,21 +490,6 @@ export function LogisticsMap({
                                 ? "Loading map…"
                                 : `Mapping ${destination}…`}
                         </p>
-                    </div>
-                </div>
-            )}
-
-            {/* Dev-only debug panel */}
-            {process.env.NODE_ENV === "development" && mapLoaded && debugInfo && (
-                <div className="absolute bottom-2 left-2 z-20 bg-black/80 backdrop-blur-sm rounded-lg px-2.5 py-1.5 text-[9px] font-mono leading-relaxed pointer-events-none border border-white/10 select-none">
-                    <div className="text-amber-400 font-bold mb-0.5">MAP DEBUG</div>
-                    <div className="text-white/70">dest: {debugInfo.destination}</div>
-                    <div className="text-white/70">
-                        lat: {debugInfo.lat?.toFixed(4) ?? "—"} &nbsp;
-                        lng: {debugInfo.lng?.toFixed(4) ?? "—"}
-                    </div>
-                    <div className="text-white/70">
-                        day: {activeDay} · markers: {debugInfo.markers}
                     </div>
                 </div>
             )}

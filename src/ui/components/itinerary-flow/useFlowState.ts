@@ -37,6 +37,11 @@ export type Action =
      * replaces itinerary + budget numbers without advancing or re-running agents.
      */
     | { type: "PATCH_BUDGET"; result: BudgetedTripContext }
+    /**
+     * Syncs safetyResult.budget after an optimal plan is applied so that
+     * handleSave reads the post-adjustment cost, not the stale pre-adjustment one.
+     */
+    | { type: "PATCH_SAFETY"; result: SafeTripContext }
     | { type: "SET_SAFETY"; result: SafeTripContext; meta: FlowMetadata }
     | { type: "ADVANCE" }
     | { type: "SAVED" }
@@ -96,6 +101,9 @@ function reducer(state: FlowState, action: Action): FlowState {
         case "PATCH_BUDGET":
             // Stay on budget stage; only swap out the result.
             return { ...state, budgetResult: action.result, error: null };
+
+        case "PATCH_SAFETY":
+            return { ...state, safetyResult: action.result, error: null };
 
         case "SET_SAFETY":
             return {

@@ -18,14 +18,31 @@ export type { TripContext } from "./types";
 //  Helpers
 // ─────────────────────────────────────────
 
+const VAGUE_DESTINATIONS = new Set([
+    "somewhere", "anywhere", "nearby", "near airport", "unknown",
+    "here", "there", "location", "place", "destination",
+]);
+
 export function normalizeDestination(raw: string): string {
-    return raw
-        .trim()
-        .replace(/\s+/g, " ")
-        .split(/[\s,]+/)
-        .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-        .join(" ")
-        .replace(/,\s*/g, ", ");
+    const trimmed = raw.trim().replace(/\s*,\s*/g, ", ").replace(/\s+/g, " ");
+
+    // Reject vague inputs before any further processing.
+    if (VAGUE_DESTINATIONS.has(trimmed.toLowerCase())) {
+        return "Top Travel Destination";
+    }
+
+    return trimmed
+        .split(" ")
+        .map((token) => {
+            const trailingComma = token.endsWith(",");
+            const word = trailingComma ? token.slice(0, -1) : token;
+            // Preserve acronyms: all-caps words up to 4 letters (NYC, UAE, UK, USA).
+            const cap = /^[A-Z]{2,4}$/.test(word)
+                ? word
+                : word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+            return trailingComma ? cap + "," : cap;
+        })
+        .join(" ");
 }
 
 export function safeDateParsing(raw: string | undefined): string | null {
@@ -47,6 +64,23 @@ function addDays(base: Date, n: number): Date {
 
 const VALID_STYLES = new Set(["luxury", "budget", "balanced", "adventure", "relaxed"]);
 const VALID_PACES = new Set(["slow", "moderate", "fast"]);
+
+const STYLE_SYNONYMS: Record<string, string> = {
+    luxurious: "luxury",
+    cheap: "budget",
+    backpacking: "budget",
+    adventurous: "adventure",
+    chill: "relaxed",
+};
+
+const PACE_SYNONYMS: Record<string, string> = {
+    "slow-paced": "slow",
+    easy: "slow",
+    normal: "moderate",
+    standard: "moderate",
+    "fast-paced": "fast",
+    packed: "fast",
+};
 
 const GENERIC_THEMES = [
     "Arrival & Orientation",
@@ -90,6 +124,8 @@ function validateAndNormalize(raw: unknown): TripContext {
     let durationDays = typeof obj.durationDays === "number" ? Math.round(obj.durationDays) : 0;
     if (durationDays <= 0) {
         durationDays = 4; // spec default: 3–5 days; pick 4 as midpoint
+    } else if (durationDays > 14) {
+        durationDays = 14;
     }
 
     // dates
@@ -102,9 +138,25 @@ function validateAndNormalize(raw: unknown): TripContext {
     if (!startDate) {
         startDate = isoDate(defaultStart);
     }
-    // Always derive endDate from startDate + duration to keep consistency
     const startMs = new Date(startDate).getTime();
-    endDate = isoDate(new Date(startMs + (durationDays - 1) * 86_400_000));
+
+    // Preserve provided endDate when it is consistent with a reasonable trip length.
+    if (endDate) {
+        const expectedDuration = Math.round((new Date(endDate).getTime() - startMs) / 86_400_000) + 1;
+        if (expectedDuration >= 1 && expectedDuration <= 14) {
+            durationDays = expectedDuration; // trust the provided range
+        } else {
+            // Provided endDate implies an out-of-range duration (expectedDuration=${expectedDuration}).
+            // Recomputing endDate from startDate + durationDays to restore consistency.
+            logStructured({
+                layer: "agent", agent: "planner", step: "fallback",
+                data: { reason: "endDate_out_of_range", expectedDuration, durationDays, startDate, originalEndDate: endDate },
+            });
+            endDate = isoDate(new Date(startMs + (durationDays - 1) * 86_400_000));
+        }
+    } else {
+        endDate = isoDate(new Date(startMs + (durationDays - 1) * 86_400_000));
+    }
 
     // preferences
     const rawPrefs = (obj.preferences && typeof obj.preferences === "object")
@@ -116,26 +168,46 @@ function validateAndNormalize(raw: unknown): TripContext {
     if (typeof rawPrefs.budget === "number" && rawPrefs.budget > 0) {
         preferences.budget = rawPrefs.budget;
     }
-    if (typeof rawPrefs.style === "string" && VALID_STYLES.has(rawPrefs.style)) {
-        preferences.style = rawPrefs.style as PlannerPreferences["style"];
+    if (typeof rawPrefs.style === "string") {
+        const tokens = rawPrefs.style
+            .toLowerCase()
+            .split(/[\s,]+|(?:\s+(?:and|&)\s+)/)
+            .map((t) => t.trim())
+            .map((t) => STYLE_SYNONYMS[t] ?? t)
+            .filter((t) => VALID_STYLES.has(t));
+        if (tokens.length > 0) {
+            preferences.style = tokens.join(",") as PlannerPreferences["style"];
+        }
+        // No valid tokens → leave style undefined (don't silently force "balanced")
     }
-    if (typeof rawPrefs.pace === "string" && VALID_PACES.has(rawPrefs.pace)) {
-        preferences.pace = rawPrefs.pace as PlannerPreferences["pace"];
+    if (typeof rawPrefs.pace === "string") {
+        const mapped = PACE_SYNONYMS[rawPrefs.pace.toLowerCase().trim()] ?? rawPrefs.pace.toLowerCase().trim();
+        if (VALID_PACES.has(mapped)) {
+            preferences.pace = mapped as PlannerPreferences["pace"];
+        }
     }
 
     // days
     const rawDays = Array.isArray(obj.days) ? obj.days : [];
     const normalizedDays: TripContext["days"] = [];
+    const seenThemes = new Set<string>();
 
     for (let i = 1; i <= durationDays; i++) {
         const found = rawDays.find(
             (d) => d && typeof d === "object" && (d as Record<string, unknown>).day === i
         ) as Record<string, unknown> | undefined;
 
-        const theme =
+        let theme =
             found && typeof found.theme === "string" && found.theme.trim()
                 ? found.theme.trim()
                 : genericTheme(i);
+
+        if (seenThemes.has(theme.toLowerCase())) {
+            // Theme already used — pick the first unused generic fallback.
+            const unused = GENERIC_THEMES.find((t) => !seenThemes.has(t.toLowerCase()));
+            theme = unused ?? `Day ${i} Exploration`;
+        }
+        seenThemes.add(theme.toLowerCase());
 
         normalizedDays.push({ day: i, theme });
     }

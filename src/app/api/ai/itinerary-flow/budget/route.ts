@@ -6,6 +6,8 @@ import { runWithRequestContext } from "@/lib/requestContext";
 import { formatErrorResponse } from "@/lib/errors";
 import { logStructured } from "@/infrastructure/logger";
 import { BudgetAgent } from "@/agents/budget/budgetAgent";
+import { formatAIResponse } from "@/lib/ai/explainability";
+import { computeConfidence } from "@/lib/ai/confidence";
 
 /**
  * Scheduled activity schema — preserves all fields that Budget Agent and
@@ -100,31 +102,39 @@ export async function POST(req: NextRequest) {
 
             const { hotel, food, activity } = result.budget.costBreakdown.categories;
 
-            return successResponse({
-                ...result,
-                _meta: {
+            const foodSource = body.data.foodCostSummary ? "Logistics food cost summary" : "Activity price levels";
+            const sources = [foodSource, "Hotel rate table", "Activity cost estimates"];
+
+            const decisionsLog = [
+                `Hotel: ${body.data.selectedHotel.priceRange} tier × ${Math.max(0, body.data.durationDays - 1)} nights = $${hotel}`,
+                `Food: $${food} (${body.data.foodCostSummary ? "Logistics source" : "activity fallback"})`,
+                `Activities: $${activity} across ${result.budget.ledger.filter((l) => l.category === "activity").length} items`,
+                `Total: $${result.budget.totalEstimatedCost}`,
+                `Budget check: ${result.budget.isOverBudget ? "OVER" : "within"} budget`,
+                ...(result.budget.isOverBudget
+                    ? [`Generating saving suggestions (gap: $${result.budget.budgetGap})`]
+                    : []),
+                `Budget analysis complete`,
+            ];
+
+            return successResponse(
+                formatAIResponse(result, {
+                    // DETERMINISTIC: all cost figures come from the ledger (pure arithmetic).
+                    // Penalty: when foodCostSummary is absent, food costs use price-level
+                    //          fallbacks rather than logistics-verified meal data.
+                    confidence: computeConfidence({
+                        mode: "DETERMINISTIC",
+                        hasPartialData: !body.data.foodCostSummary,
+                    }),
+                    reasoning: `Computed trip total of $${result.budget.totalEstimatedCost} from ${result.budget.ledger.length} line items ` +
+                        `(hotel $${hotel}, food $${food}, activities $${activity}). ` +
+                        `Budget status: ${result.budget.isOverBudget ? `OVER by $${result.budget.budgetGap ?? "N/A"} — saving suggestions generated` : "within budget"}. ` +
+                        `Calculation is fully deterministic.`,
+                    sources,
                     durationMs,
-                    confidence: 0.95,
-                    dataSources: [
-                        body.data.foodCostSummary
-                            ? "Logistics food cost summary"
-                            : "Activity price levels",
-                        "Hotel rate table",
-                        "Activity cost estimates",
-                    ],
-                    decisionsLog: [
-                        `+0ms Hotel: ${body.data.selectedHotel.priceRange} tier × ${Math.max(0, body.data.durationDays - 1)} nights = $${hotel}`,
-                        `+5ms Food: $${food} (${body.data.foodCostSummary ? "Logistics source" : "activity fallback"})`,
-                        `+10ms Activities: $${activity} across ${result.budget.ledger.filter((l) => l.category === "activity").length} items`,
-                        `+20ms Total: $${result.budget.totalEstimatedCost}`,
-                        `+25ms Budget check: ${result.budget.isOverBudget ? "OVER" : "within"} budget`,
-                        ...(result.budget.isOverBudget
-                            ? [`+50ms Generating saving suggestions (gap: $${result.budget.budgetGap})`]
-                            : []),
-                        `+${durationMs}ms Budget analysis complete`,
-                    ],
-                },
-            });
+                    decisionsLog,
+                })
+            );
         } catch (err) {
             return formatErrorResponse(err);
         }

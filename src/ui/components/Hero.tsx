@@ -27,8 +27,7 @@ import { HERO_GLOBE_ARCS, HERO_GLOBE_MARKERS } from "@/ui/components/hero-globe-
 import { useMotionValue, useSpring, useTransform, useReducedMotion } from "framer-motion";
 
 const MotionDiv = dynamic(
-    () => import("framer-motion").then((m) => m.motion.div),
-    { ssr: false }
+    () => import("framer-motion").then((m) => m.motion.div)
 );
 
 const RotatingEarth = dynamic(
@@ -1108,20 +1107,12 @@ export function Hero() {
                     {/* Social proof */}
                     <div className="flex flex-col items-end text-right">
                         <div className="flex -space-x-3 mb-3">
-                            <Image
-                                src="https://i.pravatar.cc/100?img=33"
-                                alt="user"
-                                width={32}
-                                height={32}
-                                className="w-8 h-8 rounded-full border-2 border-[#10141a] z-20"
-                            />
-                            <Image
-                                src="https://i.pravatar.cc/100?img=47"
-                                alt="user"
-                                width={32}
-                                height={32}
-                                className="w-8 h-8 rounded-full border-2 border-[#10141a] z-10"
-                            />
+                            <div className="w-8 h-8 rounded-full border-2 border-[#10141a] z-20 bg-violet-600 flex items-center justify-center text-[10px] font-bold text-white">
+                                JK
+                            </div>
+                            <div className="w-8 h-8 rounded-full border-2 border-[#10141a] z-10 bg-emerald-600 flex items-center justify-center text-[10px] font-bold text-white">
+                                AM
+                            </div>
                             <div className="w-8 h-8 rounded-full border-2 border-[#10141a] bg-[#f48c06] z-0 flex items-center justify-center text-[10px] font-medium">
                                 +
                             </div>

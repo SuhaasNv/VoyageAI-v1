@@ -76,15 +76,16 @@ export type LogStep =
     | "second_pass"
     | "low_hotel_count"
     | "restaurant_enriched"
-    | "restaurants_attached"
     | "meals_injected"
+    | "restaurant_reclassified"
     | "food_cost_computed"
     | "ledger_built"
     | "budget_analysis"
     | "budget_optimization"
     | "adjustment_applied"
     | "optimization_complete"
-    | "plan_applied";
+    | "plan_applied"
+    | "rules_applied";
 
 export type StructuredLogEntry = {
     layer: "agent" | "orchestrator" | "llm" | "service";

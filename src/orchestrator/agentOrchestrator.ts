@@ -204,7 +204,7 @@ export class AgentOrchestrator {
         } catch (err) {
             this.logAgent("safety", "error", (err as Error).message);
             logStructured({ layer: "orchestrator", step: "error", requestId, data: { agent: "safety", error: (err as Error).message } });
-            return { ...budgeted, safety: { riskLevel: "low" as const, warnings: [], tips: [] } } as SafeTripContext;
+            return { ...budgeted, safety: { riskLevel: "high" as const, warnings: [{ type: "travel" as const, day: 0, severity: "high" as const, message: "Safety analysis failed — this itinerary may contain risks." }], tips: [] } };
         }
     }
 
@@ -229,6 +229,9 @@ export class AgentOrchestrator {
             });
             this.logAgent("planner", "success");
             logStructured({ layer: "orchestrator", step: "output", requestId, data: { agent: "planner", destination: trip.destination, durationDays: trip.durationDays } });
+            if (trip.destination === "Top Travel Destination") {
+                return { ok: false, stage: "planner", executionLog: this.executionLog, error: "Destination is too vague — please specify a city or region." };
+            }
         } catch (err) {
             this.logAgent("planner", "error", (err as Error).message);
             logStructured({ layer: "orchestrator", step: "error", requestId, data: { agent: "planner", error: (err as Error).message } });
@@ -328,6 +331,7 @@ export class AgentOrchestrator {
                 } catch (err) {
                     this.logAgent("logistics", "error", (err as Error).message);
                     logStructured({ layer: "orchestrator", step: "error", requestId, data: { agent: "logistics", round: decisionRound, error: (err as Error).message } });
+                    break;
                 }
             }
 

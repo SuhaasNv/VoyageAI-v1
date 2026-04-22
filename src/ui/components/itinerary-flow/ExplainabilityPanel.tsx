@@ -45,13 +45,7 @@ export function ExplainabilityPanel({
         return () => document.removeEventListener("keydown", handleKey);
     }, [isOpen, onClose]);
 
-    const confidence = meta?.confidence ?? 0;
-    const confidenceColor =
-        confidence >= 0.8
-            ? "text-emerald-400 bg-emerald-500/10"
-            : confidence >= 0.6
-            ? "text-amber-400 bg-amber-500/10"
-            : "text-rose-400 bg-rose-500/10";
+    const confidence = meta?.confidence;
 
     return (
         <AnimatePresence>
@@ -119,8 +113,8 @@ export function ExplainabilityPanel({
                                 <p className="text-sm text-slate-300 leading-relaxed">{agent.role}</p>
                             </div>
 
-                            {/* Confidence */}
-                            {meta && (
+                            {/* Confidence — only rendered when the agent provides a real value */}
+                            {meta && confidence !== undefined && (
                                 <div>
                                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-2">
                                         Confidence
@@ -139,7 +133,13 @@ export function ExplainabilityPanel({
                                             />
                                         </div>
                                         <span
-                                            className={`text-xs font-semibold rounded-full px-2 py-0.5 ${confidenceColor}`}
+                                            className={`text-xs font-semibold rounded-full px-2 py-0.5 ${
+                                                confidence >= 0.8
+                                                    ? "text-emerald-400 bg-emerald-500/10"
+                                                    : confidence >= 0.6
+                                                    ? "text-amber-400 bg-amber-500/10"
+                                                    : "text-rose-400 bg-rose-500/10"
+                                            }`}
                                         >
                                             {Math.round(confidence * 100)}%
                                         </span>

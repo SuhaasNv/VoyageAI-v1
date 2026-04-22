@@ -86,8 +86,8 @@ output "project_id" {
 # ── Post-deploy configuration hints ──────────────────────────────────────────
 
 output "langgraph_env_hint" {
-  description = "Environment variable to set in the LangGraph App Platform service after Next.js is deployed"
-  value       = "NEXT_INTERNAL_URL=${digitalocean_app.nextjs.live_url}"
+  description = "LangGraph NEXT_INTERNAL_URL is set by Terraform from nextjs.live_url unless TF_VAR_next_internal_url is set"
+  value       = "NEXT_INTERNAL_URL auto: ${digitalocean_app.nextjs.live_url} (optional override: GitHub secret TF_VAR_next_internal_url)"
 }
 
 output "nextjs_env_hint" {

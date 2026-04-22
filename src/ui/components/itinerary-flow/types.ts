@@ -10,7 +10,7 @@ import type { TripContext } from "@/agents/planner/plannerAgent";
 import type { EnrichedTripContext } from "@/agents/research/researchAgent";
 import type { OptimizedTripContext } from "@/agents/logistics/logisticsAgent";
 import type { BudgetedTripContext } from "@/agents/budget/budgetAgent";
-import type { SafeTripContext } from "@/agents/safety/safetyAgent";
+import type { SafeTripContext, SafetyWarning } from "@/agents/safety/safetyAgent";
 
 // ─── Flow stages ─────────────────────────────────────────────────────────────
 
@@ -32,8 +32,8 @@ export interface FlowInput {
 export interface FlowMetadata {
     /** Wall-clock duration the API call took (ms). */
     durationMs: number;
-    /** 0–1 confidence estimate from the agent layer. */
-    confidence: number;
+    /** 0–1 confidence estimate from the agent layer. Omitted when not measured. */
+    confidence?: number;
     /** Human-readable list of data sources used by this agent. */
     dataSources: string[];
     /** Chronological log lines with optional "+Xs" time offsets. */
@@ -77,6 +77,19 @@ export interface StageProps<TResult> {
     onRetry: () => void;
 }
 
+// ─── Apply-plan change record ─────────────────────────────────────────────────
+
+/**
+ * A single human-readable record of what the plan changed.
+ * Derived from plan.appliedAdjustments before the API call; passed down to
+ * BudgetStage so the UI can surface exactly what changed.
+ */
+export interface ApplyChange {
+    type: "activity_removed" | "hotel_downgraded";
+    /** Human-readable detail — e.g. "Tokyo Disneyland · Day 3" or "$$$ → $$" */
+    description: string;
+}
+
 // ─── Re-exports for convenience ───────────────────────────────────────────────
 
 export type {
@@ -85,4 +98,5 @@ export type {
     OptimizedTripContext,
     BudgetedTripContext,
     SafeTripContext,
+    SafetyWarning,
 };

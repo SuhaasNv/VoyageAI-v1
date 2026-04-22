@@ -8,7 +8,6 @@ import { AIChatDrawer } from "@/ui/chat/AIChatDrawer";
 import type { TripDTO, ItineraryEvent } from "@/lib/services/trips";
 import type { Itinerary } from "@/lib/ai/schemas";
 import type { ChatMessageDTO } from "@/app/api/trips/[id]/chat/route";
-import { getCsrfToken } from "@/lib/api";
 import {
     analyzeTripRisks,
     flattenAlerts,
@@ -16,10 +15,8 @@ import {
     severityCounts,
     type RiskAnalysisResult,
 } from "@/lib/analysis/tripRiskEngine";
-import { calculateTravelScore, type TravelScoreResult } from "@/lib/analysis/travelScore";
-import { generateTripExplanation } from "@/lib/analysis/explainTrip";
 
-import { Map as MapIcon, X, Sparkles, Loader2, CheckCircle2, TriangleAlert, ChevronDown, WifiOff } from "lucide-react";
+import { Map as MapIcon, X, Sparkles, TriangleAlert, ChevronDown, WifiOff } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { createPortal } from "react-dom";
 import { ExportDrawer } from "@/ui/components/trip/ExportDrawer";
@@ -42,23 +39,12 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
     const [showMobileMap, setShowMobileMap] = useState(false);
     const [mounted, setMounted] = useState(false);
 
-    // ── Refine Trip state ──────────────────────────────────────────────────────
-    const [refineInput, setRefineInput] = useState("");
-    const [isRefining, setIsRefining] = useState(false);
-    const [refineError, setRefineError] = useState<string | null>(null);
-    const [summaryOfChanges, setSummaryOfChanges] = useState<string | null>(null);
 
     // ── Risk analysis state ────────────────────────────────────────────────────
     const [riskAnalysis, setRiskAnalysis] = useState<RiskAnalysisResult | null>(null);
     const [riskDismissed, setRiskDismissed] = useState(false);
     const [riskExpanded, setRiskExpanded] = useState(false);
 
-    // ── Travel score state ─────────────────────────────────────────────────────
-    const [travelScore, setTravelScore] = useState<TravelScoreResult | null>(null);
-
-    // ── Explainability panel state ─────────────────────────────────────────────
-    const [explainOpen, setExplainOpen] = useState(false);
-    const [explainBullets, setExplainBullets] = useState<string[]>([]);
 
     // ── Offline state ──────────────────────────────────────────────────────────
     const [isOffline, setIsOffline] = useState(false);
@@ -129,10 +115,8 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
         }
          
         setRiskDismissed(false);
-         
+
         setRiskAnalysis(analyzeTripRisks(rawItinerary, trip.budget.total));
-         
-        setTravelScore(calculateTravelScore(rawItinerary, trip.budget.total));
     // trip.budget.total is a number — safe as dep
      
     }, [rawItinerary, trip.budget.total]);
@@ -174,64 +158,7 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
         }
     }, [initialTrip.id]);
 
-    // ── Refine handler ─────────────────────────────────────────────────────────
-    const handleRefine = useCallback(
-        async (e: React.FormEvent) => {
-            e.preventDefault();
-            if (!refineInput.trim() || !rawItinerary || isRefining) return;
 
-            setIsRefining(true);
-            setRefineError(null);
-            setSummaryOfChanges(null);
-
-            try {
-                const csrf = await getCsrfToken();
-                const res = await fetch("/api/ai/reoptimize", {
-                    method: "POST",
-                    credentials: "include",
-                    headers: {
-                        "Content-Type": "application/json",
-                        ...(csrf ? { "x-csrf-token": csrf } : {}),
-                    },
-                    body: JSON.stringify({
-                        tripId: initialTrip.id,
-                        currentItinerary: rawItinerary,
-                        reoptimizationReasons: ["preference_change"],
-                        currentDay: selectedDay ?? 1,
-                        remainingBudget: trip.budget.total,
-                        modificationInstruction: refineInput.trim(),
-                    }),
-                });
-
-                const json = await res.json();
-                if (!json.success) {
-                    throw new Error(json.error?.message ?? "Refinement failed. Please try again.");
-                }
-
-                setSummaryOfChanges(json.data.summaryOfChanges as string);
-                setRefineInput("");
-                await handleItineraryRefresh();
-            } catch (err) {
-                setRefineError(err instanceof Error ? err.message : "Something went wrong");
-            } finally {
-                setIsRefining(false);
-            }
-        },
-        [refineInput, rawItinerary, isRefining, initialTrip.id, selectedDay, trip.budget.total, handleItineraryRefresh]
-    );
-
-    // ── Explain toggle — regenerates on every open (cheap, deterministic) ──────
-    const handleToggleExplain = useCallback(() => {
-        if (!explainOpen && rawItinerary) {
-            const { bullets } = generateTripExplanation({
-                itinerary:      rawItinerary,
-                scoreBreakdown: travelScore?.breakdown,
-                risks:          riskAnalysis ?? undefined,
-            });
-            setExplainBullets(bullets);
-        }
-        setExplainOpen(v => !v);
-    }, [explainOpen, rawItinerary, travelScore, riskAnalysis]);
 
     const mobileMapOverlay = mounted && showMobileMap && createPortal(
         <div className="fixed inset-0 z-[9999] bg-[#0B0F14] flex flex-col md:hidden">
@@ -258,9 +185,9 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
                 {/* Timeline panel */}
                 <div className="w-full md:w-[450px] lg:w-[550px] shrink-0 flex flex-col bg-white/[0.04] backdrop-blur-md border-r border-white/[0.08] h-full overflow-hidden relative z-20 shadow-[inset_-1px_0_0_rgba(255,255,255,0.03),inset_0_0_40px_rgba(0,0,0,0.18)]">
 
-                    {/* ── Zone 1: Primary actions — always pinned at top ────── */}
-                    <div className="shrink-0 border-b border-white/[0.06]">
-                        <div className="px-4 pt-3 pb-2 space-y-2">
+                    {/* ── Intelligence tools + offline banner ── */}
+                    <div className="shrink-0 border-b border-white/[0.06] overflow-y-auto [&::-webkit-scrollbar]:hidden" style={{ maxHeight: "clamp(160px, 30vh, 260px)", scrollbarWidth: "none" }}>
+                        <div className="px-4 py-2 space-y-2">
 
                             {/* Offline banner */}
                             {isOffline && (
@@ -270,96 +197,6 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
                                 </div>
                             )}
 
-                            {/* Refine Trip */}
-                            <form onSubmit={handleRefine} className="flex gap-2">
-                                <input
-                                    type="text"
-                                    value={refineInput}
-                                    onChange={(e) => setRefineInput(e.target.value)}
-                                    placeholder={isOffline ? "Unavailable offline" : "Make this more relaxed…"}
-                                    disabled={!rawItinerary || isRefining || isOffline}
-                                    className="flex-1 min-w-0 bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-white placeholder-white/25 focus:outline-none focus:border-white/20 disabled:opacity-40 transition-colors"
-                                />
-                                <button
-                                    type="submit"
-                                    disabled={!refineInput.trim() || !rawItinerary || isRefining || isOffline}
-                                    className="shrink-0 px-3 py-2 rounded-xl bg-[#10B981]/20 border border-[#10B981]/30 text-[#10B981] text-sm font-medium hover:bg-[#10B981]/30 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1.5"
-                                >
-                                    {isRefining
-                                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                        : <Sparkles className="w-3.5 h-3.5" />}
-                                    <span className="hidden sm:inline">
-                                        {isRefining ? "Refining…" : "Refine"}
-                                    </span>
-                                </button>
-                            </form>
-
-                            {/* Inline errors */}
-                            {refineError && (
-                                <p className="text-xs text-rose-400/90 px-1">{refineError}</p>
-                            )}
-
-                            {/* Refine success summary */}
-                            {summaryOfChanges && !isRefining && (
-                                <div className="flex gap-2 bg-emerald-500/5 border border-emerald-500/15 rounded-xl px-3 py-2">
-                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 mt-0.5 shrink-0" />
-                                    <p className="text-xs text-emerald-400/80 whitespace-pre-line leading-relaxed">
-                                        {summaryOfChanges}
-                                    </p>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* ── Zone 2: Intelligence tools — scrollable, capped height ── */}
-                    <div className="shrink-0 border-b border-white/[0.06] overflow-y-auto [&::-webkit-scrollbar]:hidden" style={{ maxHeight: "clamp(160px, 30vh, 260px)", scrollbarWidth: "none" }}>
-                        <div className="px-4 py-2 space-y-2">
-
-                            {/* Trip Intelligence Score badge */}
-                            {travelScore && (() => {
-                                const s = travelScore.score;
-                                const { density, distance, budget, diversity } = travelScore.breakdown;
-                                const pill =
-                                    s >= 80 ? "bg-emerald-500/15 border-emerald-500/25 text-emerald-300"
-                                    : s >= 60 ? "bg-amber-500/15 border-amber-500/25 text-amber-300"
-                                    : "bg-rose-500/15 border-rose-500/25 text-rose-300";
-                                const barClr = (v: number) =>
-                                    v >= 80 ? "bg-emerald-400" : v >= 60 ? "bg-amber-400" : "bg-rose-400";
-                                const tooltip = [
-                                    `Density  ${density}/100`,
-                                    `Distance ${distance}/100`,
-                                    `Budget   ${budget}/100`,
-                                    `Variety  ${diversity}/100`,
-                                ].join("\n");
-                                return (
-                                    <div
-                                        title={tooltip}
-                                        className={`flex items-center justify-between gap-3 px-3 py-2 rounded-xl border cursor-default select-none ${pill}`}
-                                    >
-                                        <span className="text-[10px] font-medium opacity-70 whitespace-nowrap">
-                                            Trip Intelligence Score
-                                        </span>
-                                        <div className="flex items-center gap-2 shrink-0">
-                                            {([
-                                                ["D", density],
-                                                ["Km", distance],
-                                                ["$", budget],
-                                                ["✦", diversity],
-                                            ] as [string, number][]).map(([k, v]) => (
-                                                <div key={k} className="flex flex-col items-center gap-0.5">
-                                                    <span className="text-[7px] opacity-40">{k}</span>
-                                                    <div className="w-5 h-[3px] rounded-full bg-white/[0.08] overflow-hidden">
-                                                        <div className={`h-full rounded-full ${barClr(v)}`} style={{ width: `${v}%` }} />
-                                                    </div>
-                                                </div>
-                                            ))}
-                                            <span className="text-sm font-bold ml-1">
-                                                {s}<span className="text-[9px] font-normal opacity-50"> / 100</span>
-                                            </span>
-                                        </div>
-                                    </div>
-                                );
-                            })()}
 
                             {/* ── Risk Analysis Banner ──────────────────────── */}
                             {riskAnalysis && !riskDismissed && (() => {
@@ -437,42 +274,6 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
                                 );
                             })()}
 
-                            {/* ── Why this itinerary? ──────────────────────────── */}
-                            {rawItinerary && (
-                                <div className="rounded-xl border border-white/[0.07] overflow-hidden">
-                                    <button
-                                        onClick={handleToggleExplain}
-                                        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/[0.03] transition-colors"
-                                    >
-                                        <Sparkles className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                                        <span className="flex-1 text-xs text-white/50 font-medium">
-                                            Why this itinerary?
-                                        </span>
-                                        <ChevronDown className={`w-3.5 h-3.5 text-white/25 transition-transform duration-200 ${explainOpen ? "rotate-180" : ""}`} />
-                                    </button>
-                                    <AnimatePresence initial={false}>
-                                        {explainOpen && explainBullets.length > 0 && (
-                                            <motion.div
-                                                key="explain-detail"
-                                                initial={{ height: 0, opacity: 0 }}
-                                                animate={{ height: "auto", opacity: 1 }}
-                                                exit={{ height: 0, opacity: 0 }}
-                                                transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-                                                style={{ overflow: "hidden" }}
-                                            >
-                                                <ul className="px-3 pb-3 space-y-1.5 border-t border-white/[0.06]">
-                                                    {explainBullets.map((bullet, i) => (
-                                                        <li key={i} className="flex items-start gap-2 pt-1.5">
-                                                            <span className="shrink-0 text-indigo-400/60 mt-0.5 text-[10px]">•</span>
-                                                            <span className="text-[11px] text-white/55 leading-relaxed">{bullet}</span>
-                                                        </li>
-                                                    ))}
-                                                </ul>
-                                            </motion.div>
-                                        )}
-                                    </AnimatePresence>
-                                </div>
-                            )}
 
                         </div>
                     </div>
@@ -532,6 +333,44 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
                 )}
             </AnimatePresence>
 
+            {/* Draft recovery overlay — shown when pipeline never completed */}
+            {trip.pipelineStatus === "draft" && !rawItinerary && !showFlow && (
+                <div className="absolute inset-0 z-30 flex items-center justify-center bg-[#0B0F14]/75 backdrop-blur-sm">
+                    <div className="max-w-sm w-full mx-4 bg-[#0F1520] border border-white/10 rounded-2xl p-6 shadow-2xl space-y-4">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/25 flex items-center justify-center shrink-0">
+                                <TriangleAlert className="w-5 h-5 text-amber-400" />
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-bold text-white">This itinerary is not ready yet</h3>
+                                <p className="text-xs text-zinc-500">{trip.destination}</p>
+                            </div>
+                        </div>
+                        <p className="text-xs text-zinc-400 leading-relaxed">
+                            We were still building your trip.
+                        </p>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setShowFlow(true)}
+                                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[#10B981]/20 border border-[#10B981]/30 text-[#10B981] text-sm font-semibold hover:bg-[#10B981]/30 transition-all"
+                            >
+                                <Sparkles className="w-3.5 h-3.5" />
+                                Resume generation
+                            </button>
+                            <button
+                                onClick={() => {
+                                    try { localStorage.removeItem("voyageai_flow_session_v2"); } catch { /* ignore */ }
+                                    setShowFlow(true);
+                                }}
+                                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border border-white/[0.1] text-sm text-slate-300 hover:bg-white/[0.04] transition-all"
+                            >
+                                Start over
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Agent pipeline overlay — auto-launched for trips arriving from the landing page */}
             {showFlow && (() => {
                 const flowInput: FlowInput = {
@@ -540,7 +379,7 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
                     startDate: initialTrip.startDate,
                     imageUrl: initialTrip.imageUrl,
                     endDate: initialTrip.endDate,
-                    ...(flowStyleRef.current ? { style: flowStyleRef.current } : {}),
+                    style: flowStyleRef.current ?? trip.style,
                 };
                 return (
                     <ItineraryCreationFlow

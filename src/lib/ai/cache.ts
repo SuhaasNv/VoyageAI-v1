@@ -455,18 +455,24 @@ export function researchCacheKey(params: {
     dayThemes:    string[];
     style?:       string;
     pace?:        string;
+    budget?:      number;
+    feedback?:    string;
 }): string {
     const payload = JSON.stringify({
         d:  params.destination.toLowerCase().trim(),
-        // Bucket days: 3-day and 4-day trips share the same key
-        n:  bucketDays(params.durationDays),
-        // Sort themes so ordering differences from LLM don't fragment the cache
-        t:  [...params.dayThemes].map((t) => t.toLowerCase().trim()).sort(),
+        // Exact duration — 3-day and 4-day trips produce different itineraries
+        n:  params.durationDays,
+        // Ordered themes — day 1 culture ≠ day 1 beach even with same theme set
+        t:  params.dayThemes.map((t) => t.toLowerCase().trim()),
         // Normalize multi-word preferences ("Culture, Food" == "food,culture")
         s:  normalizePreference(params.style),
         p:  normalizePreference(params.pace),
+        // Exact budget value when present — affects hotel/activity tier
+        b:  params.budget ?? null,
+        // Feedback string busts the cache so retries with user input hit the LLM
+        f:  params.feedback ? params.feedback.trim().toLowerCase() : null,
     });
-    return `${PREFIX}:research:v2:${hash(payload)}`;
+    return `${PREFIX}:research:v4:${hash(payload)}`;
 }
 
 export async function getResearchCached(key: string): Promise<unknown | null> {

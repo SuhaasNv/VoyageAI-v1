@@ -1,13 +1,33 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { MapPin, ChevronRight, Star, MoreVertical, Pencil, Trash2, Plane, Plus, ImageIcon, ArrowRight, FileUp } from "lucide-react";
+import { MapPin, ChevronRight, MoreVertical, Trash2, Plane, Plus, ImageIcon, ArrowRight, FileUp } from "lucide-react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import Image from "next/image";
 import { updateTrip, type Trip } from "@/lib/api";
-import { EditTripModal } from "@/ui/components/trip/EditTripModal";
 import { DeleteTripConfirmModal } from "@/ui/components/trip/DeleteTripConfirmModal";
+
+function getTripCountdown(startDate: string, endDate: string): { label: string; className: string; pulse: boolean } {
+    const today = new Date();
+    const now   = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+    const [sy, sm, sd] = startDate.split("-").map(Number);
+    const [ey, em, ed] = endDate.split("-").map(Number);
+    const start = Date.UTC(sy!, sm! - 1, sd!);
+    const end   = Date.UTC(ey!, em! - 1, ed!);
+    if (now >= start && now <= end)
+        return { label: "Active", className: "bg-[#10B981]/20 text-[#10B981] border-[#10B981]/30", pulse: true };
+    const daysUntil = Math.round((start - now) / 86_400_000);
+    if (daysUntil < 0)
+        return { label: "Completed", className: "bg-white/5 text-zinc-500 border-white/10", pulse: false };
+    if (daysUntil === 1)
+        return { label: "Tomorrow", className: "bg-rose-500/20 text-rose-400 border-rose-500/30", pulse: false };
+    if (daysUntil <= 3)
+        return { label: `${daysUntil} days`, className: "bg-amber-500/15 text-amber-400 border-amber-500/25", pulse: false };
+    if (daysUntil <= 14)
+        return { label: `${daysUntil} days`, className: "bg-indigo-500/15 text-indigo-400 border-indigo-500/25", pulse: false };
+    return { label: `${daysUntil} days`, className: "bg-white/5 text-zinc-400 border-white/10", pulse: false };
+}
 
 interface UpcomingTripsGridProps {
     trips: Trip[];
@@ -25,7 +45,6 @@ interface TripCardProps {
     refreshingImageId: string | null;
     menuRef: React.RefObject<HTMLDivElement | null>;
     onMenuToggle: (id: string) => void;
-    onEdit: (trip: Trip) => void;
     onRefreshImage: (trip: Trip, e: React.MouseEvent) => void;
     onDelete: (trip: Trip, e: React.MouseEvent) => void;
 }
@@ -46,7 +65,6 @@ function TripCard({
     refreshingImageId,
     menuRef,
     onMenuToggle,
-    onEdit,
     onRefreshImage,
     onDelete,
 }: TripCardProps) {
@@ -74,9 +92,15 @@ function TripCard({
                 )}
                 <div className="absolute inset-0 bg-[#0B0F14]/40 mix-blend-multiply pointer-events-none" />
                 <div className="absolute inset-0 bg-gradient-to-t from-[#0B0F14]/90 via-[#0B0F14]/20 to-transparent pointer-events-none" />
-                <div className="absolute top-3 left-3 bg-black/40 backdrop-blur-md px-2 py-1 rounded-md text-[10px] font-bold tracking-wider text-white flex items-center gap-1 border border-white/10">
-                    <Star className="w-3 h-3 text-[#10B981] fill-current" /> 4.9
-                </div>
+                {(() => {
+                    const c = getTripCountdown(trip.startDate, trip.endDate);
+                    return (
+                        <div className={`absolute top-3 left-3 backdrop-blur-md px-2 py-1 rounded-md text-[10px] font-bold tracking-wider flex items-center gap-1.5 border ${c.className}`}>
+                            {c.pulse && <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse shrink-0" />}
+                            {c.label}
+                        </div>
+                    );
+                })()}
             </div>
 
             {/* Menu: items-end so panel right edge aligns with trigger; w-max + nowrap avoids wrap/jagged rows */}
@@ -101,15 +125,6 @@ function TripCard({
                         <button
                             type="button"
                             role="menuitem"
-                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onEdit(trip); }}
-                            className="w-full flex items-center gap-3 px-3.5 py-2.5 text-left text-sm text-slate-300 hover:bg-white/[0.06] hover:text-white whitespace-nowrap"
-                        >
-                            <Pencil className="w-4 h-4 shrink-0 opacity-90" />
-                            <span>Edit</span>
-                        </button>
-                        <button
-                            type="button"
-                            role="menuitem"
                             onClick={(e) => onRefreshImage(trip, e)}
                             disabled={refreshingImageId === trip.id}
                             className="w-full flex items-center gap-3 px-3.5 py-2.5 text-left text-sm text-slate-300 hover:bg-white/[0.06] hover:text-white disabled:opacity-50 whitespace-nowrap"
@@ -131,12 +146,33 @@ function TripCard({
             </div>
             <div className="flex flex-col gap-1.5 px-3 pb-3">
                 <h3 className="text-white font-bold text-lg leading-tight group-hover:text-[#10B981] transition-colors">{trip.title}</h3>
+                {trip.pipelineStatus === "draft" && (
+                    <span className="inline-flex items-center self-start gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 border border-amber-500/30 text-amber-300">
+                        Draft
+                    </span>
+                )}
                 <div className="text-zinc-400 text-xs flex items-center gap-1.5 font-medium"><MapPin className="w-3.5 h-3.5" /> {trip.destination}</div>
                 <div className="w-full h-px bg-white/5 my-2" />
-                <div className="flex justify-between items-center text-xs">
-                    <span className="text-zinc-500 font-medium">{trip.dates}</span>
-                    <span className="text-zinc-400 font-medium text-[10px] tracking-wider uppercase">Est. Budget: <span className="text-[#10B981] font-bold text-sm tracking-normal ml-1">${trip.budget.total}</span></span>
-                </div>
+                {(() => {
+                    const pct = trip.budget.total > 0 ? Math.min(100, Math.round((trip.budget.spent / trip.budget.total) * 100)) : 0;
+                    return (
+                        <div className="flex flex-col gap-1.5">
+                            <div className="flex justify-between items-center text-xs">
+                                <span className="text-zinc-500 font-medium">{trip.dates}</span>
+                                <span className="text-[10px] font-medium text-zinc-400">
+                                    <span className="text-white font-semibold">${trip.budget.spent.toLocaleString()}</span>
+                                    <span className="text-zinc-600"> / ${trip.budget.total.toLocaleString()}</span>
+                                </span>
+                            </div>
+                            <div className="h-1 w-full bg-white/[0.06] rounded-full overflow-hidden">
+                                <div
+                                    className={`h-full rounded-full transition-all duration-700 ${pct > 85 ? "bg-gradient-to-r from-rose-500 to-rose-400" : "bg-gradient-to-r from-[#34D399] to-[#10B981]"}`}
+                                    style={{ width: `${pct}%` }}
+                                />
+                            </div>
+                        </div>
+                    );
+                })()}
             </div>
         </Link>
     );
@@ -239,7 +275,6 @@ function PlanNewTripPanel({ onNewTripClick, onTicketUploadClick }: { onNewTripCl
 
 export function UpcomingTripsGrid({ trips, isLoading, onTripsChange, onNewTripClick, onTicketUploadClick, isSearching }: UpcomingTripsGridProps) {
     const [menuTripId, setMenuTripId] = useState<string | null>(null);
-    const [editTrip, setEditTrip] = useState<Trip | null>(null);
     const [deleteTrip, setDeleteTrip] = useState<Trip | null>(null);
     const [refreshingImageId, setRefreshingImageId] = useState<string | null>(null);
     const menuRef = useRef<HTMLDivElement>(null);
@@ -263,11 +298,6 @@ export function UpcomingTripsGrid({ trips, isLoading, onTripsChange, onNewTripCl
         if (!deleteTrip) return;
         onTripsChange?.(trips.filter((t) => t.id !== deleteTrip.id));
         setDeleteTrip(null);
-    }
-
-    function handleEditSaved(updated: Trip) {
-        setEditTrip(null);
-        onTripsChange?.(trips.map((t) => (t.id === updated.id ? updated : t)));
     }
 
     async function handleRefreshImage(trip: Trip, e: React.MouseEvent) {
@@ -302,47 +332,24 @@ export function UpcomingTripsGrid({ trips, isLoading, onTripsChange, onNewTripCl
                 )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {isLoading ? (
-                    <div className="md:col-span-2 flex flex-col items-center justify-center py-16 px-8 text-center relative overflow-hidden rounded-[1.5rem] bg-white/[0.02] border border-white/5 min-h-[280px]">
-                        <p className="text-sm text-zinc-500 font-medium">Loading trips…</p>
-                    </div>
-                ) : trips.length === 0 ? (
-                    <div className="md:col-span-2 flex flex-col items-center justify-center py-16 px-8 text-center relative overflow-hidden rounded-[1.5rem] bg-white/[0.02] border border-white/5">
-                        <div className="absolute inset-0 bg-gradient-to-b from-[#10B981]/5 via-transparent to-indigo-500/5 pointer-events-none" />
-                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] h-[350px] rounded-full bg-[#10B981]/5 blur-[60px] pointer-events-none" />
-                        <div className="relative z-10 flex flex-col items-center gap-6">
-                            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#10B981]/20 to-indigo-500/20 border border-white/10 flex items-center justify-center shadow-[0_0_40px_rgba(16,185,129,0.12)]">
-                                {isSearching ? (
-                                    <MapPin className="w-9 h-9 text-[#10B981]" />
-                                ) : (
-                                    <Plane className="w-9 h-9 text-[#10B981]" />
-                                )}
-                            </div>
-                            <div className="space-y-3">
-                                <h3 className="text-xl font-bold text-white tracking-tight">
-                                    {isSearching ? "No matching trips" : "No trips yet"}
-                                </h3>
-                                <p className="text-sm text-zinc-400 max-w-sm leading-relaxed">
-                                    {isSearching
-                                        ? "We couldn't find any trips matching your search. Try a different destination or trip title."
-                                        : "Create your first — plan smarter with AI itineraries, budget tracking, and more."}
-                                </p>
-                            </div>
-                            {!isSearching && (
-                                <button
-                                    onClick={() => onNewTripClick?.()}
-                                    className="flex items-center gap-2 px-6 py-3 rounded-xl bg-[#10B981] hover:bg-[#10B981]/90 text-white text-sm font-semibold transition-all shadow-[0_0_24px_rgba(16,185,129,0.3)] hover:shadow-[0_0_32px_rgba(16,185,129,0.4)]"
-                                >
-                                    <Plus className="w-4 h-4" />
-                                    Create your first trip
-                                </button>
-                            )}
+            {/* Plan New Trip — primary, above the trip cards */}
+            <PlanNewTripPanel onNewTripClick={onNewTripClick} onTicketUploadClick={onTicketUploadClick} />
+
+            {/* Trip cards — only rendered when trips exist, loading, or searching */}
+            {(isLoading || trips.length > 0 || isSearching) && (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                    {isLoading ? (
+                        <div className="md:col-span-2 xl:col-span-3 flex items-center justify-center py-12 rounded-[1.5rem] bg-white/[0.02] border border-white/5 min-h-[140px]">
+                            <p className="text-sm text-zinc-500 font-medium">Loading trips…</p>
                         </div>
-                    </div>
-                ) : (
-                    <>
-                        {trips.map((trip) => (
+                    ) : trips.length === 0 && isSearching ? (
+                        <div className="md:col-span-2 xl:col-span-3 flex flex-col items-center justify-center py-10 px-8 text-center rounded-[1.5rem] bg-white/[0.02] border border-white/5">
+                            <MapPin className="w-7 h-7 text-zinc-600 mb-2" />
+                            <h3 className="text-sm font-bold text-white">No matching trips</h3>
+                            <p className="text-xs text-zinc-500 mt-1">Try a different destination or trip title.</p>
+                        </div>
+                    ) : (
+                        trips.map((trip) => (
                             <TripCard
                                 key={trip.id}
                                 trip={trip}
@@ -351,24 +358,12 @@ export function UpcomingTripsGrid({ trips, isLoading, onTripsChange, onNewTripCl
                                 refreshingImageId={refreshingImageId}
                                 menuRef={menuRef}
                                 onMenuToggle={(id) => setMenuTripId((prev) => (prev === id ? null : id))}
-                                onEdit={(t) => { setMenuTripId(null); setEditTrip(t); }}
                                 onRefreshImage={handleRefreshImage}
                                 onDelete={handleDeleteClick}
                             />
-                        ))}
-
-                        <PlanNewTripPanel onNewTripClick={onNewTripClick} onTicketUploadClick={onTicketUploadClick} />
-                    </>
-                )}
-            </div>
-
-            {editTrip && (
-                <EditTripModal
-                    trip={editTrip}
-                    isOpen={!!editTrip}
-                    onClose={() => setEditTrip(null)}
-                    onSaved={handleEditSaved}
-                />
+                        ))
+                    )}
+                </div>
             )}
 
             {deleteTrip && (

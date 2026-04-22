@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion, AnimatePresence } from "framer-motion";
-import { Check } from "lucide-react";
+import { Check, Eye } from "lucide-react";
 import { AGENT_REGISTRY } from "./agentRegistry";
 import type { FlowStage, FlowMetadata } from "./types";
 
@@ -78,6 +78,10 @@ interface AgentPipelineHeaderProps {
     meta: Partial<Record<FlowStage, FlowMetadata>>;
     iteration: number;
     onExplain?: (stage: Exclude<FlowStage, "saved">) => void;
+    /** Called when the user clicks a completed stage to navigate back to it. */
+    onNavigate?: (stage: Exclude<FlowStage, "saved">) => void;
+    /** Which stage is currently being viewed (may differ from currentStage). */
+    viewingStage?: FlowStage | null;
     layout?: "horizontal" | "vertical";
     imageUrl?: string | null;
     destination?: string;
@@ -111,6 +115,8 @@ export function AgentPipelineHeader({
     meta,
     iteration,
     onExplain,
+    onNavigate,
+    viewingStage,
     layout = "horizontal",
     imageUrl,
     destination
@@ -170,11 +176,9 @@ export function AgentPipelineHeader({
                         const isCompleted = idx < currentIdx;
                         const isActive = idx === currentIdx;
                         const isPending = !isCompleted && !isActive;
+                        const isViewing = !!viewingStage && viewingStage === stage && isCompleted;
                         const stageMeta = meta[stage];
                         const showPacketOnConnector = packetSegment === idx && !prefersReduced;
-                        // Connector gradient: current agent color → next agent color
-                        // Icon center x = px-3 (12px) + w-9/2 (18px) = 30px from wrapper left.
-                        // Connector left-[29px] + w-[2px] → center at 30px. ✓
                         const connectorFrom = colors.bar;
                         const connectorTo = idx < STAGES.length - 1
                             ? COLOR_MAP[AGENT_REGISTRY[STAGES[idx + 1]].color].bar
@@ -230,20 +234,26 @@ export function AgentPipelineHeader({
 
                                 <motion.button
                                     layout={!prefersReduced}
-                                    onClick={() => onExplain?.(stage)}
+                                    onClick={() => {
+                                        if (isCompleted) onNavigate?.(stage);
+                                        else if (isActive) onExplain?.(stage);
+                                    }}
                                     disabled={isPending}
+                                    title={isCompleted ? `View ${STAGE_LABELS[stage]} results` : undefined}
                                     whileHover={
                                         prefersReduced || isPending
                                             ? undefined
-                                            : { scale: 1.02, backgroundColor: "rgba(255,255,255,0.06)" }
+                                            : { scale: 1.02, backgroundColor: isViewing ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.06)" }
                                     }
                                     whileTap={prefersReduced || isPending ? undefined : { scale: 0.985 }}
                                     transition={{ layout: { type: "spring", stiffness: 400, damping: 34 } }}
                                     className={`relative z-10 w-full flex items-center gap-3 px-3 py-3 rounded-2xl text-left transition-all duration-300 ${
                                         isActive
                                             ? "bg-white/[0.08] shadow-[0_8px_32px_rgba(0,0,0,0.2)] border border-white/[0.15] backdrop-blur-md"
+                                            : isViewing
+                                            ? "bg-white/[0.06] border border-white/[0.18]"
                                             : isCompleted
-                                            ? "hover:bg-white/[0.04] border border-transparent"
+                                            ? "hover:bg-white/[0.04] border border-transparent cursor-pointer"
                                             : "opacity-[0.42] border border-transparent"
                                     }`}
                                 >
@@ -346,7 +356,12 @@ export function AgentPipelineHeader({
 
                                             {/* Status indicator / Time (right side) */}
                                             <div className="flex items-center gap-2">
-                                                {isCompleted ? (
+                                                {isViewing ? (
+                                                    <span className="flex items-center gap-1 text-[10px] font-semibold text-white/70 bg-white/[0.1] rounded-full px-1.5 py-0.5 border border-white/[0.18]">
+                                                        <Eye className="w-2.5 h-2.5" />
+                                                        Viewing
+                                                    </span>
+                                                ) : isCompleted ? (
                                                     <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-400/10 rounded-full px-1.5 py-0.5 border border-emerald-400/20">
                                                         Done
                                                     </span>
@@ -362,7 +377,7 @@ export function AgentPipelineHeader({
                                                     />
                                                 ) : null}
 
-                                                {stageMeta && (
+                                                {stageMeta && !isViewing && (
                                                     <span className={`text-[10px] tabular-nums font-mono ${isActive ? 'text-white/60' : 'text-white/30'}`}>
                                                         {(stageMeta.durationMs / 1000).toFixed(1)}s
                                                     </span>
@@ -420,9 +435,12 @@ export function AgentPipelineHeader({
                     return (
                         <div key={stage} className="flex items-center flex-1 last:flex-none min-w-0">
                             <button
-                                onClick={() => onExplain?.(stage)}
+                                onClick={() => {
+                                    if (isCompleted) onNavigate?.(stage);
+                                    else if (isActive) onExplain?.(stage);
+                                }}
                                 disabled={isPending}
-                                title={agent.name}
+                                title={isCompleted ? `View ${STAGE_LABELS[stage]} results` : agent.name}
                                 className="relative flex flex-col items-center gap-1.5 flex-shrink-0 group outline-none"
                             >
                                 {isActive && !prefersReduced && (

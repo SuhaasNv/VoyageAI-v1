@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // One-off migration scripts use CommonJS require() — not part of the app.
     "scripts/**",
+    // Placeholder image for DigitalOcean App Platform — CJS, not part of the app.
+    "infra/placeholder/**",
   ]),
 ]);
 
