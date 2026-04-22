@@ -25,7 +25,6 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
     Clock,
-    MapPin,
     DollarSign,
     GripVertical,
     CheckCircle2,
@@ -187,13 +186,14 @@ function SortableCard({ event, index: _index, isFirst, isMobile, isActive, onFoc
                     </div>
                 </div>
 
-                <h4 className="text-base font-bold text-white mb-2 leading-tight">{event.title}</h4>
+                <h4 className="text-base font-bold text-white leading-tight">{event.title}</h4>
 
-                <div className="flex items-center justify-between mt-4">
-                    <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                        <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
-                        <span className="truncate max-w-[140px]">{event.location}</span>
-                    </div>
+                <div className="flex items-center justify-between mt-2">
+                    {event.location && event.location !== event.title ? (
+                        <span className="text-xs text-slate-400 truncate max-w-[160px]">{event.location}</span>
+                    ) : (
+                        <span />
+                    )}
                     {event.cost > 0 && (
                         <div className="flex items-center gap-1 text-xs font-semibold text-slate-300 bg-white/[0.06] border border-white/[0.06] px-2 py-1 rounded-lg shrink-0 ml-2">
                             <DollarSign className="w-3 h-3 text-emerald-400" />
@@ -533,35 +533,7 @@ export function TimelineItinerary({ trip, onRefresh, onDayChange, onActivityFocu
                     </button>
                 ))}
 
-                <button
-                    onClick={handleGenerate}
-                    disabled={isGenerating}
-                    title="Regenerate itinerary"
-                    className="ml-auto flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white bg-white/[0.02] border border-white/5 hover:bg-white/[0.06] transition-all disabled:opacity-50 flex-shrink-0"
-                >
-                    {isGenerating
-                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        : <RefreshCw className="w-3.5 h-3.5" />}
-                    {isGenerating ? "…" : "Regenerate"}
-                </button>
             </div>
-
-            {/* Generation error */}
-            {genError && (
-                <div className="mx-4 mt-3 flex flex-col gap-2 text-xs bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-3">
-                    <div className="flex items-center gap-2 text-amber-300">
-                        <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                        <span>{genError}</span>
-                    </div>
-                    <button
-                        onClick={() => { setGenError(null); handleGenerate(); }}
-                        className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-200 font-semibold hover:bg-amber-500/30 transition-colors"
-                    >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                        Retry
-                    </button>
-                </div>
-            )}
 
             {/* Events */}
             <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 scroll-smooth z-10 hide-scrollbar">

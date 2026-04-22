@@ -36,9 +36,11 @@ const ChatRouteSchema = ChatRequestSchema.extend({
 
 /**
  * Separator used between the conversational text response and the trailing
- * actions JSON. Both API and client must agree on this exact string.
+ * actions JSON. The model frequently drops the trailing "---" so we match on
+ * the prefix only ("---ACTIONS") when stripping and suppressing tokens.
  */
 export const CHAT_ACTIONS_SEPARATOR = "---ACTIONS---";
+const ACTIONS_PREFIX = "---ACTIONS"; // prefix match — handles both ---ACTIONS--- and ---ACTIONS[{
 
 /**
  * Build the streaming-friendly prompt for the chat companion.
@@ -210,17 +212,17 @@ export async function POST(req: NextRequest): Promise<Response> {
                                         const prevLen = accumulatedContent.length;
                                         accumulatedContent += token;
 
-                                        // Only forward clean text — stop at separator so the
-                                        // model's action JSON never reaches the client stream.
-                                        const sepIdx = accumulatedContent.indexOf(CHAT_ACTIONS_SEPARATOR);
-                                        if (sepIdx === -1) {
+                                        // Stop forwarding once "---ACTIONS" prefix appears.
+                                        // Matches both ---ACTIONS--- (intended) and ---ACTIONS[{ (mangled).
+                                        const prefixIdx = accumulatedContent.indexOf(ACTIONS_PREFIX);
+                                        if (prefixIdx === -1) {
                                             controller.enqueue(encoder.encode(token));
-                                        } else if (sepIdx >= prevLen) {
-                                            // Separator starts within this token — forward only the clean prefix
-                                            const clean = accumulatedContent.slice(prevLen, sepIdx);
+                                        } else if (prefixIdx >= prevLen) {
+                                            // Prefix starts within this token — forward only the clean part
+                                            const clean = accumulatedContent.slice(prevLen, prefixIdx);
                                             if (clean) controller.enqueue(encoder.encode(clean));
                                         }
-                                        // else: separator already seen — don't forward
+                                        // else: prefix already seen — don't forward
                                     }
                                 } catch {
                                     // Skip malformed SSE chunks
@@ -240,13 +242,14 @@ export async function POST(req: NextRequest): Promise<Response> {
                         logError("[API] Chat LLM output validation warning", err);
                     }
 
-                    const sepIdx = accumulatedContent.indexOf(CHAT_ACTIONS_SEPARATOR);
-                    const messageText = sepIdx !== -1
-                        ? accumulatedContent.slice(0, sepIdx).trim()
+                    // Split on prefix match so we handle both ---ACTIONS--- and ---ACTIONS[{
+                    const prefixIdx = accumulatedContent.indexOf(ACTIONS_PREFIX);
+                    const messageText = prefixIdx !== -1
+                        ? accumulatedContent.slice(0, prefixIdx).trim()
                         : accumulatedContent.trim();
-                    const actionsRaw = sepIdx !== -1
-                        ? accumulatedContent.slice(sepIdx + CHAT_ACTIONS_SEPARATOR.length).trim()
-                        : "[]";
+                    // Find the JSON array that starts after the prefix (skip past any trailing ---)
+                    const jsonStart = prefixIdx !== -1 ? accumulatedContent.indexOf("[", prefixIdx) : -1;
+                    const actionsRaw = jsonStart !== -1 ? accumulatedContent.slice(jsonStart).trim() : "[]";
 
                     let suggestedActions: unknown[] = [];
                     try {

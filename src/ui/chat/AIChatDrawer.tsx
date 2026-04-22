@@ -42,15 +42,15 @@ interface AIChatDrawerProps {
 const ACTIONS_SEPARATOR = "---ACTIONS---";
 
 /**
- * Strips the separator line and any trailing JSON from an LLM response.
- * Handles the case where the model mangles the separator (e.g. "--- A[{...}]").
+ * Strips the separator and any trailing JSON from an LLM response.
+ * Matches both "---ACTIONS---" (intended) and "---ACTIONS[{" (mangled by model).
  */
 function sanitizeFinalText(text: string): string {
-    // Official separator
-    const sepIdx = text.indexOf(ACTIONS_SEPARATOR);
-    if (sepIdx !== -1) return text.slice(0, sepIdx).trimEnd();
-    // Fallback: strip any trailing "--- ..." or "[{..." JSON leak
-    return text.replace(/\s*-{2,}\s*\S*\s*\[[\s\S]*$/, "").trimEnd();
+    // Prefix match — catches ---ACTIONS--- and ---ACTIONS[{ alike
+    const prefixIdx = text.indexOf("---ACTIONS");
+    if (prefixIdx !== -1) return text.slice(0, prefixIdx).trimEnd();
+    // Last-resort fallback: strip trailing bare JSON arrays
+    return text.replace(/\s*\[\s*\{[\s\S]*$/, "").trimEnd();
 }
 
 const STARTER_QUESTIONS = (destination: string, totalDays: number) => [
@@ -95,6 +95,7 @@ export function AIChatDrawer({
     useEffect(() => {
         return () => { activeAbortRef.current?.abort(); };
     }, []);
+
 
     // ── Send chat message (streaming) ─────────────────────────────────────────
     async function handleSend(overrideText?: string, isRetry = false) {
@@ -174,10 +175,10 @@ export function AIChatDrawer({
                     );
                 }
 
-                // Finalise: prefer backend's authoritative stripped messageText,
-                // fall back to client sanitizer (handles mangled separator).
-                const finalMessage = actionsJson?.messageText
-                    ?? sanitizeFinalText(accumulated);
+                // Always sanitize — actionsJson.messageText can itself be dirty
+                // when the model mangles the separator on the server side too.
+                const rawFinal = actionsJson?.messageText ?? accumulated;
+                const finalMessage = sanitizeFinalText(rawFinal);
 
                 const suggestedActions: SuggestedAction[] = actionsJson?.suggestedActions ?? [];
 

@@ -33,7 +33,8 @@
       "Bash(xargs -I {} basename {})",
       "Bash(npx tsx:*)",
       "Bash(npx prisma *)",
-      "Bash(xargs kill *)"
+      "Bash(xargs kill *)",
+      "Bash(pkill -f \"next dev\")"
     ]
   }
 }
