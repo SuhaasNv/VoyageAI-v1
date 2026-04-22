@@ -269,11 +269,22 @@ jobs:
 
       - name: Rsync monitoring files to Droplet
         shell: bash
+        # Pass the private key via env: so GitHub doesn't mangle newlines
+        # when inlining the secret value into the shell script.
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.MONITORING_SSH_PRIVATE_KEY }}
         run: |
-          # Write SSH key
           mkdir -p ~/.ssh
-          printf '%s\n' "${{ secrets.MONITORING_SSH_PRIVATE_KEY }}" > ~/.ssh/monitor_key
+
+          # Write key exactly as stored — printf with %s avoids any extra quoting
+          printf '%s' "$SSH_PRIVATE_KEY" > ~/.ssh/monitor_key
+          # PEM keys must end with a newline; add one in case it was stripped
+          echo "" >> ~/.ssh/monitor_key
           chmod 600 ~/.ssh/monitor_key
+
+          # Quick sanity-check: confirm the key loaded correctly
+          ssh-keygen -y -f ~/.ssh/monitor_key > /dev/null \
+            || { echo "❌ SSH key is invalid — check MONITORING_SSH_PRIVATE_KEY secret"; exit 1; }
 
           IP="${{ needs.provision.outputs.droplet_ip }}"
 
