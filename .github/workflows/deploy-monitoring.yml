@@ -375,6 +375,20 @@ jobs:
           EMAIL="${DEPLOY_EMAIL:-admin@voyageai.app}"
           cd /opt/voyageai-monitoring
 
+          # ── Ensure dependencies are present (self-healing if bootstrap was skipped) ──
+          if ! command -v nginx &>/dev/null || ! command -v docker &>/dev/null; then
+            echo "Missing dependencies — running bootstrap inline..."
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq
+            apt-get install -y -qq curl gnupg ca-certificates lsb-release \
+              nginx certbot python3-certbot-nginx apache2-utils ufw
+            if ! command -v docker &>/dev/null; then
+              curl -fsSL https://get.docker.com | sh
+              systemctl enable --now docker
+            fi
+            mkdir -p /opt/voyageai-monitoring/grafana/{provisioning/{datasources,dashboards},dashboards}
+          fi
+
           # ── Nginx: resolve server_name ───────────────────────────────────
           SERVER_IP=$(curl -sf http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/address || echo "")
           SERVE_HOST="${DOMAIN:-$SERVER_IP}"
