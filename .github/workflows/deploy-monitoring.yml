@@ -57,11 +57,11 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  DROPLET_NAME:   voyageai-monitoring
-  DROPLET_SIZE:   ${{ vars.MONITORING_DROPLET_SIZE || 's-1vcpu-1gb' }}
-  DROPLET_REGION: ${{ vars.MONITORING_DROPLET_REGION || 'nyc3' }}
-  DROPLET_IMAGE:  ubuntu-22-04-x64
-  INSTALL_DIR:    /opt/voyageai-monitoring
+  DROPLET_NAME: voyageai-monitoring
+  DROPLET_SIZE: ${{ vars.MONITORING_DROPLET_SIZE || 's-1vcpu-1gb' }}
+  DROPLET_REGION: ${{ vars.MONITORING_DROPLET_REGION || 'sgp1' }}
+  DROPLET_IMAGE: ubuntu-22-04-x64
+  INSTALL_DIR: /opt/voyageai-monitoring
 
 jobs:
   # ── Stage 1: Provision ──────────────────────────────────────────────────────
@@ -69,9 +69,9 @@ jobs:
     name: "1 · Provision DO Droplet"
     runs-on: ubuntu-latest
     outputs:
-      droplet_ip:       ${{ steps.get-ip.outputs.ip }}
-      droplet_id:       ${{ steps.get-ip.outputs.id }}
-      already_existed:  ${{ steps.get-ip.outputs.existed }}
+      droplet_ip: ${{ steps.get-ip.outputs.ip }}
+      droplet_id: ${{ steps.get-ip.outputs.id }}
+      already_existed: ${{ steps.get-ip.outputs.existed }}
 
     steps:
       - name: Install doctl
@@ -170,12 +170,12 @@ jobs:
       - name: Run bootstrap script on Droplet
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host:        ${{ needs.provision.outputs.droplet_ip }}
-          username:    root
-          key:         ${{ secrets.MONITORING_SSH_PRIVATE_KEY }}
+          host: ${{ needs.provision.outputs.droplet_ip }}
+          username: root
+          key: ${{ secrets.MONITORING_SSH_PRIVATE_KEY }}
           fingerprint: ${{ secrets.MONITORING_SSH_FINGERPRINT }}
           script_stop: true
-          timeout:     300s
+          timeout: 300s
           script: |
             set -euo pipefail
             export DEBIAN_FRONTEND=noninteractive
@@ -261,19 +261,19 @@ jobs:
 
     env:
       MONITORING_DOMAIN: ${{ vars.MONITORING_DOMAIN || '' }}
-      MONITORING_EMAIL:  ${{ vars.MONITORING_EMAIL || 'admin@voyageai.app' }}
+      MONITORING_EMAIL: ${{ vars.MONITORING_EMAIL || 'admin@voyageai.app' }}
 
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host:        ${{ needs.provision.outputs.droplet_ip }}
-          username:    root
-          key:         ${{ secrets.MONITORING_SSH_PRIVATE_KEY }}
+          host: ${{ needs.provision.outputs.droplet_ip }}
+          username: root
+          key: ${{ secrets.MONITORING_SSH_PRIVATE_KEY }}
           fingerprint: ${{ secrets.MONITORING_SSH_FINGERPRINT }}
           script_stop: true
-          timeout:     300s
-          envs:        MONITORING_DOMAIN,MONITORING_EMAIL
+          timeout: 300s
+          envs: MONITORING_DOMAIN,MONITORING_EMAIL
           script: |
             set -euo pipefail
             cd /opt/voyageai-monitoring
@@ -366,9 +366,9 @@ jobs:
       - name: Verify Prometheus API
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host:        ${{ needs.provision.outputs.droplet_ip }}
-          username:    root
-          key:         ${{ secrets.MONITORING_SSH_PRIVATE_KEY }}
+          host: ${{ needs.provision.outputs.droplet_ip }}
+          username: root
+          key: ${{ secrets.MONITORING_SSH_PRIVATE_KEY }}
           fingerprint: ${{ secrets.MONITORING_SSH_FINGERPRINT }}
           script_stop: true
           script: |
