@@ -806,7 +806,7 @@ jobs:
 
       - name: Compute image metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
@@ -979,7 +979,7 @@ jobs:
 
       - name: Compute registry image metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}
           tags: |
@@ -1197,7 +1197,7 @@ jobs:
 
       - name: Compute registry image metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.NEXTJS_IMAGE_NAME }}
           tags: |

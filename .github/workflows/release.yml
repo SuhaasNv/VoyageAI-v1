@@ -618,7 +618,7 @@ jobs:
       - name: Compute image metadata
         if: github.event.inputs.image_tag == ''
         id: meta-local
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: type=raw,value=latest
@@ -710,7 +710,7 @@ jobs:
       - name: Compute DOCR image metadata
         if: github.event.inputs.image_tag == ''
         id: meta-docr
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}
           tags: |
@@ -884,7 +884,7 @@ jobs:
       - name: Compute image metadata
         if: github.event.inputs.image_tag == ''
         id: meta-local
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.NEXTJS_IMAGE_NAME }}
           tags: type=raw,value=latest
@@ -978,7 +978,7 @@ jobs:
       - name: Compute DOCR image metadata
         if: github.event.inputs.image_tag == ''
         id: meta-docr
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.NEXTJS_IMAGE_NAME }}
           tags: |
