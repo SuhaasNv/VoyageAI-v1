@@ -11,13 +11,10 @@ export default function Error({
     error: Error & { digest?: string };
     reset: () => void;
 }) {
-    const [isRecovering, setIsRecovering] = useState(false);
+    const [isRecovering] = useState(() => tryRecoverFromHMRStaleError(error));
 
     useEffect(() => {
         console.error("[ErrorBoundary]", error);
-        if (tryRecoverFromHMRStaleError(error)) {
-            setIsRecovering(true);
-        }
     }, [error]);
 
     const isDev = process.env.NODE_ENV === "development";
