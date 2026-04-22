@@ -5,13 +5,11 @@ import { ArrowUpRight } from "lucide-react";
 import Link from "next/link";
 
 const MotionDiv = dynamic(
-    () => import("framer-motion").then((m) => m.motion.div),
-    { ssr: false }
+    () => import("framer-motion").then((m) => m.motion.div)
 );
 
 const MotionH2 = dynamic(
-    () => import("framer-motion").then((m) => m.motion.h2),
-    { ssr: false }
+    () => import("framer-motion").then((m) => m.motion.h2)
 );
 
 interface StarParticle {
