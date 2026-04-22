@@ -452,23 +452,29 @@ export class LogisticsAgent {
         // ── 7. Inject meals (lunch + dinner) per day ─────────────────────────
         // Runs after routing so meal times are anchored to real schedule slots.
         // injectMeals() is pure + deterministic — no API calls, no mutation.
-        let totalLunch  = 0;
-        let totalDinner = 0;
+        let totalLunch        = 0;
+        let totalDinner       = 0;
+        let totalLunchFallback  = 0;
+        let totalDinnerFallback = 0;
 
         const daysWithMeals = optimizedDays.map((day) => {
-            const { activities, lunchInserted, dinnerInserted } =
-                injectMeals(day.activities);
-            if (lunchInserted)  totalLunch++;
-            if (dinnerInserted) totalDinner++;
+            const { activities, lunchInserted, dinnerInserted, lunchWasFallback, dinnerWasFallback } =
+                injectMeals(day.activities, context.destination);
+            if (lunchInserted)      totalLunch++;
+            if (dinnerInserted)     totalDinner++;
+            if (lunchWasFallback)   totalLunchFallback++;
+            if (dinnerWasFallback)  totalDinnerFallback++;
             return { ...day, activities };
         });
 
         logStructured({
             layer: "agent", agent: "logistics", step: "meals_injected", requestId,
             data: {
-                lunchInserted:  totalLunch,
-                dinnerInserted: totalDinner,
-                totalDays:      daysWithMeals.length,
+                lunchInserted:    totalLunch,
+                dinnerInserted:   totalDinner,
+                lunchFallback:    totalLunchFallback,
+                dinnerFallback:   totalDinnerFallback,
+                totalDays:        daysWithMeals.length,
             },
         });
 
@@ -477,6 +483,13 @@ export class LogisticsAgent {
         }
         if (totalDinner < daysWithMeals.length) {
             warnings.push("Dinner could not be scheduled on some days");
+        }
+        // Loud warning when the Research Agent's restaurant set didn't cover a
+        // meal slot — a contextual placeholder was inserted. Visible in the UI.
+        if (totalLunchFallback > 0 || totalDinnerFallback > 0) {
+            warnings.push(
+                `Some meal stops (${totalLunchFallback} lunch, ${totalDinnerFallback} dinner) use generic placeholders — Research Agent did not return a real restaurant for those slots.`
+            );
         }
 
         // ── 8. Compute food cost ─────────────────────────────────────────────

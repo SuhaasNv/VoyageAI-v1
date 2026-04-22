@@ -71,6 +71,37 @@ interface TripMapProps {
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
+/** Haversine km between two (lat,lng). Used for outlier rejection. */
+function kmBetween(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+    const R = 6371;
+    const dLat = (b.lat - a.lat) * Math.PI / 180;
+    const dLng = (b.lng - a.lng) * Math.PI / 180;
+    const s =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) *
+        Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
+}
+
+/** Maximum distance from the group's geographic median before a point is treated as a cross-country outlier. */
+const GEO_OUTLIER_KM = 500;
+
+/**
+ * Rejects points more than GEO_OUTLIER_KM from the median of the group —
+ * catches wrong-country geocodes (e.g. "Dubai Marina" matching a place in
+ * Yemen) so they never make it into the route LineString.
+ */
+function rejectGeoOutliers(points: MapPoint[]): MapPoint[] {
+    if (points.length < 3) return points;
+    const sortedLat = [...points].map((p) => p.lat).sort((a, b) => a - b);
+    const sortedLng = [...points].map((p) => p.lng).sort((a, b) => a - b);
+    const median = {
+        lat: sortedLat[Math.floor(sortedLat.length / 2)]!,
+        lng: sortedLng[Math.floor(sortedLng.length / 2)]!,
+    };
+    return points.filter((p) => kmBetween(p, median) <= GEO_OUTLIER_KM);
+}
+
 function extractPoints(
     raw: Itinerary | null,
     selectedDay?: number,
@@ -95,15 +126,18 @@ function extractPoints(
             const lat = act.location?.lat;
             const lng = act.location?.lng;
             if (
-                typeof lat === "number" && isFinite(lat) && lat !== 0 &&
-                typeof lng === "number" && isFinite(lng) && lng !== 0
+                typeof lat === "number" && isFinite(lat) &&
+                typeof lng === "number" && isFinite(lng) &&
+                !(lat === 0 && lng === 0) &&
+                lat >= -90 && lat <= 90 &&
+                lng >= -180 && lng <= 180
             ) {
                 points.push({ lat, lng, label: act.name, index: idx });
             }
             idx++;
         }
     }
-    return points;
+    return rejectGeoOutliers(points);
 }
 
 function makeMarkerEl(index: number, isFirst: boolean): HTMLDivElement {
@@ -295,9 +329,14 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
             markersRef.current.push(marker);
         });
 
-        // Route line — deduplicated + midpoint-smoothed for long segments
+        // Route line — only draw when we have ≥2 distinct valid coordinates.
+        // Prevents a degenerate 1-point LineString and keeps the map clean when
+        // the current day has just one geocoded stop.
         const rawCoords = deduped.map((p) => [p.lng, p.lat] as [number, number]);
         const coords = smoothRoute(rawCoords);
+        if (coords.length < 2) {
+            return;
+        }
         map.addSource("route", {
             type: "geojson",
             data: { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: [coords[0]] } },

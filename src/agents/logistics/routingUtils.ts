@@ -189,11 +189,11 @@ const MEAL_DURATION_MINS = 45;       // 45 min gives more schedule flexibility
 const MEAL_BUFFER_MINS   = 10;       // 10 min gap — enough for a short walk
 const MAX_MEAL_END_MINS  = 23 * 60 + 59;
 
-// Acceptable time windows for injected meals — prevents placing "dinner" at
-// 11:40 AM when all viable anchor slots cluster in the morning.
-const MIN_LUNCH_START_MINS  = 11 * 60;  // 11:00 — earliest acceptable lunch
-const MAX_LUNCH_START_MINS  = 16 * 60;  // 16:00 — latest acceptable lunch start
-const MIN_DINNER_START_MINS = 16 * 60;  // 16:00 — earliest acceptable dinner
+// Strict meal windows — restaurants at invalid hours (e.g. "restaurant" at
+// 09:05) are never promoted to meals and generic injections are refused.
+const MIN_LUNCH_START_MINS  = 12 * 60;  // 12:00 — earliest acceptable lunch
+const MAX_LUNCH_START_MINS  = 15 * 60;  // 15:00 — latest acceptable lunch start
+const MIN_DINNER_START_MINS = 18 * 60;  // 18:00 — earliest acceptable dinner (DAY_END 19:00 caps it)
 
 /** Parses a valid HH:mm string into total minutes since midnight. */
 function hhmmToMins(hhmm: string): number {
@@ -228,18 +228,28 @@ function hasValidTimes(a: ScheduledActivity): boolean {
  *  - Chronological order is preserved.
  *  - travelTimeFromPrevMs = 15 min (the buffer), within the 240-min cap.
  */
-export function injectMeals(activities: ScheduledActivity[]): {
-    activities:     ScheduledActivity[];
-    lunchInserted:  boolean;
-    dinnerInserted: boolean;
+export function injectMeals(activities: ScheduledActivity[], destination = ""): {
+    activities:        ScheduledActivity[];
+    lunchInserted:     boolean;
+    dinnerInserted:    boolean;
+    lunchWasFallback:  boolean;
+    dinnerWasFallback: boolean;
 } {
     if (activities.length === 0) {
-        return { activities, lunchInserted: false, dinnerInserted: false };
+        return {
+            activities,
+            lunchInserted:     false,
+            dinnerInserted:    false,
+            lunchWasFallback:  false,
+            dinnerWasFallback: false,
+        };
     }
 
     let result = [...activities];
-    let lunchInserted  = false;
-    let dinnerInserted = false;
+    let lunchInserted     = false;
+    let dinnerInserted    = false;
+    let lunchWasFallback  = false;
+    let dinnerWasFallback = false;
 
     // ── Step 1: Promote existing restaurant activities at meal times ───────────
     //
@@ -288,23 +298,18 @@ export function injectMeals(activities: ScheduledActivity[]): {
     // ── Step 2: Inject generic meal when no restaurant activity is available ───
     //
     // When no restaurant activity falls within the meal time window, insert a
-    // generic "Local Restaurant" activity at the best available slot.
-
-    /** Generic fallback restaurant used when no real restaurant exists in the day. */
-    const GENERIC_RESTAURANT: Activity = {
-        name:          "Local Restaurant",
-        type:          "restaurant",
-        description:   "A nearby local dining option.",
-        estimatedCost: DEFAULT_MEAL_COST,
-    };
+    // contextual meal stop anchored to the preceding activity — its name and
+    // coordinates are derived from the anchor so the map shows it in the right
+    // area rather than falling back to a fuzzy "Local Restaurant" geocode.
 
     /**
-     * Attempts to splice `restaurant` into `result` after the activity at
-     * `anchorIdx`. Returns true on success; false when time constraints block.
+     * Attempts to splice a contextual meal stop into `result` after the
+     * activity at `anchorIdx`. Returns true on success; false when time
+     * constraints block. The injected activity inherits the anchor's lat/lng
+     * so it renders in the right area on the map.
      */
     const spliceMeal = (
         anchorIdx:   number,
-        restaurant:  Activity,
         mealTypeVal: "lunch" | "dinner",
     ): boolean => {
         const anchor        = result[anchorIdx]!;
@@ -326,9 +331,24 @@ export function injectMeals(activities: ScheduledActivity[]): {
             mealStart < 17 * 60 ? "afternoon" :
             "evening";
 
+        const mealLabel = mealTypeVal === "lunch" ? "Lunch" : "Dinner";
+        const anchorHasCoords =
+            typeof anchor.lat === "number" && Number.isFinite(anchor.lat) && anchor.lat !== 0 &&
+            typeof anchor.lng === "number" && Number.isFinite(anchor.lng) && anchor.lng !== 0;
+
+        // Concrete destination-scoped label — "Hoi An Lunch Stop" instead of
+        // the old "Lunch near <anchor>" placeholder. Destination is stripped of
+        // any ", Country" tail so labels stay short and local.
+        const city = destination.split(",")[0]?.trim() || "Local";
+        const mealName = `${city} ${mealLabel} Stop`;
+
         const meal: ScheduledActivity = {
-            ...restaurant,
+            name:                 mealName,
             type:                 "restaurant",
+            description:          `${mealLabel} break scheduled in ${city}.`,
+            estimatedCost:        DEFAULT_MEAL_COST,
+            ...(anchorHasCoords ? { lat: anchor.lat, lng: anchor.lng } : {}),
+            ...(anchor.geoConfidence ? { geoConfidence: anchor.geoConfidence } : {}),
             timeSlot:             mealSlot,
             isMeal:               true,
             mealType:             mealTypeVal,
@@ -368,7 +388,7 @@ export function injectMeals(activities: ScheduledActivity[]): {
             });
 
         for (const { idx } of pass1) {
-            if (spliceMeal(idx, GENERIC_RESTAURANT, mealTypeVal)) return true;
+            if (spliceMeal(idx, mealTypeVal)) return true;
         }
 
         const pass2 = result
@@ -383,7 +403,7 @@ export function injectMeals(activities: ScheduledActivity[]): {
         const ordered = mealTypeVal === "dinner" ? pass2.reverse() : pass2;
 
         for (const { idx } of ordered) {
-            if (spliceMeal(idx, GENERIC_RESTAURANT, mealTypeVal)) return true;
+            if (spliceMeal(idx, mealTypeVal)) return true;
         }
 
         return false;
@@ -391,12 +411,20 @@ export function injectMeals(activities: ScheduledActivity[]): {
 
     if (!lunchInserted) {
         lunchInserted = tryInjectGeneric(LUNCH_TARGET_MINS, "lunch");
+        lunchWasFallback = lunchInserted;
     }
     if (!dinnerInserted) {
         dinnerInserted = tryInjectGeneric(DINNER_TARGET_MINS, "dinner");
+        dinnerWasFallback = dinnerInserted;
     }
 
-    return { activities: result, lunchInserted, dinnerInserted };
+    return {
+        activities:        result,
+        lunchInserted,
+        dinnerInserted,
+        lunchWasFallback,
+        dinnerWasFallback,
+    };
 }
 
 // ─── Food cost computation ─────────────────────────────────────────────────────
