@@ -10,9 +10,12 @@
  *
  * Usage in an API route:
  *
+ *   import { computeConfidence } from "@/lib/ai/confidence";
+ *
  *   return successResponse(
  *     formatAIResponse(result, {
- *       confidence: 0.95,
+ *       // Always use computeConfidence() — never hardcode a raw number.
+ *       confidence: computeConfidence({ mode: "LLM_GROUNDED", usedFallback: false }),
  *       reasoning:  "Parsed 5-day trip to Tokyo using LLM + deterministic normalization.",
  *       sources:    ["User input", "Date analysis"],
  *       durationMs,

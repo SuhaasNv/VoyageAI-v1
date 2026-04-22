@@ -1,5 +1,5 @@
 /**
- * GET /api/suggestions
+ * GET /api/recommendations
  *
  * Returns:
  *   tripSuggestions — per-trip AI suggestions (existing behaviour)
@@ -98,7 +98,7 @@ export async function GET(req: NextRequest) {
                         await setSuggestionsCached(cacheKey, output);
                         return { tripId: trip.id, suggestions: output.suggestions };
                     } catch (err) {
-                        logError(`[GET /api/suggestions] Failed for trip ${trip.id}`, err);
+                        logError(`[GET /api/recommendations] Failed for trip ${trip.id}`, err);
                         return { tripId: trip.id, suggestions: [] };
                     }
                 })
@@ -136,7 +136,7 @@ export async function GET(req: NextRequest) {
                     console.log("[REDIS] suggestions cached");
                     return destinations;
                 } catch (err) {
-                    logError("[GET /api/suggestions] Destination suggestions failed", err);
+                    logError("[GET /api/recommendations] Destination suggestions failed", err);
                     return [];
                 }
             })();
@@ -171,7 +171,7 @@ export async function GET(req: NextRequest) {
                 )
             );
         } catch (err) {
-            logError("[GET /api/suggestions] Error", err);
+            logError("[GET /api/recommendations] Error", err);
             return formatErrorResponse(err);
         }
     });

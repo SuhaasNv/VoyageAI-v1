@@ -8,6 +8,7 @@ import { logStructured } from "@/infrastructure/logger";
 import { SafetyAgent } from "@/agents/safety/safetyAgent";
 import type { BudgetedTripContext } from "@/agents/budget/budgetAgent";
 import { formatAIResponse } from "@/lib/ai/explainability";
+import { computeConfidence } from "@/lib/ai/confidence";
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 //
@@ -120,8 +121,13 @@ export async function POST(req: NextRequest) {
 
             return successResponse(
                 formatAIResponse(result, {
-                    // Deterministic rules = 1.0; LLM tips introduce a small uncertainty margin.
-                    confidence: llmUsed ? 0.92 : 1.0,
+                    // DETERMINISTIC: safety rules are pure code (fatigue, travel, schedule, meal).
+                    // Penalty: warnings trigger the LLM tip path, which introduces generation
+                    //          uncertainty into an otherwise deterministic output.
+                    confidence: computeConfidence({
+                        mode: "DETERMINISTIC",
+                        hasWarnings: warningCount > 0,
+                    }),
                     reasoning: `Evaluated ${body.data.days.length}-day itinerary against fatigue, travel-time, schedule, ` +
                         `and meal-gap rules. Risk level: ${result.safety.riskLevel.toUpperCase()}; ` +
                         `${warningCount} warning(s) detected.` +

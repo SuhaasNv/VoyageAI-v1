@@ -7,6 +7,7 @@ import { formatErrorResponse } from "@/lib/errors";
 import { logStructured } from "@/infrastructure/logger";
 import { PlannerAgent } from "@/agents/planner/plannerAgent";
 import { formatAIResponse } from "@/lib/ai/explainability";
+import { computeConfidence } from "@/lib/ai/confidence";
 
 const Schema = z.object({
     input: z.string().min(5).max(2000),
@@ -40,7 +41,8 @@ export async function POST(req: NextRequest) {
 
             return successResponse(
                 formatAIResponse(result, {
-                    confidence: 0.95,
+                    // LLM parses free-text input; no external data to verify against.
+                    confidence: computeConfidence({ mode: "LLM_ONLY" }),
                     reasoning: `Parsed user input into a ${result.durationDays}-day trip to ${result.destination}. ` +
                         `Travel style, pace, and budget were inferred from preferences; ` +
                         `day themes were assigned deterministically.`,

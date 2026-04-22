@@ -7,6 +7,7 @@ import { formatErrorResponse } from "@/lib/errors";
 import { logStructured } from "@/infrastructure/logger";
 import { BudgetAgent } from "@/agents/budget/budgetAgent";
 import { formatAIResponse } from "@/lib/ai/explainability";
+import { computeConfidence } from "@/lib/ai/confidence";
 
 /**
  * Scheduled activity schema — preserves all fields that Budget Agent and
@@ -118,7 +119,13 @@ export async function POST(req: NextRequest) {
 
             return successResponse(
                 formatAIResponse(result, {
-                    confidence: 1.0,
+                    // DETERMINISTIC: all cost figures come from the ledger (pure arithmetic).
+                    // Penalty: when foodCostSummary is absent, food costs use price-level
+                    //          fallbacks rather than logistics-verified meal data.
+                    confidence: computeConfidence({
+                        mode: "DETERMINISTIC",
+                        hasPartialData: !body.data.foodCostSummary,
+                    }),
                     reasoning: `Computed trip total of $${result.budget.totalEstimatedCost} from ${result.budget.ledger.length} line items ` +
                         `(hotel $${hotel}, food $${food}, activities $${activity}). ` +
                         `Budget status: ${result.budget.isOverBudget ? `OVER by $${result.budget.budgetGap ?? "N/A"} — saving suggestions generated` : "within budget"}. ` +

@@ -1,12 +1,11 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { MapPin, ChevronRight, MoreVertical, Pencil, Trash2, Plane, Plus, ImageIcon, ArrowRight, FileUp } from "lucide-react";
+import { MapPin, ChevronRight, MoreVertical, Trash2, Plane, Plus, ImageIcon, ArrowRight, FileUp } from "lucide-react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import Image from "next/image";
 import { updateTrip, type Trip } from "@/lib/api";
-import { EditTripModal } from "@/ui/components/trip/EditTripModal";
 import { DeleteTripConfirmModal } from "@/ui/components/trip/DeleteTripConfirmModal";
 
 function getTripCountdown(startDate: string, endDate: string): { label: string; className: string; pulse: boolean } {
@@ -46,7 +45,6 @@ interface TripCardProps {
     refreshingImageId: string | null;
     menuRef: React.RefObject<HTMLDivElement | null>;
     onMenuToggle: (id: string) => void;
-    onEdit: (trip: Trip) => void;
     onRefreshImage: (trip: Trip, e: React.MouseEvent) => void;
     onDelete: (trip: Trip, e: React.MouseEvent) => void;
 }
@@ -67,7 +65,6 @@ function TripCard({
     refreshingImageId,
     menuRef,
     onMenuToggle,
-    onEdit,
     onRefreshImage,
     onDelete,
 }: TripCardProps) {
@@ -125,15 +122,6 @@ function TripCard({
                         role="menu"
                         className="mt-1.5 w-max min-w-[11.5rem] py-1.5 bg-[#0B0F14] border border-white/10 rounded-xl shadow-xl z-[60] origin-top-right"
                     >
-                        <button
-                            type="button"
-                            role="menuitem"
-                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onEdit(trip); }}
-                            className="w-full flex items-center gap-3 px-3.5 py-2.5 text-left text-sm text-slate-300 hover:bg-white/[0.06] hover:text-white whitespace-nowrap"
-                        >
-                            <Pencil className="w-4 h-4 shrink-0 opacity-90" />
-                            <span>Edit</span>
-                        </button>
                         <button
                             type="button"
                             role="menuitem"
@@ -287,7 +275,6 @@ function PlanNewTripPanel({ onNewTripClick, onTicketUploadClick }: { onNewTripCl
 
 export function UpcomingTripsGrid({ trips, isLoading, onTripsChange, onNewTripClick, onTicketUploadClick, isSearching }: UpcomingTripsGridProps) {
     const [menuTripId, setMenuTripId] = useState<string | null>(null);
-    const [editTrip, setEditTrip] = useState<Trip | null>(null);
     const [deleteTrip, setDeleteTrip] = useState<Trip | null>(null);
     const [refreshingImageId, setRefreshingImageId] = useState<string | null>(null);
     const menuRef = useRef<HTMLDivElement>(null);
@@ -311,11 +298,6 @@ export function UpcomingTripsGrid({ trips, isLoading, onTripsChange, onNewTripCl
         if (!deleteTrip) return;
         onTripsChange?.(trips.filter((t) => t.id !== deleteTrip.id));
         setDeleteTrip(null);
-    }
-
-    function handleEditSaved(updated: Trip) {
-        setEditTrip(null);
-        onTripsChange?.(trips.map((t) => (t.id === updated.id ? updated : t)));
     }
 
     async function handleRefreshImage(trip: Trip, e: React.MouseEvent) {
@@ -376,22 +358,12 @@ export function UpcomingTripsGrid({ trips, isLoading, onTripsChange, onNewTripCl
                                 refreshingImageId={refreshingImageId}
                                 menuRef={menuRef}
                                 onMenuToggle={(id) => setMenuTripId((prev) => (prev === id ? null : id))}
-                                onEdit={(t) => { setMenuTripId(null); setEditTrip(t); }}
                                 onRefreshImage={handleRefreshImage}
                                 onDelete={handleDeleteClick}
                             />
                         ))
                     )}
                 </div>
-            )}
-
-            {editTrip && (
-                <EditTripModal
-                    trip={editTrip}
-                    isOpen={!!editTrip}
-                    onClose={() => setEditTrip(null)}
-                    onSaved={handleEditSaved}
-                />
             )}
 
             {deleteTrip && (

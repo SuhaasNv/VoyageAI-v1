@@ -66,7 +66,7 @@ export function AISuggestionsCard({ onPlanTrip }: AISuggestionsCardProps = {}) {
     const fetchAndCache = async (showSpinner: boolean) => {
         if (showSpinner) setIsRefreshing(true);
         try {
-            const res = await fetch("/api/suggestions", { credentials: "include" });
+            const res = await fetch("/api/recommendations", { credentials: "include" });
             const data = await res.json();
             if (data.success && Array.isArray(data.data?.destinations)) {
                 setDestinations(data.data.destinations);

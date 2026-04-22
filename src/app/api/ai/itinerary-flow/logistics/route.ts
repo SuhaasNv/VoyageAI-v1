@@ -7,6 +7,7 @@ import { formatErrorResponse } from "@/lib/errors";
 import { logStructured } from "@/infrastructure/logger";
 import { LogisticsAgent } from "@/agents/logistics/logisticsAgent";
 import { formatAIResponse } from "@/lib/ai/explainability";
+import { computeConfidence, lowGeoFraction } from "@/lib/ai/confidence";
 
 const ActivitySchema = z.object({
     name: z.string(),
@@ -83,7 +84,16 @@ export async function POST(req: NextRequest) {
 
             return successResponse(
                 formatAIResponse(result, {
-                    confidence: 1.0,
+                    // DETERMINISTIC: pure geographic clustering + time-slot heuristics — no LLM.
+                    // Penalties: low geo-confidence reduces routing accuracy;
+                    //            warnings indicate the scheduler hit edge cases.
+                    confidence: computeConfidence({
+                        mode: "DETERMINISTIC",
+                        lowGeoFraction: lowGeoFraction(
+                            body.data.days.flatMap((d) => d.activities)
+                        ),
+                        hasWarnings: Boolean(result.warnings?.length),
+                    }),
                     reasoning: `Scheduled ${totalActivities} activities across ${body.data.days.length} days using ` +
                         `deterministic geographic clustering and time-slot heuristics. ` +
                         `Hotel selected: ${result.selectedHotel?.name ?? "TBD"}. No LLM involved.`,

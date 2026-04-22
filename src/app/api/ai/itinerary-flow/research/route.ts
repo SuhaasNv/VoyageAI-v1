@@ -7,6 +7,7 @@ import { formatErrorResponse } from "@/lib/errors";
 import { logStructured } from "@/infrastructure/logger";
 import { ResearchAgent } from "@/agents/research/researchAgent";
 import { formatAIResponse } from "@/lib/ai/explainability";
+import { computeConfidence, lowGeoFraction } from "@/lib/ai/confidence";
 
 const DaySchema = z.object({
     day: z.number(),
@@ -65,7 +66,16 @@ export async function POST(req: NextRequest) {
                 formatAIResponse(
                     { ...result, groundedActivitiesCount: usedBrightData ? totalActivitiesCount : 0, totalActivitiesCount },
                     {
-                        confidence: usedBrightData ? 0.95 : 0.72,
+                        // LLM_GROUNDED when Bright Data succeeded (external web data verified the output).
+                        // LLM_ONLY when Bright Data was unavailable and we fell back to LLM knowledge.
+                        // Penalty: low geocode confidence on ≥ 50% of activities degrades score further.
+                        confidence: computeConfidence({
+                            mode: usedBrightData ? "LLM_GROUNDED" : "LLM_ONLY",
+                            usedFallback: !usedBrightData,
+                            lowGeoFraction: lowGeoFraction(
+                                result.days.flatMap((d) => d.activities)
+                            ),
+                        }),
                         reasoning: `Researched ${body.data.destination}: found ${result.hotels.length} hotel option(s) and ` +
                             `${totalActivitiesCount} activities across ${result.days.length} days. ` +
                             `Data source: ${usedBrightData ? "Bright Data web search (real-world verified)" : "LLM knowledge base (unverified — Bright Data unavailable)"}.`,
