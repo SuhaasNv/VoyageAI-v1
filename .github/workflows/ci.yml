@@ -672,8 +672,23 @@ jobs:
           name: safety-tests-${{ github.sha }}
           path: reports/
 
+      - name: Download data validation report
+        uses: actions/download-artifact@v4
+        with:
+          name: data-validation-${{ github.sha }}
+          path: reports/
+
+      - name: Download model validation report
+        uses: actions/download-artifact@v4
+        with:
+          name: model-validation-${{ github.sha }}
+          path: reports/
+
       - name: Run offline evaluation
-        run: npx tsx scripts/ci/evaluate.ts
+        env:
+          LLM_PROVIDER: mock
+          TSX_TSCONFIG_PATH: ./tsconfig.scripts.json
+        run: node_modules/.bin/tsx scripts/ci/evaluate.ts
 
       - name: Upload evaluation report
         if: always()
