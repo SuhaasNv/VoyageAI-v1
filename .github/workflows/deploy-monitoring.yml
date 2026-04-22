@@ -276,11 +276,23 @@ jobs:
           # Trim leading whitespace added by heredoc indentation
           sed -i 's/^[[:space:]]*//' monitoring/.env
 
-      - name: Inject scrape secret into prometheus.yml
+      - name: Inject secrets into config files
         shell: bash
         run: |
+          # Prometheus — substitute scrape bearer token
           sed -i "s|\${METRICS_SCRAPE_SECRET}|${{ secrets.METRICS_SCRAPE_SECRET }}|g" \
             monitoring/prometheus.yml
+
+          # Alertmanager — inject Slack webhook only when the secret is set.
+          # An empty URL causes alertmanager to crash with "unsupported scheme".
+          SLACK_URL="${{ secrets.SLACK_WEBHOOK_URL }}"
+          if [[ -n "$SLACK_URL" ]]; then
+            WEBHOOK_BLOCK="    webhook_configs:\n      - url: \"$SLACK_URL\"\n        send_resolved: true"
+            sed -i "s|    # SLACK_WEBHOOK_PLACEHOLDER|$WEBHOOK_BLOCK|g" monitoring/alertmanager.yml
+          else
+            # Remove the placeholder comment so alertmanager config stays valid
+            sed -i '/# SLACK_WEBHOOK_PLACEHOLDER/d' monitoring/alertmanager.yml
+          fi
 
       - name: Rsync monitoring files to Droplet
         shell: bash
