@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Sparkles, Send, Loader2, CheckCircle2, X, Edit2, ArrowRight, MapPin, Calendar, DollarSign, Heart } from "lucide-react";
+import { Sparkles, Send, Loader2, CheckCircle2, X, Edit2, ArrowRight, MapPin, Calendar, DollarSign, Heart, RefreshCw } from "lucide-react";
 import { ensureCsrfToken, type Trip } from "@/lib/api";
 
 interface ExtractedTripParams {
@@ -34,6 +34,8 @@ const SAMPLE_PROMPTS = [
     "Family trip to Kyoto this autumn",
     "Relaxing beach holiday in Maldives",
 ];
+
+const STYLE_OPTIONS = ["relaxed", "creative", "exciting", "luxury", "budget"] as const;
 
 export function AICommandPalette({ onTripCreated, onFlowStart }: AICommandPaletteProps) {
     const [isOpen, setIsOpen] = useState(false);
@@ -157,6 +159,11 @@ export function AICommandPalette({ onTripCreated, onFlowStart }: AICommandPalett
         }
     };
 
+    const updateParams = (patch: Partial<ExtractedTripParams>) =>
+        setExtractedParams(prev => (prev ? { ...prev, ...patch } : prev));
+
+    const canCreate = !!extractedParams?.destination?.trim() && !isLoading;
+
     const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
@@ -256,69 +263,134 @@ export function AICommandPalette({ onTripCreated, onFlowStart }: AICommandPalett
                             </div>
                         ) : (
                             <div className="relative mt-2 flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-300">
-                                {/* Immersive Preview Card */}
+                                {/* Editable Preview Card */}
                                 <div className="relative rounded-xl border border-white/10 overflow-hidden bg-zinc-900/50">
                                     {extractedParams.imageUrl ? (
-                                        <div className="absolute inset-0 z-0">
-                                            <img src={extractedParams.imageUrl} alt={extractedParams.destination} className="w-full h-full object-cover opacity-60 mix-blend-overlay" />
-                                            <div className="absolute inset-0 bg-gradient-to-t from-[#0D1117] via-[#0D1117]/80 to-transparent" />
+                                        <div className="absolute inset-0 z-0 pointer-events-none">
+                                            <img src={extractedParams.imageUrl} alt={extractedParams.destination ?? ""} className="w-full h-full object-cover opacity-40 mix-blend-overlay" />
+                                            <div className="absolute inset-0 bg-gradient-to-t from-[#0D1117] via-[#0D1117]/85 to-[#0D1117]/40" />
                                         </div>
                                     ) : (
-                                        <div className="absolute inset-0 z-0 bg-gradient-to-br from-indigo-500/10 to-purple-500/10" />
+                                        <div className="absolute inset-0 z-0 pointer-events-none bg-gradient-to-br from-indigo-500/10 to-purple-500/10" />
                                     )}
 
-                                    <div className="relative z-10 p-5">
-                                        <h3 className="text-xl font-bold text-white mb-4 drop-shadow-md">
-                                            {extractedParams.destination}
-                                        </h3>
-                                        
-                                        <div className="grid grid-cols-2 gap-y-4 gap-x-2 text-sm">
-                                            <div className="flex items-start gap-2 text-zinc-300">
-                                                <Calendar className="w-4 h-4 text-[#10B981] shrink-0 mt-0.5" />
-                                                <div>
-                                                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold">Dates</p>
-                                                    <p className="font-medium text-white shadow-sm">{extractedParams.startDate} to {extractedParams.endDate}</p>
+                                    <div className="relative z-10 p-5 flex flex-col gap-4">
+                                        {/* Destination */}
+                                        <div className="flex items-center gap-2">
+                                            <MapPin className="w-4 h-4 text-[#10B981] shrink-0" />
+                                            <input
+                                                type="text"
+                                                value={extractedParams.destination ?? ""}
+                                                onChange={e => updateParams({ destination: e.target.value })}
+                                                placeholder="Destination"
+                                                disabled={isLoading}
+                                                className="flex-1 bg-transparent border-0 border-b border-white/10 focus:border-[#10B981]/50 focus:outline-none text-lg font-bold text-white placeholder:text-zinc-500 pb-1 drop-shadow-md"
+                                            />
+                                        </div>
+
+                                        {/* Dates */}
+                                        <div className="flex items-start gap-2">
+                                            <Calendar className="w-4 h-4 text-[#10B981] shrink-0 mt-2" />
+                                            <div className="flex-1 flex flex-col gap-1">
+                                                <p className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">Dates</p>
+                                                <div className="flex items-center gap-2">
+                                                    <input
+                                                        type="date"
+                                                        value={extractedParams.startDate ?? ""}
+                                                        onChange={e => updateParams({ startDate: e.target.value })}
+                                                        disabled={isLoading}
+                                                        style={{ colorScheme: "dark" }}
+                                                        className="flex-1 bg-black/40 border border-white/10 focus:border-[#10B981]/50 focus:outline-none rounded-lg px-2.5 py-1.5 text-sm text-white"
+                                                    />
+                                                    <span className="text-zinc-500 text-xs">to</span>
+                                                    <input
+                                                        type="date"
+                                                        value={extractedParams.endDate ?? ""}
+                                                        onChange={e => updateParams({ endDate: e.target.value })}
+                                                        disabled={isLoading}
+                                                        style={{ colorScheme: "dark" }}
+                                                        className="flex-1 bg-black/40 border border-white/10 focus:border-[#10B981]/50 focus:outline-none rounded-lg px-2.5 py-1.5 text-sm text-white"
+                                                    />
                                                 </div>
                                             </div>
-                                            
-                                            <div className="flex items-start gap-2 text-zinc-300">
-                                                <DollarSign className="w-4 h-4 text-[#10B981] shrink-0 mt-0.5" />
-                                                <div>
-                                                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold">Budget</p>
-                                                    <p className="font-medium text-white shadow-sm">
-                                                        {extractedParams.budget?.total ? `${extractedParams.budget.total} ${extractedParams.budget.currency || 'USD'}` : 'Flexible'}
-                                                    </p>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-3">
+                                            {/* Budget */}
+                                            <div className="flex items-start gap-2">
+                                                <DollarSign className="w-4 h-4 text-[#10B981] shrink-0 mt-2" />
+                                                <div className="flex-1 flex flex-col gap-1">
+                                                    <p className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">Budget (USD)</p>
+                                                    <input
+                                                        type="number"
+                                                        min={0}
+                                                        value={extractedParams.budget?.total ?? ""}
+                                                        onChange={e => {
+                                                            const raw = e.target.value;
+                                                            if (raw === "") {
+                                                                updateParams({ budget: undefined });
+                                                            } else {
+                                                                const n = Number(raw);
+                                                                updateParams({ budget: { total: n, currency: extractedParams.budget?.currency ?? "USD" } });
+                                                            }
+                                                        }}
+                                                        placeholder="Not specified"
+                                                        disabled={isLoading}
+                                                        className="w-full bg-black/40 border border-white/10 focus:border-[#10B981]/50 focus:outline-none rounded-lg px-2.5 py-1.5 text-sm text-white placeholder:text-zinc-500"
+                                                    />
                                                 </div>
                                             </div>
 
-                                            <div className="flex items-start gap-2 text-zinc-300 col-span-2">
-                                                <Heart className="w-4 h-4 text-[#10B981] shrink-0 mt-0.5" />
-                                                <div>
-                                                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold">Vibe & Style</p>
-                                                    <p className="font-medium text-white shadow-sm capitalize">{extractedParams.style || 'Balanced'}</p>
+                                            {/* Style */}
+                                            <div className="flex items-start gap-2">
+                                                <Heart className="w-4 h-4 text-[#10B981] shrink-0 mt-2" />
+                                                <div className="flex-1 flex flex-col gap-1">
+                                                    <p className="text-[10px] text-zinc-400 uppercase tracking-wider font-bold">Vibe</p>
+                                                    <select
+                                                        value={extractedParams.style ?? ""}
+                                                        onChange={e => updateParams({ style: e.target.value || undefined })}
+                                                        disabled={isLoading}
+                                                        style={{ colorScheme: "dark" }}
+                                                        className="w-full bg-black/40 border border-white/10 focus:border-[#10B981]/50 focus:outline-none rounded-lg px-2.5 py-1.5 text-sm text-white capitalize"
+                                                    >
+                                                        <option value="">Flexible</option>
+                                                        {STYLE_OPTIONS.map(s => (
+                                                            <option key={s} value={s}>{s}</option>
+                                                        ))}
+                                                    </select>
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
 
-                                <div className="flex items-center gap-3 mt-2 z-10 relative">
+                                {/* Actions */}
+                                <div className="flex items-center gap-2 mt-1 z-10 relative">
                                     <button
                                         onClick={() => setExtractedParams(null)}
                                         disabled={isLoading}
-                                        className="flex-1 px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white text-sm font-semibold rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                                        className="px-3.5 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white text-sm font-semibold rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
                                     >
                                         <Edit2 className="w-4 h-4 text-zinc-400" />
                                         Edit Prompt
                                     </button>
                                     <button
+                                        onClick={handleExtract}
+                                        disabled={!prompt.trim() || isLoading}
+                                        title="Re-run AI with your original prompt"
+                                        className="px-3.5 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white text-sm font-semibold rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                                    >
+                                        <RefreshCw className={`w-4 h-4 text-zinc-400 ${isLoading ? "animate-spin" : ""}`} />
+                                        Regenerate
+                                    </button>
+                                    <button
                                         onClick={handleCreateTrip}
-                                        disabled={isLoading}
-                                        className="flex-[2] px-4 py-2.5 bg-[#10B981] hover:bg-[#10B981]/90 text-black text-sm font-bold rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                                        disabled={!canCreate}
+                                        className="flex-1 px-4 py-2.5 bg-[#10B981] hover:bg-[#10B981]/90 text-black text-sm font-bold rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                         {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : (
                                             <>
-                                                Start Planning
+                                                Create Trip
                                                 <ArrowRight className="w-4 h-4" />
                                             </>
                                         )}
