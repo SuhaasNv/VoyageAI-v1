@@ -234,14 +234,16 @@ export async function POST(req: NextRequest): Promise<Response> {
                 async start(controller) {
                     const reader = openaiRes.body!.getReader();
                     const decoder = new TextDecoder();
+                    let sseBuffer = "";
 
                     try {
                         while (true) {
                             const { done, value } = await reader.read();
                             if (done) break;
 
-                            const chunk = decoder.decode(value, { stream: true });
-                            const lines = chunk.split("\n");
+                            sseBuffer += decoder.decode(value, { stream: true });
+                            const lines = sseBuffer.split("\n");
+                            sseBuffer = lines.pop() ?? "";
 
                             for (const line of lines) {
                                 if (!line.startsWith("data: ")) continue;

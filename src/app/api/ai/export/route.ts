@@ -6,11 +6,11 @@
  *
  * Auth required. Rate-limited per user + format.
  * Response: text/plain; charset=utf-8 (streaming chunks).
+ * Provider: OpenAI gpt-4o-mini (streaming SSE).
  */
 
 import { NextRequest } from "next/server";
 import { z } from "zod";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getAuthContext } from "@/lib/api/request";
 import { runWithRequestContext } from "@/lib/requestContext";
 import { checkRateLimit } from "@/security/rateLimiter";
@@ -20,7 +20,6 @@ import { sanitizeUserInput } from "@/security/safety";
 
 export const runtime = "nodejs";
 
-const EXPORT_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.0-flash-exp";
 const EXPORT_TIMEOUT_MS = 30_000;
 
 // ─── Request schema ───────────────────────────────────────────────────────────
@@ -143,10 +142,16 @@ export async function POST(req: NextRequest): Promise<Response> {
                 break;
         }
 
-        const apiKey = process.env.GEMINI_API_KEY;
-        if (!apiKey) {
-            return new Response("AI service unavailable", { status: 503 });
+        const openaiKey = process.env.OPENAI_API_KEY;
+        if (!openaiKey) {
+            return new Response(
+                JSON.stringify({ success: false, error: { message: "AI service unavailable" } }),
+                { status: 503, headers: { "Content-Type": "application/json" } }
+            );
         }
+
+        // Token budgets per format
+        const maxTokens = format === "blog" ? 1400 : format === "summary" ? 250 : 500;
 
         const abort = new AbortController();
         const timeout = setTimeout(() => abort.abort(), EXPORT_TIMEOUT_MS);
@@ -155,15 +160,56 @@ export async function POST(req: NextRequest): Promise<Response> {
         const stream = new ReadableStream({
             async start(controller) {
                 try {
-                    const genAI  = new GoogleGenerativeAI(apiKey);
-                    const model  = genAI.getGenerativeModel({ model: EXPORT_MODEL });
-                    const result = await model.generateContentStream(prompt);
+                    const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+                        method: "POST",
+                        headers: {
+                            Authorization: `Bearer ${openaiKey}`,
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({
+                            model: "gpt-4o-mini",
+                            messages: [{ role: "user" as const, content: prompt }],
+                            temperature: 0.75,
+                            max_tokens: maxTokens,
+                            stream: true,
+                        }),
+                        signal: abort.signal,
+                    });
 
-                    for await (const chunk of result.stream) {
-                        if (abort.signal.aborted) break;
-                        const text = chunk.text();
-                        if (text) controller.enqueue(encoder.encode(text));
+                    if (!openaiRes.ok || !openaiRes.body) {
+                        const errBody = await openaiRes.text().catch(() => "");
+                        throw new Error(`OpenAI error ${openaiRes.status}: ${errBody.slice(0, 200)}`);
                     }
+
+                    const reader  = openaiRes.body.getReader();
+                    const decoder = new TextDecoder();
+                    // Buffer ensures we never split a "data: ..." line across chunks.
+                    let sseBuffer = "";
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+
+                        sseBuffer += decoder.decode(value, { stream: true });
+                        const lines = sseBuffer.split("\n");
+                        // The last element may be an incomplete line — keep it in the buffer.
+                        sseBuffer = lines.pop() ?? "";
+
+                        for (const line of lines) {
+                            if (!line.startsWith("data: ")) continue;
+                            const data = line.slice(6).trim();
+                            if (data === "[DONE]") continue;
+                            try {
+                                const parsed = JSON.parse(data) as {
+                                    choices?: Array<{ delta?: { content?: string } }>;
+                                };
+                                const token = parsed.choices?.[0]?.delta?.content;
+                                if (token) controller.enqueue(encoder.encode(token));
+                            } catch { /* skip malformed SSE chunks */ }
+                        }
+                    }
+
+                    reader.releaseLock();
                 } catch (err) {
                     logError("[Export] stream error", err);
                     controller.enqueue(encoder.encode("\n\n[Generation failed. Please try again.]"));

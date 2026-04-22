@@ -136,18 +136,38 @@ function CopyButton({ text, className = "" }: { text: string; className?: string
 // ─── AI content tab ───────────────────────────────────────────────────────────
 
 interface AITabProps {
-    tripId:      string;
-    format:      "instagram" | "blog" | "summary";
-    destination: string;
-    dates:       string;
-    days:        number;
-    budget?:     number;
-    currency?:   string;
-    highlights:  string[];
+    tripId:        string;
+    format:        "instagram" | "blog" | "summary";
+    destination:   string;
+    dates:         string;
+    days:          number;
+    budget?:       number;
+    currency?:     string;
+    highlights:    string[];
+    // Lifted so content survives tab switches
+    savedContent:  string;
+    onSaveContent: (v: string) => void;
 }
 
-function AIContentTab({ tripId, format, destination, dates, days, budget, currency, highlights }: AITabProps) {
-    const [content, setContent]   = useState("");
+/** Strip markdown syntax so plain-text copies look clean in the textarea. */
+function stripMarkdown(text: string): string {
+    return text
+        // ### Heading / ## Heading → HEADING (uppercased, blank line before)
+        .replace(/^#{1,6}\s+(.+)$/gm, (_, t: string) => `\n${t.toUpperCase()}`)
+        // **bold** or __bold__ → plain text
+        .replace(/\*\*(.+?)\*\*/g, "$1")
+        .replace(/__(.+?)__/g, "$1")
+        // *italic* or _italic_ → plain text
+        .replace(/\*(.+?)\*/g, "$1")
+        .replace(/_(.+?)_/g, "$1")
+        // Remove leading blank lines
+        .replace(/^\n+/, "")
+        // Collapse 3+ consecutive newlines to 2
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+}
+
+function AIContentTab({ tripId, format, destination, dates, days, budget, currency, highlights, savedContent, onSaveContent }: AITabProps) {
     const [loading, setLoading]   = useState(false);
     const [error, setError]       = useState<string | null>(null);
     const readerRef               = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
@@ -155,7 +175,7 @@ function AIContentTab({ tripId, format, destination, dates, days, budget, curren
     const generate = useCallback(async () => {
         if (loading) return;
         setLoading(true);
-        setContent("");
+        onSaveContent("");
         setError(null);
 
         try {
@@ -184,17 +204,26 @@ function AIContentTab({ tripId, format, destination, dates, days, budget, curren
                 const { done, value } = await reader.read();
                 if (done) break;
                 text += decoder.decode(value, { stream: true });
-                setContent(text);
+                // Only display clean content while streaming; skip error sentinel lines
+                if (!text.trimStart().startsWith("[Generation failed")) {
+                    onSaveContent(format === "blog" ? stripMarkdown(text) : text);
+                }
+            }
+
+            // If the entire streamed content is an error sentinel, surface it properly
+            if (text.trimStart().startsWith("[Generation failed")) {
+                onSaveContent("");
+                throw new Error("Generation failed. Please try again.");
             }
         } catch (err) {
-            setError(err instanceof Error ? err.message : "Generation failed");
+            setError(err instanceof Error ? err.message : "Generation failed. Please try again.");
         } finally {
             setLoading(false);
             readerRef.current = null;
         }
-    }, [format, destination, dates, days, budget, currency, highlights, loading]);
+    }, [format, destination, dates, days, budget, currency, highlights, loading, onSaveContent]);
 
-    void tripId; // used for rate-limiting context but sent via auth header
+    void tripId;
 
     return (
         <div className="space-y-3">
@@ -206,9 +235,9 @@ function AIContentTab({ tripId, format, destination, dates, days, budget, curren
                     className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-500/15 border border-violet-500/25 text-violet-300 hover:bg-violet-500/25 text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                    {loading ? "Generating…" : content ? "Regenerate" : "Generate with AI"}
+                    {loading ? "Generating…" : savedContent ? "Regenerate" : "Generate with AI"}
                 </button>
-                {content && <CopyButton text={content} />}
+                {savedContent && <CopyButton text={savedContent} />}
             </div>
 
             {/* Error */}
@@ -219,13 +248,13 @@ function AIContentTab({ tripId, format, destination, dates, days, budget, curren
             {/* Content area */}
             <div className="relative">
                 <textarea
-                    value={content}
-                    onChange={e => setContent(e.target.value)}
+                    value={savedContent}
+                    onChange={e => onSaveContent(e.target.value)}
                     placeholder={loading ? "" : `Click "Generate with AI" to create your ${format === "instagram" ? "Instagram caption" : format === "blog" ? "travel blog post" : "trip summary"}…`}
                     rows={format === "blog" ? 18 : format === "summary" ? 5 : 8}
-                    className="w-full bg-white/[0.03] border border-white/[0.07] rounded-xl px-4 py-3 text-sm text-white/80 placeholder-white/20 resize-none focus:outline-none focus:border-violet-500/40 leading-relaxed font-mono"
+                    className="w-full bg-white/[0.03] border border-white/[0.07] rounded-xl px-4 py-3 text-sm text-white/80 placeholder-white/20 resize-none focus:outline-none focus:border-violet-500/40 leading-relaxed font-mono scrollbar-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 />
-                {loading && content.length === 0 && (
+                {loading && savedContent.length === 0 && (
                     <div className="absolute inset-0 flex items-center justify-center">
                         <div className="flex items-center gap-2 text-white/30 text-sm">
                             <Loader2 className="w-4 h-4 animate-spin" />
@@ -238,9 +267,9 @@ function AIContentTab({ tripId, format, destination, dates, days, budget, curren
                 )}
             </div>
 
-            {format === "instagram" && content && (
+            {format === "instagram" && savedContent && (
                 <p className="text-[10px] text-white/25 text-right tabular-nums">
-                    {content.length} characters
+                    {savedContent.length} characters
                 </p>
             )}
         </div>
@@ -452,6 +481,12 @@ const TABS: { id: Tab; label: string; icon: React.ComponentType<{ className?: st
 
 export function ExportDrawer({ trip, rawItinerary, onClose }: ExportDrawerProps) {
     const [activeTab, setActiveTab] = useState<Tab>("share");
+    // Lifted AI content — persists when switching between Instagram/Blog/Summary tabs
+    const [aiContent, setAiContent] = useState<Record<"instagram" | "blog" | "summary", string>>({
+        instagram: "",
+        blog:      "",
+        summary:   "",
+    });
 
     // Build highlights for AI generation: top 2 activities per day
     const highlights: string[] = rawItinerary?.days.flatMap(day =>
@@ -548,6 +583,8 @@ export function ExportDrawer({ trip, rawItinerary, onClose }: ExportDrawerProps)
                                     budget={trip.budget.total}
                                     currency={trip.budget.currency}
                                     highlights={highlights}
+                                    savedContent={aiContent.instagram}
+                                    onSaveContent={v => setAiContent(prev => ({ ...prev, instagram: v }))}
                                 />
                             )}
                             {activeTab === "blog" && (
@@ -565,6 +602,8 @@ export function ExportDrawer({ trip, rawItinerary, onClose }: ExportDrawerProps)
                                         budget={trip.budget.total}
                                         currency={trip.budget.currency}
                                         highlights={highlights}
+                                        savedContent={aiContent.blog}
+                                        onSaveContent={v => setAiContent(prev => ({ ...prev, blog: v }))}
                                     />
                                 </div>
                             )}
@@ -580,6 +619,8 @@ export function ExportDrawer({ trip, rawItinerary, onClose }: ExportDrawerProps)
                                         budget={trip.budget.total}
                                         currency={trip.budget.currency}
                                         highlights={highlights}
+                                        savedContent={aiContent.summary}
+                                        onSaveContent={v => setAiContent(prev => ({ ...prev, summary: v }))}
                                     />
                                 </div>
                             )}
