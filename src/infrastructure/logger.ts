@@ -77,6 +77,7 @@ export type LogStep =
     | "low_hotel_count"
     | "restaurant_enriched"
     | "meals_injected"
+    | "restaurant_reclassified"
     | "food_cost_computed"
     | "ledger_built"
     | "budget_analysis"

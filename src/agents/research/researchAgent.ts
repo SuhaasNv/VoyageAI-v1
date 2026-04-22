@@ -584,26 +584,41 @@ async function attachCoordinates(
 
     // ── Step 4: attach coords + geoConfidence ─────────────────────────────
     // Map GeocodedPlace.precision → GeoConfidence on the entity.
-    // Falls back to centroid with geoConfidence: "low" when geocoding failed.
-    const resolveCoord = (name: string): { lat: number; lng: number; geoConfidence: GeoConfidence } => {
+    // When geocoding fails OR returns a low-confidence (centroid-cluster) hit,
+    // leave lat/lng undefined so downstream (TripMap) can re-geocode or skip.
+    // Previously this collapsed every failed place to the centroid coord,
+    // which caused all markers to stack at one location after dedup.
+    const resolveCoord = (name: string): { lat?: number; lng?: number; geoConfidence: GeoConfidence } => {
         const geocoded = coordMap.get(name);
-        if (geocoded && isValidGeoCoord(geocoded.lat, geocoded.lng)) {
+        if (
+            geocoded &&
+            geocoded.precision !== "low" &&
+            isValidGeoCoord(geocoded.lat, geocoded.lng)
+        ) {
             return { lat: geocoded.lat, lng: geocoded.lng, geoConfidence: geocoded.precision };
         }
-        return { lat: fallback.lat, lng: fallback.lng, geoConfidence: "low" };
+        return { geoConfidence: "low" };
     };
 
     const days = result.days.map((day) => ({
         ...day,
         activities: day.activities.map((act) => {
             const { lat, lng, geoConfidence } = resolveCoord(act.name);
-            return { ...act, lat, lng, geoConfidence };
+            return {
+                ...act,
+                ...(typeof lat === "number" && typeof lng === "number" ? { lat, lng } : {}),
+                geoConfidence,
+            };
         }),
     }));
 
     const hotels = result.hotels.map((hotel) => {
         const { lat, lng, geoConfidence } = resolveCoord(hotel.name);
-        return { ...hotel, lat, lng, geoConfidence };
+        return {
+            ...hotel,
+            ...(typeof lat === "number" && typeof lng === "number" ? { lat, lng } : {}),
+            geoConfidence,
+        };
     });
 
     return { ...result, days, hotels };

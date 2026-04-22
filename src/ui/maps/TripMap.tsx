@@ -4,54 +4,15 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import type mapboxgl from "mapbox-gl";
 import type { Itinerary } from "@/lib/ai/schemas";
 import type { ItineraryEvent } from "@/lib/services/trips";
-import { Map as MapIcon, RefreshCw, Loader2 } from "lucide-react";
+import { Map as MapIcon, RefreshCw } from "lucide-react";
 
-// ─── Geocoding cache (module-level — persists across renders) ──────────────────
-
-const GEO_CACHE_MAX = 100;
-const geocodeCache = new Map<string, { lat: number; lng: number } | null>();
-
-function normalizeGeoKey(name: string): string {
-    return name.toLowerCase().trim();
-}
-
-function geocachePut(key: string, value: { lat: number; lng: number } | null): void {
-    if (geocodeCache.size >= GEO_CACHE_MAX) {
-        const oldest = geocodeCache.keys().next().value;
-        if (oldest !== undefined) geocodeCache.delete(oldest);
-    }
-    geocodeCache.set(key, value);
-}
-
-async function geocodeLocation(
-    query: string,
-    token: string
-): Promise<{ lat: number; lng: number } | null> {
-    const key = normalizeGeoKey(query);
-    if (geocodeCache.has(key)) return geocodeCache.get(key)!;
-    try {
-        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(key)}.json?access_token=${token}&limit=1`;
-        const res = await fetch(url);
-        if (!res.ok) { geocachePut(key, null); return null; }
-        const data = await res.json() as { features?: Array<{ center: [number, number] }> };
-        const center = data.features?.[0]?.center;
-        if (
-            center &&
-            typeof center[0] === "number" && isFinite(center[0]) &&
-            typeof center[1] === "number" && isFinite(center[1]) &&
-            (center[0] !== 0 || center[1] !== 0)
-        ) {
-            const result = { lng: center[0], lat: center[1] };
-            geocachePut(key, result);
-            return result;
-        }
-        geocachePut(key, null);
-        return null;
-    } catch {
-        geocachePut(key, null);
-        return null;
-    }
-}
+// The map has NO client-side geocoding fallback: the server-side Research
+// Agent is the single source of truth for coordinates. It applies country
+// filtering, proximity bias, and anti-centroid rejection that the browser
+// Mapbox Geocoding endpoint (`limit=1`, no country) cannot match — a naive
+// client retry for a low-confidence activity would frequently return the
+// nearest airport or major hotel, producing bogus markers. Activities without
+// valid server-side coordinates are simply omitted from the map.
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -70,6 +31,37 @@ interface TripMapProps {
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
+
+/** Haversine km between two (lat,lng). Used for outlier rejection. */
+function kmBetween(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+    const R = 6371;
+    const dLat = (b.lat - a.lat) * Math.PI / 180;
+    const dLng = (b.lng - a.lng) * Math.PI / 180;
+    const s =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) *
+        Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
+}
+
+/** Maximum distance from the group's geographic median before a point is treated as a cross-country outlier. */
+const GEO_OUTLIER_KM = 500;
+
+/**
+ * Rejects points more than GEO_OUTLIER_KM from the median of the group —
+ * catches wrong-country geocodes (e.g. "Dubai Marina" matching a place in
+ * Yemen) so they never make it into the route LineString.
+ */
+function rejectGeoOutliers(points: MapPoint[]): MapPoint[] {
+    if (points.length < 3) return points;
+    const sortedLat = [...points].map((p) => p.lat).sort((a, b) => a - b);
+    const sortedLng = [...points].map((p) => p.lng).sort((a, b) => a - b);
+    const median = {
+        lat: sortedLat[Math.floor(sortedLat.length / 2)]!,
+        lng: sortedLng[Math.floor(sortedLng.length / 2)]!,
+    };
+    return points.filter((p) => kmBetween(p, median) <= GEO_OUTLIER_KM);
+}
 
 function extractPoints(
     raw: Itinerary | null,
@@ -95,15 +87,18 @@ function extractPoints(
             const lat = act.location?.lat;
             const lng = act.location?.lng;
             if (
-                typeof lat === "number" && isFinite(lat) && lat !== 0 &&
-                typeof lng === "number" && isFinite(lng) && lng !== 0
+                typeof lat === "number" && isFinite(lat) &&
+                typeof lng === "number" && isFinite(lng) &&
+                !(lat === 0 && lng === 0) &&
+                lat >= -90 && lat <= 90 &&
+                lng >= -180 && lng <= 180
             ) {
                 points.push({ lat, lng, label: act.name, index: idx });
             }
             idx++;
         }
     }
-    return points;
+    return rejectGeoOutliers(points);
 }
 
 function makeMarkerEl(index: number, isFirst: boolean): HTMLDivElement {
@@ -217,10 +212,8 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
     const redrawDebounceRef = useRef<NodeJS.Timeout | null>(null);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [retryCount, setRetryCount] = useState(0);
-    const [hasGeocodedPoints, setHasGeocodedPoints] = useState(false);
-    /** Bumps when the Mapbox style finishes loading so geocode/redraw can run (was skipped if data arrived first). */
+    /** Bumps when the Mapbox style finishes loading so redraw can run (was skipped if data arrived first). */
     const [mapStyleReady, setMapStyleReady] = useState(false);
-    const [geocodeInFlight, setGeocodeInFlight] = useState(false);
 
     eventOrderRef.current = eventOrder;
 
@@ -295,9 +288,14 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
             markersRef.current.push(marker);
         });
 
-        // Route line — deduplicated + midpoint-smoothed for long segments
+        // Route line — only draw when we have ≥2 distinct valid coordinates.
+        // Prevents a degenerate 1-point LineString and keeps the map clean when
+        // the current day has just one geocoded stop.
         const rawCoords = deduped.map((p) => [p.lng, p.lat] as [number, number]);
         const coords = smoothRoute(rawCoords);
+        if (coords.length < 2) {
+            return;
+        }
         map.addSource("route", {
             type: "geojson",
             data: { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: [coords[0]] } },
@@ -597,79 +595,51 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
             clearTimeout(navTimer);
         };
          
-    }, [focusedActivity, hasGeocodedPoints, rawItinerary, selectedDay]);
+    }, [focusedActivity, rawItinerary, selectedDay]);
 
     // ─── Redraw when data / day / order changes (debounced 150 ms) ───────────
+    // No client-side geocoding fallback: markers come *only* from server-side
+    // coordinates. Activities without valid coords are logged and skipped.
     useEffect(() => {
         if (redrawDebounceRef.current) clearTimeout(redrawDebounceRef.current);
-        let cancelledGeocode = false;
 
         redrawDebounceRef.current = setTimeout(() => {
             const map = mapRef.current;
             const mbox = mboxRef.current;
             if (!map || !mbox || !map.isStyleLoaded()) return;
 
-            setHasGeocodedPoints(false);
-            const points = extractPoints(rawItinerary, selectedDay, eventOrder);
+            const points = extractPoints(rawItinerary, selectedDay, eventOrderRef.current);
             draw(map, mbox, points);
 
-            if (!token || !rawItinerary?.days) return;
-
-            const days = selectedDay
-                ? rawItinerary.days.filter((d) => d.day === selectedDay)
-                : rawItinerary.days;
-
-            const dest = rawItinerary.destination?.trim() || "";
-
-            const missing: Array<{ query: string; label: string; idx: number }> = [];
-            let globalIdx = 0;
-            for (const day of days) {
-                for (const act of day.activities) {
-                    const lat = act.location?.lat;
-                    const lng = act.location?.lng;
-                    const valid =
-                        typeof lat === "number" && isFinite(lat) && lat !== 0 &&
-                        typeof lng === "number" && isFinite(lng) && lng !== 0;
-                    if (!valid) {
-                        const label = act.name;
-                        const addr = act.location?.address?.trim();
-                        const locName = act.location?.name?.trim();
-                        const query = addr
-                            ? (dest ? `${addr}, ${dest}` : addr)
-                            : (dest && label ? `${label}, ${dest}` : label || locName || "");
-                        if (query) missing.push({ query, label, idx: globalIdx });
+            if (rawItinerary?.days) {
+                const days = selectedDay
+                    ? rawItinerary.days.filter((d) => d.day === selectedDay)
+                    : rawItinerary.days;
+                const skipped: string[] = [];
+                for (const day of days) {
+                    for (const act of day.activities) {
+                        const lat = act.location?.lat;
+                        const lng = act.location?.lng;
+                        const valid =
+                            typeof lat === "number" && isFinite(lat) && lat !== 0 &&
+                            typeof lng === "number" && isFinite(lng) && lng !== 0 &&
+                            lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+                        if (!valid) skipped.push(`day ${day.day}: ${act.name}`);
                     }
-                    globalIdx++;
+                }
+                if (skipped.length > 0) {
+                    console.warn(
+                        `[TripMap] ${skipped.length} activities skipped — no valid server-side coordinates:`,
+                        skipped,
+                    );
                 }
             }
-
-            if (missing.length === 0) return;
-
-            setGeocodeInFlight(true);
-            (async () => {
-                const geocoded: MapPoint[] = [];
-                try {
-                    for (const { query, label, idx } of missing) {
-                        if (cancelledGeocode) return;
-                        const coords = await geocodeLocation(query, token);
-                        if (coords) geocoded.push({ ...coords, label, index: idx });
-                    }
-                    if (!cancelledGeocode && geocoded.length > 0 && mapRef.current && mboxRef.current) {
-                        setHasGeocodedPoints(true);
-                        const enriched = [...points, ...geocoded].sort((a, b) => a.index - b.index);
-                        draw(mapRef.current, mboxRef.current, enriched);
-                    }
-                } finally {
-                    setGeocodeInFlight(false);
-                }
-            })();
         }, 150);
 
         return () => {
             if (redrawDebounceRef.current) clearTimeout(redrawDebounceRef.current);
-            cancelledGeocode = true;
         };
-    }, [rawItinerary, selectedDay, eventOrder, draw, token, mapStyleReady]);
+    }, [rawItinerary, selectedDay, eventOrder, draw, mapStyleReady]);
 
     // ─── Handle Resize when visibility changes ────────────────────────────────
     useEffect(() => {
@@ -732,19 +702,7 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
                 </div>
             )}
 
-            {rawItinerary && !hasCoords && !hasGeocodedPoints && geocodeInFlight && !loadError && (
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                    <div className="bg-black/60 backdrop-blur-xl border border-white/10 rounded-2xl px-6 py-5 flex flex-col items-center gap-2 text-center max-w-xs shadow-2xl">
-                        <Loader2 className="w-6 h-6 text-emerald-400/80 animate-spin" />
-                        <p className="text-sm font-semibold text-white">Locating places on the map…</p>
-                        <p className="text-xs text-zinc-400 leading-relaxed">
-                            Resolving addresses for your itinerary stops.
-                        </p>
-                    </div>
-                </div>
-            )}
-
-            {rawItinerary && !hasCoords && !hasGeocodedPoints && !geocodeInFlight && !loadError && (
+            {rawItinerary && !hasCoords && !loadError && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
                     <div className="bg-black/60 backdrop-blur-xl border border-white/10 rounded-2xl px-6 py-5 flex flex-col items-center gap-2 text-center max-w-xs shadow-2xl">
                         <MapIcon className="w-6 h-6 text-zinc-400" />

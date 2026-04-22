@@ -197,6 +197,112 @@ export function parseStoredItinerary(row: PrismaItinerary): ItineraryDay[] {
     }
 }
 
+// ─── Itinerary validation (geo + time + naming) ──────────────────────────────
+
+/**
+ * Patterns that indicate a placeholder/vague activity name. The research
+ * prompt bans these; this regex is the runtime enforcement.
+ */
+const PLACEHOLDER_NAME_PATTERNS: RegExp[] = [
+    /\blocal restaurant\b/i,
+    /\blocal market\b/i,
+    /\blocal cafe\b/i,
+    /\bnice restaurant\b/i,
+    /\bgood restaurant\b/i,
+    /\btraditional restaurant\b/i,
+    /\b(breakfast|lunch|dinner|restaurant) near\b/i,
+    /\bcity tour\b/i,
+];
+
+/** Strict meal-time windows used by validation. */
+const MEAL_WINDOWS: Record<"breakfast" | "lunch" | "dinner", { start: number; end: number }> = {
+    breakfast: { start:  7 * 60, end: 10 * 60 },
+    lunch:     { start: 12 * 60, end: 15 * 60 },
+    dinner:    { start: 18 * 60, end: 22 * 60 },
+};
+
+function hhmmToMinutes(hhmm: string | undefined): number | null {
+    if (!hhmm || !/^\d{2}:\d{2}$/.test(hhmm)) return null;
+    const [h, m] = hhmm.split(":").map(Number);
+    return (h ?? 0) * 60 + (m ?? 0);
+}
+
+/**
+ * Validates an activity against geo + time + naming rules.
+ * Returns null when the activity passes. Returns a warning string when it
+ * fails in a recoverable way (activity is kept; issue surfaced to the user).
+ */
+function validateActivity(
+    name: string,
+    type: string,
+    startTime: string | undefined,
+    lat: number | undefined,
+    lng: number | undefined,
+    day: number,
+): string | null {
+    // Name: reject placeholders
+    for (const pattern of PLACEHOLDER_NAME_PATTERNS) {
+        if (pattern.test(name)) {
+            return `Day ${day}: "${name}" looks like a placeholder — a real venue name is preferred.`;
+        }
+    }
+
+    // Geo: reject impossible coordinates
+    if (typeof lat === "number" && typeof lng === "number") {
+        if (lat === 0 && lng === 0) {
+            return `Day ${day}: "${name}" has null-island coordinates (0,0).`;
+        }
+        if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+            return `Day ${day}: "${name}" has out-of-range coordinates (${lat}, ${lng}).`;
+        }
+    }
+
+    // Time: reject restaurants outside meal windows
+    if (type === "restaurant" || type === "dining") {
+        const mins = hhmmToMinutes(startTime);
+        if (mins !== null) {
+            const inAnyWindow =
+                (mins >= MEAL_WINDOWS.breakfast.start && mins <= MEAL_WINDOWS.breakfast.end) ||
+                (mins >= MEAL_WINDOWS.lunch.start     && mins <= MEAL_WINDOWS.lunch.end) ||
+                (mins >= MEAL_WINDOWS.dinner.start    && mins <= MEAL_WINDOWS.dinner.end);
+            if (!inAnyWindow) {
+                return `Day ${day}: "${name}" is a restaurant scheduled at ${startTime}, outside normal meal times.`;
+            }
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Runs the full validation pipeline over an AIItinerary, returning any
+ * warnings found. Non-destructive — activities are kept so the user still
+ * sees a complete itinerary; issues are surfaced via warnings.
+ */
+export function validateItinerary(itinerary: AIItinerary): string[] {
+    const warnings: string[] = [];
+    for (const day of itinerary.days) {
+        let prevStart: number | null = null;
+        for (const activity of day.activities) {
+            const name  = activity.name;
+            const type  = activity.type;
+            const start = activity.startTime;
+            const lat   = activity.location?.lat;
+            const lng   = activity.location?.lng;
+
+            const warn = validateActivity(name, type, start, lat, lng, day.day);
+            if (warn) warnings.push(warn);
+
+            const mins = hhmmToMinutes(start);
+            if (prevStart !== null && mins !== null && mins < prevStart) {
+                warnings.push(`Day ${day.day}: "${name}" at ${start} is out of chronological order.`);
+            }
+            if (mins !== null) prevStart = mins;
+        }
+    }
+    return warnings;
+}
+
 // ─── SafeTripContext → Itinerary adapter ──────────────────────────────────────
 
 /**
@@ -257,7 +363,13 @@ export function safeTripContextToItinerary(
                 duration_minutes: 90,
                 location: {
                     name: act.name,
-                    ...(typeof act.lat === "number" && typeof act.lng === "number"
+                    // Only forward coords when geocoding was confident. Low-confidence
+                    // entries were replaced by the hotel/centroid fallback in the
+                    // Logistics Agent — propagating those would stack every marker
+                    // on one spot on the map. Leaving them undefined lets TripMap
+                    // do its own client-side geocode with a proper "name, dest" query.
+                    ...(act.geoConfidence !== "low" &&
+                        typeof act.lat === "number" && typeof act.lng === "number"
                         ? { lat: act.lat, lng: act.lng }
                         : {}),
                 },

@@ -242,18 +242,10 @@ export function LogisticsStage({
                                                     <div className="space-y-2">
                                                         {acts.map((act: ScheduledActivity, i: number) => {
                                                             if (act.isMeal && act.mealType) {
-                                                                // ── Meal Card ───────────────────────
-                                                                // "Local Restaurant" is the generic fallback name from
-                                                                // injectMeals(). Substitute a destination-aware label
-                                                                // at render time so users see something meaningful.
-                                                                const displayMeal =
-                                                                    act.name === "Local Restaurant"
-                                                                        ? { ...act, name: `${input.destination} Dining` }
-                                                                        : act;
                                                                 return (
                                                                     <MealCard
                                                                         key={`meal-${activeDay}-${act.mealType}-${i}`}
-                                                                        meal={displayMeal}
+                                                                        meal={act}
                                                                     />
                                                                 );
                                                             }
