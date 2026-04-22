@@ -1695,7 +1695,7 @@ jobs:
         if: |
           needs.deploy-nextjs-do.result == 'success' &&
           needs.health-check.result == 'success'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
