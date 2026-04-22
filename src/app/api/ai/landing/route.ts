@@ -19,7 +19,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { getAuthContext, getClientIp } from "@/lib/api/request";
+import { getAuthContext, getClientIp, validateBody } from "@/lib/api/request";
 import { runWithRequestContext } from "@/lib/requestContext";
 import { checkRateLimit, RateLimitError } from "@/security/rateLimiter";
 import { getRedisClient, hasRedisConfig } from "@/lib/redis";
@@ -41,6 +41,15 @@ const LANDING_RATE_LIMIT = 15;
 const LANDING_RATE_WINDOW_SEC = 60;
 const GENERATION_TIMEOUT_MS = 25_000;
 const PREVIEW_TIMEOUT_MS = 30_000;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Request schema
+// ─────────────────────────────────────────────────────────────────────────────
+
+const LandingBodySchema = z.object({
+    prompt:    z.string().min(1).max(2000),
+    sessionId: z.string().max(64).optional(),
+});
 
 const CREATE_TRIP_PATTERN =
     /\b(create|plan|trip\s+to|book\s+a?\s*trip|make\s+a\s+trip|itinerary\s+(?:for|to)|\d+[- ]?days?\s+(?:trip|itinerary|visit|in\b)|plan\s+a\s+trip|weekend\s+in|(?:a\s+)?week\s+in)\b/i;
@@ -163,31 +172,16 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // ── Parse body ────────────────────────────────────────────────────────
-        let rawPrompt: string;
-        let rawSessionId: string | undefined;
-        try {
-            const body = await req.json();
-            rawPrompt = typeof body?.prompt === "string" ? body.prompt : "";
-            // Optional client-supplied session key (stable UUID per page visit).
-            // Falls back to IP-scoped key when absent.
-            rawSessionId =
-                typeof body?.sessionId === "string" && body.sessionId.length > 0
-                    ? body.sessionId.slice(0, 64)
-                    : undefined;
-        } catch {
-            return NextResponse.json(
-                { success: false, error: { code: "BAD_REQUEST", message: "Request body must be valid JSON." } },
-                { status: 400 }
-            );
-        }
+        // ── Parse + validate body ─────────────────────────────────────────────
+        const bodyResult = await validateBody(req, LandingBodySchema);
+        if (!bodyResult.ok) return bodyResult.response;
 
         // Session identifier: client-supplied UUID preferred over IP fallback.
         // IP fallback is good enough for dev/demo; in production the client always sends sessionId.
-        const sessionId = rawSessionId ?? `ip:${ip}`;
+        const sessionId = bodyResult.data.sessionId ?? `ip:${ip}`;
 
         // ── Sanitize ──────────────────────────────────────────────────────────
-        const prompt = sanitizeUserInput(rawPrompt);
+        const prompt = sanitizeUserInput(bodyResult.data.prompt);
         if (!prompt) {
             return NextResponse.json(
                 { success: false, error: { code: "INVALID_INPUT", message: "Prompt contains disallowed content." } },

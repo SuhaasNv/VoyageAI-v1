@@ -16,6 +16,7 @@ import { WifiOff, ArrowLeft } from "lucide-react";
 import confetti from "canvas-confetti";
 
 import { useFlowState } from "./useFlowState";
+import { FlowErrorBoundary } from "./FlowErrorBoundary";
 import { AgentPipelineHeader } from "./AgentPipelineHeader";
 import { TripDNASummaryStrip } from "./TripDNASummaryStrip";
 import { ExplainabilityPanel } from "./ExplainabilityPanel";
@@ -30,6 +31,35 @@ import { SafetyStage } from "./stages/SafetyStage";
 import type { FlowInput, FlowStage, TripContext, EnrichedTripContext, OptimizedTripContext, BudgetedTripContext, ApplyChange } from "./types";
 import type { CostBreakdown, CostLineItem } from "@/agents/budget/budgetAgent";
 import { ensureCsrfToken } from "@/lib/api";
+
+// ─── Error humanizer ─────────────────────────────────────────────────────────
+//
+// Translates raw API / network error strings into friendly, actionable messages
+// so technical jargon never surfaces to the user during a demo or live session.
+
+function humanizeError(raw: string | undefined | null): string {
+    const msg = (raw ?? "").toLowerCase();
+    if (msg.includes("timeout") || msg.includes("aborted") || msg.includes("signal"))
+        return "The agent took too long to respond. Complex trips occasionally need more time — try again.";
+    if (msg.includes("rate limit") || msg.includes("429"))
+        return "Too many requests at once. Wait a few seconds and try again.";
+    if (msg.includes("failed to fetch") || msg.includes("networkerror") || msg.includes("network") || msg.includes("econnreset"))
+        return "Network issue detected. Check your connection, then try again.";
+    if (msg.includes("401") || msg.includes("unauthorized"))
+        return "Session expired. Refresh the page and sign in again.";
+    if (msg.includes("403"))
+        return "Access denied. If this persists, try refreshing the page.";
+    if (msg.includes("500") || msg.includes("server error"))
+        return "The server hit an issue. This usually resolves on a second attempt.";
+    if (msg.includes("invalid json") || msg.includes("schema") || msg.includes("validation") || msg.includes("parse"))
+        return "The AI returned an unexpected response. Retrying normally fixes this.";
+    if (msg.includes("destination is too vague"))
+        return "The destination is too vague. Try a more specific city or region (e.g. 'Bali, Indonesia').";
+    // Generic fallback — always actionable
+    return "Something went wrong. Try again — it usually works on the second attempt.";
+}
+
+// ─── Component props ──────────────────────────────────────────────────────────
 
 interface ItineraryCreationFlowProps {
     tripId: string;
@@ -222,7 +252,8 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
             const { _meta, ...result } = data as { _meta: { durationMs: number; confidence: number; dataSources: string[]; decisionsLog: string[] } } & TripContext;
             dispatch({ type: "SET_PLANNER", result, meta: _meta });
         } catch (err) {
-            dispatch({ type: "SET_ERROR", error: (err as Error).message });
+            const friendly = humanizeError((err as Error).message);
+            dispatch({ type: "SET_ERROR", error: friendly });
             showToast("Planner agent failed. Try again.", "error");
         } finally {
             setIsLoading(false);
@@ -247,7 +278,8 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
             const { _meta, _dataSource: _ds, ...result } = data;
             dispatch({ type: "SET_RESEARCH", result, meta: _meta });
         } catch (err) {
-            dispatch({ type: "SET_ERROR", error: (err as Error).message });
+            const friendly = humanizeError((err as Error).message);
+            dispatch({ type: "SET_ERROR", error: friendly });
             showToast("Research agent failed. Try again.", "error");
         } finally {
             setIsLoading(false);
@@ -262,7 +294,8 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
             const { _meta, ...result } = data;
             dispatch({ type: "SET_LOGISTICS", result, meta: _meta });
         } catch (err) {
-            dispatch({ type: "SET_ERROR", error: (err as Error).message });
+            const friendly = humanizeError((err as Error).message);
+            dispatch({ type: "SET_ERROR", error: friendly });
             showToast("Logistics agent failed. Try again.", "error");
         } finally {
             setIsLoading(false);
@@ -277,7 +310,8 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
             const { _meta, ...result } = data;
             dispatch({ type: "SET_BUDGET", result, meta: _meta });
         } catch (err) {
-            dispatch({ type: "SET_ERROR", error: (err as Error).message });
+            const friendly = humanizeError((err as Error).message);
+            dispatch({ type: "SET_ERROR", error: friendly });
             showToast("Budget agent failed. Try again.", "error");
         } finally {
             setIsLoading(false);
@@ -292,7 +326,8 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
             const { _meta, ...result } = data;
             dispatch({ type: "SET_SAFETY", result, meta: _meta });
         } catch (err) {
-            dispatch({ type: "SET_ERROR", error: (err as Error).message });
+            const friendly = humanizeError((err as Error).message);
+            dispatch({ type: "SET_ERROR", error: friendly });
             showToast("Safety agent failed. Try again.", "error");
         } finally {
             setIsLoading(false);
@@ -534,100 +569,110 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
                             >
                                 {/* Planner */}
                                 {displayStage === "planner" && (
-                                    <PlannerStage
-                                        input={flowInput}
-                                        result={state.plannerResult}
-                                        meta={state.meta.planner ?? null}
-                                        isLoading={isViewMode ? false : isLoading}
-                                        error={isViewMode ? null : state.error}
-                                        onApprove={isViewMode
-                                            ? () => setViewingStage(null)
-                                            : (result) => { dispatch({ type: "ADVANCE" }); runResearch(result); }}
-                                        onAdjust={() => {}}
-                                        onExplain={() => openExplain("planner")}
-                                        onRetry={() => runPlanner()}
-                                        onSubmitFeedback={(fb) => runPlanner(fb)}
-                                    />
+                                    <FlowErrorBoundary stage="Planner" onReset={() => runPlanner()}>
+                                        <PlannerStage
+                                            input={flowInput}
+                                            result={state.plannerResult}
+                                            meta={state.meta.planner ?? null}
+                                            isLoading={isViewMode ? false : isLoading}
+                                            error={isViewMode ? null : state.error}
+                                            onApprove={isViewMode
+                                                ? () => setViewingStage(null)
+                                                : (result) => { dispatch({ type: "ADVANCE" }); runResearch(result); }}
+                                            onAdjust={() => {}}
+                                            onExplain={() => openExplain("planner")}
+                                            onRetry={() => runPlanner()}
+                                            onSubmitFeedback={(fb) => runPlanner(fb)}
+                                        />
+                                    </FlowErrorBoundary>
                                 )}
 
                                 {/* Research */}
                                 {displayStage === "research" && (
-                                    <ResearchStage
-                                        input={flowInput}
-                                        result={state.researchResult}
-                                        meta={state.meta.research ?? null}
-                                        isLoading={isViewMode ? false : isLoading}
-                                        error={isViewMode ? null : state.error}
-                                        onApprove={isViewMode
-                                            ? () => setViewingStage(null)
-                                            : (result) => { dispatch({ type: "ADVANCE" }); runLogistics(result); }}
-                                        onAdjust={() => {}}
-                                        onExplain={() => openExplain("research")}
-                                        onRetry={() => state.plannerResult && runResearch(state.plannerResult)}
-                                        onSubmitFeedback={(fb) => state.plannerResult && runResearch(state.plannerResult, fb)}
-                                    />
+                                    <FlowErrorBoundary stage="Research" onReset={() => state.plannerResult && runResearch(state.plannerResult)}>
+                                        <ResearchStage
+                                            input={flowInput}
+                                            result={state.researchResult}
+                                            meta={state.meta.research ?? null}
+                                            isLoading={isViewMode ? false : isLoading}
+                                            error={isViewMode ? null : state.error}
+                                            onApprove={isViewMode
+                                                ? () => setViewingStage(null)
+                                                : (result) => { dispatch({ type: "ADVANCE" }); runLogistics(result); }}
+                                            onAdjust={() => {}}
+                                            onExplain={() => openExplain("research")}
+                                            onRetry={() => state.plannerResult && runResearch(state.plannerResult)}
+                                            onSubmitFeedback={(fb) => state.plannerResult && runResearch(state.plannerResult, fb)}
+                                        />
+                                    </FlowErrorBoundary>
                                 )}
 
                                 {/* Logistics */}
                                 {displayStage === "logistics" && (
-                                    <LogisticsStage
-                                        input={flowInput}
-                                        result={state.logisticsResult}
-                                        meta={state.meta.logistics ?? null}
-                                        isLoading={isViewMode ? false : isLoading}
-                                        error={isViewMode ? null : state.error}
-                                        onApprove={isViewMode
-                                            ? () => setViewingStage(null)
-                                            : (result) => { dispatch({ type: "ADVANCE" }); runBudget(result); }}
-                                        onAdjust={() => {}}
-                                        onExplain={() => openExplain("logistics")}
-                                        onRetry={() => state.researchResult && runLogistics(state.researchResult)}
-                                        onReoptimize={() => state.researchResult && runLogistics(state.researchResult)}
-                                    />
+                                    <FlowErrorBoundary stage="Logistics" onReset={() => state.researchResult && runLogistics(state.researchResult)}>
+                                        <LogisticsStage
+                                            input={flowInput}
+                                            result={state.logisticsResult}
+                                            meta={state.meta.logistics ?? null}
+                                            isLoading={isViewMode ? false : isLoading}
+                                            error={isViewMode ? null : state.error}
+                                            onApprove={isViewMode
+                                                ? () => setViewingStage(null)
+                                                : (result) => { dispatch({ type: "ADVANCE" }); runBudget(result); }}
+                                            onAdjust={() => {}}
+                                            onExplain={() => openExplain("logistics")}
+                                            onRetry={() => state.researchResult && runLogistics(state.researchResult)}
+                                            onReoptimize={() => state.researchResult && runLogistics(state.researchResult)}
+                                        />
+                                    </FlowErrorBoundary>
                                 )}
 
                                 {/* Budget */}
                                 {displayStage === "budget" && (
-                                    <BudgetStage
-                                        input={flowInput}
-                                        result={state.budgetResult}
-                                        meta={state.meta.budget ?? null}
-                                        isLoading={isViewMode ? false : isLoading}
-                                        error={isViewMode ? null : state.error}
-                                        onApprove={isViewMode
-                                            ? () => setViewingStage(null)
-                                            : (result) => { dispatch({ type: "ADVANCE" }); runSafety(result); }}
-                                        onAdjust={() => state.researchResult && runLogistics(state.researchResult)}
-                                        onExplain={() => openExplain("budget")}
-                                        onRetry={() => state.logisticsResult && runBudget(state.logisticsResult)}
-                                        onApplyPlan={handleApplyPlan}
-                                        isApplyingPlan={isApplyingPlan}
-                                        applyPlanWarnings={applyPlanWarnings}
-                                        appliedSavings={appliedSavings}
-                                        applyChanges={applyChanges}
-                                    />
+                                    <FlowErrorBoundary stage="Budget" onReset={() => state.logisticsResult && runBudget(state.logisticsResult)}>
+                                        <BudgetStage
+                                            input={flowInput}
+                                            result={state.budgetResult}
+                                            meta={state.meta.budget ?? null}
+                                            isLoading={isViewMode ? false : isLoading}
+                                            error={isViewMode ? null : state.error}
+                                            onApprove={isViewMode
+                                                ? () => setViewingStage(null)
+                                                : (result) => { dispatch({ type: "ADVANCE" }); runSafety(result); }}
+                                            onAdjust={() => state.researchResult && runLogistics(state.researchResult)}
+                                            onExplain={() => openExplain("budget")}
+                                            onRetry={() => state.logisticsResult && runBudget(state.logisticsResult)}
+                                            onApplyPlan={handleApplyPlan}
+                                            isApplyingPlan={isApplyingPlan}
+                                            applyPlanWarnings={applyPlanWarnings}
+                                            appliedSavings={appliedSavings}
+                                            applyChanges={applyChanges}
+                                        />
+                                    </FlowErrorBoundary>
                                 )}
 
                                 {/* Safety */}
                                 {(displayStage === "safety" || displayStage === "saved") && (
-                                    <SafetyStage
-                                        input={flowInput}
-                                        result={state.safetyResult}
-                                        meta={state.meta.safety ?? null}
-                                        isLoading={isViewMode ? false : isLoading}
-                                        error={isViewMode ? null : state.error}
-                                        onApprove={isViewMode ? () => setViewingStage(null) : () => handleSave()}
-                                        onAdjust={() => {}}
-                                        onExplain={() => openExplain("safety")}
-                                        onRetry={() => state.budgetResult && runSafety(state.budgetResult)}
-                                        onSave={isViewMode ? () => setViewingStage(null) : handleSave}
-                                        onRedo={() => {
-                                            resetAllAndRestart();
-                                            showToast("Starting over — Run #" + (state.iteration + 1), "info");
-                                            setTimeout(() => runPlanner(), 100);
-                                        }}
-                                        isSaving={isViewMode ? false : isSaving}
-                                    />
+                                    <FlowErrorBoundary stage="Safety" onReset={() => state.budgetResult && runSafety(state.budgetResult)}>
+                                        <SafetyStage
+                                            input={flowInput}
+                                            result={state.safetyResult}
+                                            meta={state.meta.safety ?? null}
+                                            isLoading={isViewMode ? false : isLoading}
+                                            error={isViewMode ? null : state.error}
+                                            onApprove={isViewMode ? () => setViewingStage(null) : () => handleSave()}
+                                            onAdjust={() => {}}
+                                            onExplain={() => openExplain("safety")}
+                                            onRetry={() => state.budgetResult && runSafety(state.budgetResult)}
+                                            onSave={isViewMode ? () => setViewingStage(null) : handleSave}
+                                            onRedo={() => {
+                                                resetAllAndRestart();
+                                                showToast("Starting over — Run #" + (state.iteration + 1), "info");
+                                                setTimeout(() => runPlanner(), 100);
+                                            }}
+                                            isSaving={isViewMode ? false : isSaving}
+                                        />
+                                    </FlowErrorBoundary>
                                 )}
                             </motion.div>
                         </AnimatePresence>

@@ -15,6 +15,7 @@ import { runWithRequestContext } from "@/lib/requestContext";
 import { logError } from "@/infrastructure/logger";
 import { checkRateLimit } from "@/security/rateLimiter";
 import { formatErrorResponse } from "@/lib/errors";
+import { formatAIResponse } from "@/lib/ai/explainability";
 import {
     suggestionsCacheKey,
     getSuggestionsCached,
@@ -43,6 +44,7 @@ export async function GET(req: NextRequest) {
         if (!auth) return unauthorizedResponse();
 
         try {
+            const t0 = Date.now();
             await checkRateLimit(`ai:${auth.user.sub}:suggestions`);
 
             // Fetch Travel DNA — Redis-cached to avoid DB round-trip on every AI call.
@@ -144,7 +146,30 @@ export async function GET(req: NextRequest) {
                 destinationsPromise,
             ]);
 
-            return successResponse({ tripSuggestions, destinations });
+            const totalSuggestions = tripSuggestions.reduce((s, t) => s + t.suggestions.length, 0);
+            const durationMs = Date.now() - t0;
+
+            return successResponse(
+                formatAIResponse(
+                    { tripSuggestions, destinations },
+                    {
+                        // Trip suggestions are LLM-generated (0.85).
+                        // Destination recommendations are deterministic DNA scoring (0.95).
+                        // Blended weight reflects the mix.
+                        confidence: tripSuggestions.length > 0 ? 0.88 : 0.95,
+                        reasoning: `Generated ${totalSuggestions} trip suggestion(s) via LLM, ranked by Travel DNA preferences. ` +
+                            `Produced ${destinations.length} destination recommendation(s) via deterministic DNA scoring ` +
+                            `against a curated pool of ${destinations.length > 0 ? "global destinations" : "no visited matches"}.`,
+                        sources: [
+                            "Travel DNA preferences",
+                            "Trip history",
+                            "LLM (trip suggestions)",
+                            "Curated destination pool",
+                        ],
+                        durationMs,
+                    }
+                )
+            );
         } catch (err) {
             logError("[GET /api/suggestions] Error", err);
             return formatErrorResponse(err);

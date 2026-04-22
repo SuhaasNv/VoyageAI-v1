@@ -778,7 +778,22 @@ export function BudgetStage({
                         </button>
                     </div>
                 </motion.div>
-            ) : null}
+            ) : (
+                <motion.div
+                    key="warmup"
+                    variants={stageContentVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={stageContentTransition}
+                >
+                    <AgentThinkingCard
+                        stage="budget"
+                        destination={input.destination}
+                        skeleton={<BudgetSkeleton />}
+                    />
+                </motion.div>
+            )}
         </AnimatePresence>
     );
 }

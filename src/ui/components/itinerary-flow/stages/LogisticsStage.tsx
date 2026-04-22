@@ -421,7 +421,22 @@ export function LogisticsStage({
                         </AnimatePresence>
                     </div>
                 </motion.div>
-            ) : null}
+            ) : (
+                <motion.div
+                    key="warmup"
+                    variants={stageContentVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    transition={stageContentTransition}
+                >
+                    <AgentThinkingCard
+                        stage="logistics"
+                        destination={input.destination}
+                        skeleton={<LogisticsSkeleton />}
+                    />
+                </motion.div>
+            )}
         </AnimatePresence>
     );
 }

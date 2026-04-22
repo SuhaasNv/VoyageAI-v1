@@ -8,6 +8,10 @@
  *                      before the rest of the stack parses or persists it.
  *                      Throws AIServiceError on violation so callers can rely on
  *                      the existing error-handling paths unchanged.
+ *
+ * sanitizeHTML       — escapes HTML special characters so user/AI-derived
+ *                      strings can be safely interpolated into HTML templates
+ *                      (e.g. print windows, exported documents).
  */
 
 import { AIServiceError } from "@/lib/ai/llm";
@@ -81,6 +85,25 @@ export function sanitizeUserInput(raw: string): string {
 
     // 5. Normalise whitespace
     return text.replace(/\s{2,}/g, " ").trim();
+}
+
+/**
+ * Escapes HTML special characters so a string can be safely embedded inside
+ * an HTML template without creating injection or XSS opportunities.
+ *
+ * Use this before every `${value}` interpolation in buildPrintHTML or any
+ * other place that writes user/AI-derived content into raw HTML strings.
+ *
+ * Always returns a string — never null.
+ */
+export function sanitizeHTML(raw: string | null | undefined): string {
+    if (!raw) return "";
+    return raw
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#x27;");
 }
 
 /**

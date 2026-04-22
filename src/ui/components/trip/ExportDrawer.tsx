@@ -34,35 +34,52 @@ interface ExportDrawerProps {
     onClose:      () => void;
 }
 
+// ─── HTML escaping ────────────────────────────────────────────────────────────
+
+/**
+ * Escapes HTML special characters so user/AI-derived strings cannot inject
+ * markup or scripts into the print window created by buildPrintHTML().
+ */
+function escapeHTML(value: string | number | null | undefined): string {
+    if (value === null || value === undefined) return "";
+    const s = String(value);
+    return s
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#x27;");
+}
+
 // ─── PDF generation (client-side print window) ────────────────────────────────
 
 function buildPrintHTML(trip: TripDTO, itinerary: Itinerary | null): string {
     const days = itinerary?.days ?? [];
     const dayRows = days.map(day => {
         const acts = day.activities.map(a =>
-            `<tr><td style="padding:6px 12px;color:#aaa;font-size:11px;">${a.startTime}</td>
-             <td style="padding:6px 12px;font-size:12px;">${a.name}</td>
-             <td style="padding:6px 12px;color:#aaa;font-size:11px;">${a.location.name}</td>
-             <td style="padding:6px 12px;color:#aaa;font-size:11px;text-align:right;">${trip.budget.currency} ${a.estimatedCost.amount.toFixed(0)}</td></tr>`
+            `<tr><td style="padding:6px 12px;color:#aaa;font-size:11px;">${escapeHTML(a.startTime)}</td>
+             <td style="padding:6px 12px;font-size:12px;">${escapeHTML(a.name)}</td>
+             <td style="padding:6px 12px;color:#aaa;font-size:11px;">${escapeHTML(a.location.name)}</td>
+             <td style="padding:6px 12px;color:#aaa;font-size:11px;text-align:right;">${escapeHTML(trip.budget.currency)} ${escapeHTML(a.estimatedCost.amount.toFixed(0))}</td></tr>`
         ).join("");
         return `<div style="margin-bottom:24px;break-inside:avoid;">
             <div style="background:#1a1f29;padding:10px 16px;border-radius:8px;margin-bottom:8px;">
-                <span style="font-size:11px;font-weight:700;color:#10B981;margin-right:8px;">DAY ${day.day}</span>
-                <span style="font-weight:600;">${day.theme}</span>
-                <span style="color:#666;font-size:11px;margin-left:8px;">${day.date}</span>
+                <span style="font-size:11px;font-weight:700;color:#10B981;margin-right:8px;">DAY ${escapeHTML(day.day)}</span>
+                <span style="font-weight:600;">${escapeHTML(day.theme)}</span>
+                <span style="color:#666;font-size:11px;margin-left:8px;">${escapeHTML(day.date)}</span>
             </div>
             <table style="width:100%;border-collapse:collapse;">${acts}</table>
         </div>`;
     }).join("");
 
     const totalCost = itinerary?.totalEstimatedCost.amount ?? 0;
-    const insights  = (itinerary?.aiInsights ?? []).slice(0, 3).map(i => `<li style="margin-bottom:6px;color:#aaa;font-size:12px;">${i}</li>`).join("");
+    const insights  = (itinerary?.aiInsights ?? []).slice(0, 3).map(i => `<li style="margin-bottom:6px;color:#aaa;font-size:12px;">${escapeHTML(i)}</li>`).join("");
 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>${trip.destination} — VoyageAI</title>
+<title>${escapeHTML(trip.destination)} — VoyageAI</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background:#0d1117; color:#e6edf3; padding:32px 40px; max-width:960px; margin:0 auto; }
@@ -77,12 +94,12 @@ function buildPrintHTML(trip: TripDTO, itinerary: Itinerary | null): string {
   <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:24px;border-bottom:1px solid #21262d;margin-bottom:32px;">
     <div>
       <div style="font-size:11px;font-weight:700;letter-spacing:.1em;color:#10B981;text-transform:uppercase;margin-bottom:4px;">AI-Crafted Travel Plan</div>
-      <h1 style="font-size:28px;font-weight:900;letter-spacing:-1px;">${trip.destination}</h1>
-      <p style="color:#666;margin-top:4px;font-size:13px;">${trip.dates} &nbsp;·&nbsp; ${days.length} days</p>
+      <h1 style="font-size:28px;font-weight:900;letter-spacing:-1px;">${escapeHTML(trip.destination)}</h1>
+      <p style="color:#666;margin-top:4px;font-size:13px;">${escapeHTML(trip.dates)} &nbsp;·&nbsp; ${escapeHTML(days.length)} days</p>
     </div>
     <div style="text-align:right;">
       <div style="font-size:11px;color:#666;text-transform:uppercase;font-weight:700;letter-spacing:.08em;">Est. Cost</div>
-      <div style="font-size:22px;font-weight:900;color:#10B981;">${trip.budget.currency} ${totalCost.toLocaleString()}</div>
+      <div style="font-size:22px;font-weight:900;color:#10B981;">${escapeHTML(trip.budget.currency)} ${escapeHTML(totalCost.toLocaleString())}</div>
     </div>
   </div>
 
