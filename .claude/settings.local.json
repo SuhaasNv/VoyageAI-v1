@@ -37,7 +37,9 @@
       "Bash(pkill -f \"next dev\")",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(npm test *)",
+      "Bash(npx vitest *)"
     ]
   }
 }

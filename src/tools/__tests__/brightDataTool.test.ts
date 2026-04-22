@@ -36,6 +36,7 @@ function makeResults(count: number, prefix = "Result") {
 describe("brightDataTool — no API key", () => {
     beforeEach(() => {
         vi.stubEnv("BRIGHT_DATA_API_KEY", "");
+        vi.stubEnv("REDIS_URL", "");
     });
 
     afterEach(() => {
@@ -60,6 +61,9 @@ describe("brightDataTool — no API key", () => {
 describe("brightDataTool — successful responses", () => {
     beforeEach(() => {
         vi.stubEnv("BRIGHT_DATA_API_KEY", "test-api-key");
+        // Disable Redis so the Bright Data cache layer is a no-op. Without this,
+        // tests share state through real Redis and bleed results into one another.
+        vi.stubEnv("REDIS_URL", "");
     });
 
     afterEach(() => {
@@ -155,6 +159,9 @@ describe("brightDataTool — successful responses", () => {
 describe("brightDataTool — error handling", () => {
     beforeEach(() => {
         vi.stubEnv("BRIGHT_DATA_API_KEY", "test-api-key");
+        // Disable Redis so the Bright Data cache layer is a no-op. Without this,
+        // tests share state through real Redis and bleed results into one another.
+        vi.stubEnv("REDIS_URL", "");
     });
 
     afterEach(() => {
@@ -192,6 +199,9 @@ describe("brightDataTool — error handling", () => {
 describe("brightDataTool — empty result caching", () => {
     beforeEach(() => {
         vi.stubEnv("BRIGHT_DATA_API_KEY", "test-api-key");
+        // Disable Redis so the Bright Data cache layer is a no-op. Without this,
+        // tests share state through real Redis and bleed results into one another.
+        vi.stubEnv("REDIS_URL", "");
     });
 
     afterEach(() => {
@@ -228,6 +238,9 @@ describe("brightDataTool — empty result caching", () => {
 describe("brightDataTool — timeout retry", () => {
     beforeEach(() => {
         vi.stubEnv("BRIGHT_DATA_API_KEY", "test-api-key");
+        // Disable Redis so the Bright Data cache layer is a no-op. Without this,
+        // tests share state through real Redis and bleed results into one another.
+        vi.stubEnv("REDIS_URL", "");
         vi.useFakeTimers();
     });
 
@@ -283,6 +296,9 @@ describe("brightDataTool — timeout retry", () => {
 describe("brightDataTool — stale cache background refresh", () => {
     beforeEach(() => {
         vi.stubEnv("BRIGHT_DATA_API_KEY", "test-api-key");
+        // Disable Redis so the Bright Data cache layer is a no-op. Without this,
+        // tests share state through real Redis and bleed results into one another.
+        vi.stubEnv("REDIS_URL", "");
     });
 
     afterEach(() => {
