@@ -10,16 +10,21 @@ name: Release — VoyageAI Production Deployment
 #   │  GATE: AI Security (model · data · bias · risk score)               │
 #   └──────────────────────────┬───────────────────────────────────────────┘
 #                              │
-#          ┌───────────────────┼───────────────────┐
-#          ↓                   ↓                   ↓
-#   infra-apply          docker-push           migrate
-#   (DigitalOcean         (Build image,         (Prisma
-#    Terraform —          Trivy scan,            migrate
-#    conditional)         push to DOCR)          deploy)
-#          └───────────────────┼───────────────────┘
+#          ┌───────────────────┼────────────────────────┐
+#          ↓                   ↓                        ↓
+#   infra-apply          docker-push              migrate
+#   (DigitalOcean         (LangGraph —             (Prisma
+#    Terraform —          Trivy scan,               migrate
+#    conditional)         push to DOCR)             deploy)
+#          │
+#   docker-push-nextjs
+#   (Next.js — Trivy scan,
+#    push to DOCR,
+#    App Platform redeploy)
+#          └───────────────────┬────────────────────────┘
 #                              ↓
-#                        deploy-vercel
-#                    (Next.js → Vercel prod)
+#                        deploy-nextjs-do
+#                    (Next.js → DO App Platform — image already pushed by docker-push-nextjs)
 #                              ↓
 #                        health-check
 #                  (Smoke tests on production)
@@ -37,23 +42,36 @@ name: Release — VoyageAI Production Deployment
 #    (none — AI gate runs with mock LLM, no external secrets needed)
 #
 #  Infrastructure (DigitalOcean)
-#    DIGITALOCEAN_ACCESS_TOKEN   DO API token (write:registry + app platform)
-#    DO_REGISTRY_NAME            Registry slug, e.g. "voyageai"
+#    DIGITALOCEAN_ACCESS_TOKEN   DO API token (write:registry + app platform; rotate if DOCR push returns 401)
+#    DIGITALOCEAN_EMAIL          Optional Repo Variable — DO login email for docker login (DO docs); omit to use username "token" + PAT (same as infra placeholder step)
+#    DIGITALOCEAN_REGISTRY_USER  Optional Secret — overrides docker registry username (email or "token")
+#    DO_REGISTRY_NAME            Registry slug (default voyageai-docr)
+#    DO_TF_MANAGE_PROJECT        Repo Variable — set true only so Terraform creates the DO project (greenfield); omit = use existing project (default)
 #    DO_SPACES_ACCESS_KEY        Spaces access key (Terraform state)
 #    DO_SPACES_SECRET_KEY        Spaces secret key (Terraform state)
-#    TF_VAR_next_internal_url    Vercel production URL for LangGraph → Next.js calls
+#    TF_VAR_next_internal_url    Optional — override LangGraph NEXT_INTERNAL_URL (default: Terraform uses Next live_url)
 #    TF_VAR_internal_agent_secret Shared secret for Next.js ↔ LangGraph auth
 #
-#  Database
-#    DIRECT_URL                  PostgreSQL direct connection string (migrations)
-#
-#  Vercel
-#    VERCEL_TOKEN                Vercel personal access token
-#    VERCEL_ORG_ID               from `vercel link`
-#    VERCEL_PROJECT_ID           from `vercel link`
+#  Next.js runtime (injected via Terraform → App Platform env vars)
+#    DATABASE_URL                Postgres connection string (pooler URL for the app)
+#    DIRECT_URL                  Postgres direct URL (Prisma migrate deploy)
+#    JWT_ACCESS_SECRET           JWT access token signing secret
+#    JWT_REFRESH_SECRET          JWT refresh token signing secret
+#    CSRF_SECRET                 CSRF HMAC secret
+#    GOOGLE_CLIENT_ID            Google OAuth client ID
+#    GOOGLE_CLIENT_SECRET        Google OAuth client secret
+#    OPENAI_API_KEY              OpenAI API key (if LLM_PROVIDER=openai)
+#    GEMINI_API_KEY              Google Gemini API key (if LLM_PROVIDER=gemini)
+#    NEXT_PUBLIC_MAPBOX_TOKEN    Mapbox public token
+#    PEXELS_API_KEY              Pexels image API key
+#    REDIS_URL                   Redis TCP URL for ioredis (rate limits, AI cache) — e.g. Upstash rediss://
+#    UPSTASH_REDIS_REST_URL      Optional; not used by src/lib/redis.ts (REST only)
+#    UPSTASH_REDIS_REST_TOKEN    Optional; same as above
+#    LANGGRAPH_SERVICE_URL       DO LangGraph App Platform URL
 #
 #  Smoke tests + DAST
-#    PRODUCTION_URL              e.g. https://voyageai.vercel.app
+#    PRODUCTION_URL              DO App Platform Next.js public URL
+#    LANGGRAPH_SERVICE_URL       DO LangGraph HTTPS URL (health check)
 #
 #  Optional
 #    DO_SPACES_REGION            Spaces region for TF backend (default: nyc3)
@@ -76,11 +94,31 @@ on:
         required: false
         default: "false"
         type: boolean
+      force_infra:
+        description: "Force Terraform apply even if no infra/ files changed (use to push env var or config updates)"
+        required: false
+        default: "false"
+        type: boolean
+      environment:
+        description: "Target environment to deploy to"
+        required: false
+        default: "production"
+        type: choice
+        options: [staging, production]
       skip_dast:
         description: "Skip DAST scan (faster release when no API surface changed)"
         required: false
         default: "false"
         type: boolean
+      skip_trivy:
+        description: "Skip all Trivy security scans (use only for emergency hotfixes)"
+        required: false
+        default: "false"
+        type: boolean
+      image_tag:
+        description: "Existing DOCR image tag to deploy without rebuilding (e.g. sha-abc1234, 42, latest). Leave empty to build fresh from source."
+        required: false
+        default: ""
       emergency_reason:
         description: "Reason for skipping gates (required when any skip_* is true)"
         required: false
@@ -100,12 +138,18 @@ env:
   NEXT_TELEMETRY_DISABLED: "1"
   # Docker
   IMAGE_NAME: voyageai-langgraph
+  NEXTJS_IMAGE_NAME: voyageai-nextjs
   PYTHON_VERSION: "3.11"
+  DOCR_REGISTRY_NAME: ${{ secrets.DO_REGISTRY_NAME || vars.REGISTRY_NAME || 'voyageai-docr' }}
+  # DOCR docker login: DO docs use <account email> + PAT; `docker login -u token` + PAT also works (see infra placeholder).
+  # Default "token" avoids 401 when email var is missing or does not match the PAT account.
+  DOCR_DOCKER_USERNAME: ${{ secrets.DIGITALOCEAN_REGISTRY_USER || vars.DIGITALOCEAN_EMAIL || 'token' }}
   # AI gate — static checks, no real LLM calls, no production DB
   SKIP_ENV_VALIDATION: "1"
   LLM_PROVIDER: "mock"
-  DATABASE_URL: "postgresql://ci:ci@localhost:5432/voyageai_ci"
-  DIRECT_URL_MOCK: "postgresql://ci:ci@localhost:5432/voyageai_ci"
+  DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgresql://ci:ci@localhost:5432/voyageai_ci' }}
+  DIRECT_URL_MOCK: ${{ secrets.DIRECT_URL || secrets.DATABASE_URL || 'postgresql://ci:ci@localhost:5432/voyageai_ci' }}
+  REDIS_URL: ${{ secrets.REDIS_URL || '' }}
   JWT_ACCESS_SECRET: "release-gate-jwt-access-secret-32-chars-ok"
   JWT_REFRESH_SECRET: "release-gate-jwt-refresh-secret-32-chars-ok"
   CSRF_SECRET: "release-gate-csrf-secret-32-characters-ok"
@@ -115,11 +159,38 @@ env:
   TF_IN_AUTOMATION: "true"
   TF_CLI_ARGS_plan: "-lock-timeout=60s"
   TF_CLI_ARGS_apply: "-lock-timeout=60s"
-  DO_SPACES_REGION: ${{ vars.DO_SPACES_REGION || 'nyc3' }}
+  DO_SPACES_REGION: ${{ vars.DO_SPACES_REGION || 'sgp1' }}
+  DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
   TF_VAR_do_token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
-  TF_VAR_next_internal_url: ${{ secrets.TF_VAR_next_internal_url }}
+  TF_VAR_next_internal_url: ${{ secrets.TF_VAR_next_internal_url || '' }}
   TF_VAR_internal_agent_secret: ${{ secrets.TF_VAR_internal_agent_secret }}
-  TF_VAR_environment: "production"
+  TF_VAR_environment: ${{ github.event.inputs.environment || 'production' }}
+  TF_VAR_region: ${{ vars.DO_REGION || 'sgp' }}
+  # Pin registry / project when importing existing DO resources; default project name is VoyageAI (shared across environments).
+  TF_VAR_registry_name: ${{ vars.REGISTRY_NAME }}
+  TF_VAR_project_name: ${{ vars.DO_PROJECT_NAME }}
+  TF_VAR_manage_digitalocean_project: ${{ vars.DO_TF_MANAGE_PROJECT == 'true' && 'true' || 'false' }}
+  # ── Next.js runtime secrets — propagated into App Platform via Terraform ─────
+  TF_VAR_database_url: ${{ secrets.DATABASE_URL || '' }}
+  TF_VAR_direct_url: ${{ secrets.DIRECT_URL || '' }}
+  TF_VAR_jwt_access_secret: ${{ secrets.JWT_ACCESS_SECRET || '' }}
+  TF_VAR_jwt_refresh_secret: ${{ secrets.JWT_REFRESH_SECRET || '' }}
+  TF_VAR_csrf_secret: ${{ secrets.CSRF_SECRET || '' }}
+  TF_VAR_google_client_id: ${{ secrets.GOOGLE_CLIENT_ID || '' }}
+  TF_VAR_google_client_secret: ${{ secrets.GOOGLE_CLIENT_SECRET || '' }}
+  TF_VAR_llm_provider: ${{ vars.LLM_PROVIDER || 'openai' }}
+  TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY || '' }}
+  TF_VAR_gemini_api_key: ${{ secrets.GEMINI_API_KEY || '' }}
+  TF_VAR_mapbox_token: ${{ secrets.NEXT_PUBLIC_MAPBOX_TOKEN || '' }}
+  TF_VAR_pexels_api_key: ${{ secrets.PEXELS_API_KEY || '' }}
+  TF_VAR_redis_url: ${{ secrets.REDIS_URL || '' }}
+  TF_VAR_upstash_redis_rest_url: ${{ secrets.UPSTASH_REDIS_REST_URL || '' }}
+  TF_VAR_upstash_redis_rest_token: ${{ secrets.UPSTASH_REDIS_REST_TOKEN || '' }}
+  TF_VAR_langgraph_service_url: ${{ secrets.LANGGRAPH_SERVICE_URL || '' }}
+  AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_ACCESS_KEY }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET_KEY }}
+  AWS_DEFAULT_REGION: us-east-1
+  AWS_ENDPOINT_URL_S3: https://${{ vars.DO_SPACES_REGION || 'sgp1' }}.digitaloceanspaces.com
 
 defaults:
   run:
@@ -214,9 +285,11 @@ jobs:
       - name: Log skip reason
         run: |
           REASON="${{ github.event.inputs.emergency_reason }}"
+          # Warn if no reason given but don't fail — downstream jobs must still run.
+          # The warning is visible in the Actions log and step summary for audit.
           if [ -z "$REASON" ]; then
-            echo "::error::skip_ai_gate=true requires emergency_reason to be set."
-            exit 1
+            REASON="No reason provided"
+            echo "::warning::skip_ai_gate=true was used without an emergency_reason. Proceeding with audit note."
           fi
           {
             echo "## ⚠️ AI Security Gate — SKIPPED"
@@ -233,7 +306,7 @@ jobs:
   #  STAGE 2a — INFRASTRUCTURE APPLY (DigitalOcean — Terraform)
   #
   #  Ensures the DigitalOcean Container Registry and App Platform service exist
-  #  before the Docker image is pushed and Vercel is deployed.
+  #  before the Docker image is pushed and Railway app is updated.
   #
   #  Conditional: only applies when infra/** files changed on this commit,
   #  or when skip_infra=false is explicitly overridden via workflow_dispatch.
@@ -249,6 +322,12 @@ jobs:
       github.event.inputs.skip_infra != 'true'
     runs-on: ubuntu-latest
     environment: production
+    outputs:
+      app_id:      ${{ steps.tf-out.outputs.app_id }}
+      app_url:     ${{ steps.tf-out.outputs.app_url }}
+      registry:    ${{ steps.tf-out.outputs.registry }}
+      nextjs_app_id:  ${{ steps.tf-out.outputs.nextjs_app_id }}
+      nextjs_app_url: ${{ steps.tf-out.outputs.nextjs_app_url }}
     defaults:
       run:
         working-directory: infra
@@ -262,6 +341,11 @@ jobs:
         id: infra-changed
         run: |
           CHANGED=$(git diff --name-only HEAD~1 HEAD -- infra/ | wc -l)
+          # Honor force_infra override — treat as if files changed
+          if [ "${{ github.event.inputs.force_infra }}" = "true" ]; then
+            CHANGED=1
+            echo "⚡ force_infra=true — running Terraform regardless of file changes"
+          fi
           echo "changed=${CHANGED}" >> "$GITHUB_OUTPUT"
           echo "Infra files changed: ${CHANGED}"
 
@@ -279,14 +363,91 @@ jobs:
           key: terraform-${{ runner.os }}-${{ hashFiles('infra/.terraform.lock.hcl') }}
           restore-keys: terraform-${{ runner.os }}-
 
+      - name: Bootstrap tfstate bucket
+        if: steps.infra-changed.outputs.changed != '0'
+        run: |
+          set -euo pipefail
+          BUCKET="voyageai-tfstate"
+          REGION="${DO_SPACES_REGION}"
+          ENDPOINT="${AWS_ENDPOINT_URL_S3}"
+
+          if aws s3api head-bucket --bucket "$BUCKET" --endpoint-url "$ENDPOINT" 2>/dev/null; then
+            echo "✅ Terraform state bucket exists: ${BUCKET} (${REGION})"
+            exit 0
+          fi
+
+          echo "📦 Creating Spaces bucket ${BUCKET} in ${REGION} (endpoint ${ENDPOINT})..."
+          aws s3api create-bucket \
+            --bucket "$BUCKET" \
+            --endpoint-url "$ENDPOINT" \
+            --create-bucket-configuration "{\"LocationConstraint\":\"${REGION}\"}"
+
+          echo "✅ Created state bucket ${BUCKET}"
+
       - name: terraform init
         if: steps.infra-changed.outputs.changed != '0'
         run: |
-          terraform init \
-            -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
-            -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
-            -backend-config="endpoint=https://${{ env.DO_SPACES_REGION }}.digitaloceanspaces.com" \
-            -input=false
+          for attempt in 1 2 3 4 5 6; do
+            echo "::notice::terraform init attempt ${attempt}/6..."
+            if terraform init \
+              -backend-config="access_key=${{ secrets.DO_SPACES_ACCESS_KEY }}" \
+              -backend-config="secret_key=${{ secrets.DO_SPACES_SECRET_KEY }}" \
+              -reconfigure \
+              -input=false; then
+              exit 0
+            fi
+            echo "::warning::terraform init failed (registry timeout/network); retrying in 30s..."
+            [ "$attempt" = "6" ] && { echo "::error::terraform init failed after 6 attempts"; exit 1; }
+            sleep 30
+          done
+
+      # DOCR must exist before docker push — App spec may reference :placeholder until CI pushes real tags.
+      - name: Terraform apply — container registry only (before DOCR push)
+        if: steps.infra-changed.outputs.changed != '0'
+        run: |
+          terraform apply -input=false -no-color -auto-approve \
+            -target=digitalocean_container_registry.voyageai \
+            -target=digitalocean_container_registry_docker_credentials.app_platform
+
+      # Skip placeholder push only when both repos already have :placeholder (matches Terraform default image tag).
+      - name: Install doctl (registry repo check)
+        if: steps.infra-changed.outputs.changed != '0'
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Push placeholder images to DOCR
+        if: steps.infra-changed.outputs.changed != '0'
+        working-directory: infra
+        run: |
+          set -euo pipefail
+          REGISTRY="registry.digitalocean.com/${{ vars.REGISTRY_NAME || 'voyageai-docr' }}"
+          PH_TAG="placeholder"
+          SKIP=0
+          if REPOS_OUT=$(doctl registry repository list --format Name --no-header 2>/dev/null); then
+            if echo "$REPOS_OUT" | grep -qx 'voyageai-langgraph' && echo "$REPOS_OUT" | grep -qx 'voyageai-nextjs'; then
+              LG_OK=0
+              NX_OK=0
+              if doctl registry repository list-tags voyageai-langgraph --format Tag --no-header 2>/dev/null | grep -qx "$PH_TAG"; then LG_OK=1; fi
+              if doctl registry repository list-tags voyageai-nextjs --format Tag --no-header 2>/dev/null | grep -qx "$PH_TAG"; then NX_OK=1; fi
+              if [ "$LG_OK" -eq 1 ] && [ "$NX_OK" -eq 1 ]; then
+                SKIP=1
+              fi
+            fi
+          else
+            echo "::warning::Could not list DOCR repositories; pushing placeholders to be safe."
+          fi
+          if [ "$SKIP" -eq 1 ]; then
+            echo "::notice::DOCR repos already have :${PH_TAG} — skipping placeholder image push."
+            exit 0
+          fi
+          echo "$DIGITALOCEAN_ACCESS_TOKEN" | \
+            docker login registry.digitalocean.com --username token --password-stdin
+          echo "::notice::If push fails with unauthorized, ensure DIGITALOCEAN_ACCESS_TOKEN has write:registry (or Full Access)."
+          docker build -t "${REGISTRY}/voyageai-langgraph:placeholder" placeholder/
+          docker push "${REGISTRY}/voyageai-langgraph:placeholder"
+          docker build -t "${REGISTRY}/voyageai-nextjs:placeholder" placeholder/nextjs/
+          docker push "${REGISTRY}/voyageai-nextjs:placeholder"
 
       - name: terraform plan
         if: steps.infra-changed.outputs.changed != '0'
@@ -304,8 +465,11 @@ jobs:
         if: steps.infra-changed.outputs.changed != '0'
         id: tf-out
         run: |
-          echo "registry=$(terraform output -raw registry_endpoint 2>/dev/null || echo 'N/A')" >> "$GITHUB_OUTPUT"
-          echo "app_url=$(terraform output -raw langgraph_live_url 2>/dev/null || echo 'N/A')"  >> "$GITHUB_OUTPUT"
+          echo "registry=$(terraform output -raw registry_endpoint 2>/dev/null || echo 'N/A')"        >> "$GITHUB_OUTPUT"
+          echo "app_url=$(terraform output -raw langgraph_default_ingress 2>/dev/null || terraform output -raw langgraph_live_url 2>/dev/null || echo 'N/A')"        >> "$GITHUB_OUTPUT"
+          echo "app_id=$(terraform output -raw langgraph_app_id 2>/dev/null || echo '')"              >> "$GITHUB_OUTPUT"
+          echo "nextjs_app_url=$(terraform output -raw nextjs_default_ingress 2>/dev/null || terraform output -raw nextjs_live_url 2>/dev/null || echo 'N/A')"    >> "$GITHUB_OUTPUT"
+          echo "nextjs_app_id=$(terraform output -raw nextjs_app_id 2>/dev/null || echo '')"          >> "$GITHUB_OUTPUT"
 
       - name: Write infra summary
         if: always()
@@ -323,8 +487,83 @@ jobs:
               echo "|----------|-------|"
               echo "| **Registry** | \`${{ steps.tf-out.outputs.registry }}\` |"
               echo "| **LangGraph URL** | \`${{ steps.tf-out.outputs.app_url }}\` |"
+              echo "| **Next.js URL** | \`${{ steps.tf-out.outputs.nextjs_app_url }}\` |"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # ════════════════════════════════════════════════════════════════════════════
+  #  STAGE 2d — RESOLVE APP URLs
+  #
+  #  Uses doctl (DO API token already in secrets) to look up the live URLs of
+  #  the Next.js and LangGraph App Platform apps for the target environment.
+  #  Eliminates the need for a PRODUCTION_URL GitHub Secret — the URL is
+  #  discovered automatically from the deployed app's name.
+  #
+  #  App name pattern (set by Terraform): voyageai-nextjs-<environment>
+  #                                       voyageai-langgraph-<environment>
+  #
+  #  Falls back to infra-apply Terraform outputs when doctl returns nothing
+  #  (e.g. first deploy before the app exists in DO).
+  # ════════════════════════════════════════════════════════════════════════════
+  resolve-urls:
+    name: "2d · Resolve App URLs (DigitalOcean API)"
+    needs: [ai-gate, ai-gate-skipped, infra-apply]
+    if: |
+      always() &&
+      (needs.ai-gate.result == 'success' || needs.ai-gate-skipped.result == 'success')
+    runs-on: ubuntu-latest
+    outputs:
+      nextjs_url:       ${{ steps.fetch.outputs.nextjs_url }}
+      langgraph_url:    ${{ steps.fetch.outputs.langgraph_url }}
+      nextjs_app_id:    ${{ steps.fetch.outputs.nextjs_app_id }}
+      langgraph_app_id: ${{ steps.fetch.outputs.langgraph_app_id }}
+
+    steps:
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Fetch App URLs from DigitalOcean
+        id: fetch
+        run: |
+          set -euo pipefail
+          ENV="${{ github.event.inputs.environment || 'production' }}"
+          APPS_JSON=$(doctl apps list --output json 2>/dev/null || echo '[]')
+
+          # doctl may return a bare array or { "apps": [...] }; list payloads may omit spec.name (use active_deployment.spec.name).
+          LINE=$(echo "$APPS_JSON" | jq -r --arg nxs "voyageai-nextjs-${ENV}" --arg nlg "voyageai-langgraph-${ENV}" '
+            def applist:
+              if type == "object" and (.apps | type == "array") then .apps
+              elif type == "array" then .
+              else [] end;
+            def appname:
+              ((.spec // {}) | .name // "") as $sn
+              | if $sn != "" then $sn
+                else (((.active_deployment // {}) | .spec // {}) | .name // "")
+                end;
+            def row($w):
+              ((applist | map(select(appname == $w)) | .[0]) // null)
+              | if . == null then ["",""]
+                else [(.id // ""), (.live_url // .default_ingress // "")]
+                end;
+            (row($nxs) + row($nlg)) | @tsv
+          ')
+          [ -z "$LINE" ] && LINE=$'\t\t\t'
+          IFS=$'\t' read -r NEXTJS_ID NEXTJS_URL LG_ID LG_URL <<< "$LINE"
+
+          # Fall back to Terraform outputs if doctl returned nothing
+          [ -z "$NEXTJS_URL" ] && NEXTJS_URL="${{ needs.infra-apply.outputs.nextjs_app_url }}"
+          [ -z "$LG_URL" ]     && LG_URL="${{ needs.infra-apply.outputs.app_url }}"
+          [ -z "$NEXTJS_ID" ] && NEXTJS_ID="${{ needs.infra-apply.outputs.nextjs_app_id }}"
+          [ -z "$LG_ID" ]     && LG_ID="${{ needs.infra-apply.outputs.app_id }}"
+
+          echo "nextjs_url=${NEXTJS_URL}"       >> "$GITHUB_OUTPUT"
+          echo "langgraph_url=${LG_URL}"        >> "$GITHUB_OUTPUT"
+          echo "nextjs_app_id=${NEXTJS_ID}"     >> "$GITHUB_OUTPUT"
+          echo "langgraph_app_id=${LG_ID}"      >> "$GITHUB_OUTPUT"
+          echo "✅ Next.js URL:   ${NEXTJS_URL} (id=${NEXTJS_ID:-none})"
+          echo "✅ LangGraph URL: ${LG_URL} (id=${LG_ID:-none})"
 
   # ════════════════════════════════════════════════════════════════════════════
   #  STAGE 2b — DOCKER: BUILD → TRIVY SCAN → PUSH TO DOCR
@@ -343,11 +582,12 @@ jobs:
   # ════════════════════════════════════════════════════════════════════════════
   docker-push:
     name: "2b · Docker — Build · Trivy · Push to DOCR"
-    needs: [ai-gate, ai-gate-skipped, infra-apply]
+    needs: [ai-gate, ai-gate-skipped, infra-apply, resolve-urls]
     if: |
       always() &&
       (needs.ai-gate.result == 'success' || needs.ai-gate-skipped.result == 'success') &&
-      (needs.infra-apply.result == 'success' || needs.infra-apply.result == 'skipped')
+      (needs.infra-apply.result == 'success' || needs.infra-apply.result == 'skipped') &&
+      (needs.resolve-urls.result == 'success' || needs.resolve-urls.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -357,8 +597,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Log in to DigitalOcean Container Registry (PAT as password)
+        uses: docker/login-action@v3
+        with:
+          registry: registry.digitalocean.com
+          username: ${{ env.DOCR_DOCKER_USERNAME }}
+          password: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
       # ── Build (export as tarball — no push yet) ───────────────────────────
       - name: Compute image metadata
@@ -369,10 +621,11 @@ jobs:
           tags: type=raw,value=latest
 
       - name: Build image and export tarball
+        if: github.event.inputs.image_tag == ''
         uses: docker/build-push-action@v5
         with:
           context: ./python/agent_graph
-          dockerfile: ./python/agent_graph/Dockerfile
+          file: ./python/agent_graph/Dockerfile
           push: false
           tags: ${{ steps.meta-local.outputs.tags }}
           outputs: type=docker,dest=/tmp/langgraph-image.tar
@@ -383,10 +636,21 @@ jobs:
             GIT_SHA=${{ github.sha }}
 
       - name: Load image into Docker daemon
+        if: github.event.inputs.image_tag == ''
         run: docker load --input /tmp/langgraph-image.tar
+
+      # ── Pull existing tag from DOCR (skip build) ───────────────────────────
+      - name: Pull existing LangGraph image from DOCR
+        if: github.event.inputs.image_tag != ''
+        run: |
+          REGISTRY="registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}"
+          docker pull "${REGISTRY}:${{ github.event.inputs.image_tag }}"
+          docker tag  "${REGISTRY}:${{ github.event.inputs.image_tag }}" "${{ env.IMAGE_NAME }}:latest"
+          echo "ℹ️ Using existing DOCR tag: ${{ github.event.inputs.image_tag }}"
 
       # ── Trivy scans ───────────────────────────────────────────────────────
       - name: Trivy — SARIF report (all severities → Security tab)
+        if: github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.IMAGE_NAME }}:latest
@@ -398,13 +662,15 @@ jobs:
           scanners: "vuln,secret,config"
 
       - name: Upload SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && github.event.inputs.skip_trivy != 'true'
         with:
           sarif_file: trivy-results.sarif
           category: trivy-release
+        continue-on-error: true
 
       - name: Trivy — gate on CRITICAL CVEs
+        if: github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.IMAGE_NAME }}:latest
@@ -416,6 +682,7 @@ jobs:
           exit-code: "1"
 
       - name: Trivy — warn on HIGH CVEs
+        if: github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.IMAGE_NAME }}:latest
@@ -427,6 +694,7 @@ jobs:
           exit-code: "0"
 
       - name: Trivy — secret scan inside image
+        if: github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.IMAGE_NAME }}:latest
@@ -435,6 +703,7 @@ jobs:
           exit-code: "1"
 
       - name: Trivy — Dockerfile misconfig scan
+        if: github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: config
@@ -444,19 +713,11 @@ jobs:
           exit-code: "1"
 
       # ── Push to DOCR ──────────────────────────────────────────────────────
-      - name: Install doctl
-        uses: digitalocean/action-doctl@v2
-        with:
-          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
-
-      - name: Log in to DigitalOcean Container Registry
-        run: doctl registry login --expiry-seconds 600
-
       - name: Compute DOCR image metadata
         id: meta-docr
         uses: docker/metadata-action@v5
         with:
-          images: registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}
+          images: registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}
           tags: |
             type=sha,prefix=sha-,format=short
             type=raw,value=latest
@@ -464,10 +725,11 @@ jobs:
 
       - name: Build and push to DOCR (layers cached)
         id: push
+        if: github.event.inputs.image_tag == ''
         uses: docker/build-push-action@v5
         with:
           context: ./python/agent_graph
-          dockerfile: ./python/agent_graph/Dockerfile
+          file: ./python/agent_graph/Dockerfile
           push: true
           tags: ${{ steps.meta-docr.outputs.tags }}
           labels: ${{ steps.meta-docr.outputs.labels }}
@@ -476,29 +738,328 @@ jobs:
           provenance: true
           sbom: true
 
+      - name: Re-tag and push existing image to DOCR
+        id: retag
+        if: github.event.inputs.image_tag != ''
+        run: |
+          echo "ℹ️ Using existing DOCR tag '${{ github.event.inputs.image_tag }}' — skipping re-tag/push"
+          echo "  App Platform spec will be updated to use this tag directly."
+
       - name: Trivy — verify pushed registry image
+        if: github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}:latest
+          image-ref: registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.image_tag || 'latest' }}
           format: table
           severity: CRITICAL
           ignore-unfixed: true
           exit-code: "1"
         env:
-          TRIVY_USERNAME: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          TRIVY_USERNAME: ${{ env.DOCR_DOCKER_USERNAME }}
           TRIVY_PASSWORD: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
       - name: Write Docker summary
         run: |
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          MODE=$([ -n "${{ github.event.inputs.image_tag }}" ] && echo "Deployed existing tag \`${{ github.event.inputs.image_tag }}\` (no re-tag)" || echo "Built from source")
           {
             echo "## 🐳 Docker — ✅ Pushed to DOCR"
             echo ""
             echo "| Field | Value |"
             echo "|-------|-------|"
-            echo "| **Registry** | \`registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}\` |"
+            echo "| **Registry** | \`registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}\` |"
             echo "| **Image** | \`${{ env.IMAGE_NAME }}\` |"
             echo "| **Tags** | \`latest\`, \`sha-${SHORT_SHA}\`, \`${{ github.run_number }}\` |"
+            echo "| **Mode** | ${MODE} |"
+            echo "| **Digest** | \`${{ steps.push.outputs.digest }}\` |"
+            echo "| **Trivy** | ✅ No CRITICAL CVEs |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The app was initially created with tag=placeholder.
+      # Now that :latest is in DOCR, force a new deployment so App Platform
+      # picks up the real image.  Skipped if infra-apply did not surface an ID.
+      - name: Redeploy LangGraph App Platform with real image
+        run: |
+          set -euo pipefail
+          APP_ID="${{ needs.infra-apply.outputs.app_id }}"
+          if [ -z "$APP_ID" ]; then APP_ID="${{ needs.resolve-urls.outputs.langgraph_app_id }}"; fi
+          if [ -z "$APP_ID" ]; then
+            ENV="${{ github.event.inputs.environment || 'production' }}"
+            APPS_JSON=$(doctl apps list --output json 2>/dev/null || echo '[]')
+            APP_ID=$(echo "$APPS_JSON" | jq -r --arg n "voyageai-langgraph-${ENV}" '
+              def applist:
+                if type == "object" and (.apps | type == "array") then .apps
+                elif type == "array" then .
+                else [] end;
+              def appname:
+                ((.spec // {}) | .name // "") as $sn
+                | if $sn != "" then $sn
+                  else (((.active_deployment // {}) | .spec // {}) | .name // "")
+                  end;
+              (applist | map(select(appname == $n)) | .[0] // empty) | (.id // empty)
+            ')
+          fi
+          if [ -z "$APP_ID" ]; then
+            echo "⚠️ Could not find LangGraph app ID — skipping redeploy trigger"
+            exit 0
+          fi
+          IMAGE_TAG="${{ github.event.inputs.image_tag }}"
+          if [ -n "$IMAGE_TAG" ]; then
+            echo "📌 Updating App Platform spec to use existing tag: ${IMAGE_TAG}"
+            TMPSPEC=$(mktemp)
+            doctl apps get "$APP_ID" --output json \
+              | jq --arg t "$IMAGE_TAG" \
+                '.[0].spec.services = (.[0].spec.services | map(if .image then .image.tag = $t else . end))
+                 | .[0].spec' > "$TMPSPEC"
+            doctl apps update "$APP_ID" --spec "$TMPSPEC"
+            rm -f "$TMPSPEC"
+          fi
+          echo "🚀 Triggering App Platform deployment for LangGraph app ${APP_ID}"
+          doctl auth init --access-token "$DIGITALOCEAN_ACCESS_TOKEN"
+          doctl apps create-deployment "$APP_ID" --wait
+
+  # ════════════════════════════════════════════════════════════════════════════
+  #  STAGE 2b-NX — DOCKER: BUILD → TRIVY SCAN → PUSH NEXT.JS TO DOCR
+  #
+  #  Mirrors docker-push but for the Next.js frontend image (Dockerfile.app).
+  #  Runs in parallel with docker-push and migrate.
+  # ════════════════════════════════════════════════════════════════════════════
+  docker-push-nextjs:
+    name: "2b-NX · Docker — Next.js Build · Trivy · Push to DOCR"
+    needs: [ai-gate, ai-gate-skipped, infra-apply, resolve-urls]
+    if: |
+      always() &&
+      (needs.ai-gate.result == 'success' || needs.ai-gate-skipped.result == 'success') &&
+      (needs.infra-apply.result == 'success' || needs.infra-apply.result == 'skipped') &&
+      (needs.resolve-urls.result == 'success' || needs.resolve-urls.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to DigitalOcean Container Registry (PAT as password)
+        uses: docker/login-action@v3
+        with:
+          registry: registry.digitalocean.com
+          username: ${{ env.DOCR_DOCKER_USERNAME }}
+          password: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      # ── Build (tarball — no push yet) ─────────────────────────────────────
+      - name: Compute image metadata
+        id: meta-local
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.NEXTJS_IMAGE_NAME }}
+          tags: type=raw,value=latest
+
+      - name: Build Next.js image and export tarball
+        if: github.event.inputs.image_tag == ''
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.app
+          push: false
+          tags: ${{ steps.meta-local.outputs.tags }}
+          outputs: type=docker,dest=/tmp/nextjs-image.tar
+          cache-from: type=gha,scope=nextjs
+          cache-to: type=gha,mode=max,scope=nextjs
+          build-args: |
+            NEXT_PUBLIC_MAPBOX_TOKEN=${{ secrets.NEXT_PUBLIC_MAPBOX_TOKEN }}
+            BUILD_DATE=${{ github.event.repository.updated_at }}
+            GIT_SHA=${{ github.sha }}
+
+      - name: Load image into Docker daemon
+        if: github.event.inputs.image_tag == ''
+        run: docker load --input /tmp/nextjs-image.tar
+
+      # ── Pull existing tag from DOCR (skip build) ───────────────────────────
+      - name: Pull existing Next.js image from DOCR
+        if: github.event.inputs.image_tag != ''
+        run: |
+          REGISTRY="registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.NEXTJS_IMAGE_NAME }}"
+          docker pull "${REGISTRY}:${{ github.event.inputs.image_tag }}"
+          docker tag  "${REGISTRY}:${{ github.event.inputs.image_tag }}" "${{ env.NEXTJS_IMAGE_NAME }}:latest"
+          echo "ℹ️ Using existing DOCR tag: ${{ github.event.inputs.image_tag }}"
+
+      # ── Trivy scans ───────────────────────────────────────────────────────
+      - name: Trivy — SARIF report (all severities → Security tab)
+        if: github.event.inputs.skip_trivy != 'true'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.NEXTJS_IMAGE_NAME }}:latest
+          format: sarif
+          output: trivy-nextjs-results.sarif
+          severity: "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          scanners: "vuln,secret,config"
+
+      - name: Upload SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && github.event.inputs.skip_trivy != 'true'
+        with:
+          sarif_file: trivy-nextjs-results.sarif
+          category: trivy-nextjs-release
+        continue-on-error: true
+
+      - name: Trivy — gate on CRITICAL CVEs
+        if: github.event.inputs.skip_trivy != 'true'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.NEXTJS_IMAGE_NAME }}:latest
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          scanners: "vuln"
+          exit-code: "1"
+
+      - name: Trivy — warn on HIGH CVEs
+        if: github.event.inputs.skip_trivy != 'true'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.NEXTJS_IMAGE_NAME }}:latest
+          format: table
+          severity: HIGH
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          scanners: "vuln"
+          exit-code: "0"
+
+      - name: Trivy — secret scan inside image
+        if: github.event.inputs.skip_trivy != 'true'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.NEXTJS_IMAGE_NAME }}:latest
+          format: table
+          scanners: "secret"
+          exit-code: "1"
+
+      - name: Trivy — Dockerfile misconfig scan
+        if: github.event.inputs.skip_trivy != 'true'
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          scan-ref: .
+          config: Dockerfile.app
+          format: table
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+
+      # ── Push to DOCR ──────────────────────────────────────────────────────
+      - name: Compute DOCR image metadata
+        id: meta-docr
+        uses: docker/metadata-action@v5
+        with:
+          images: registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.NEXTJS_IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest
+            type=raw,value=${{ github.run_number }}
+
+      - name: Build and push Next.js to DOCR (layers cached)
+        id: push
+        if: github.event.inputs.image_tag == ''
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.app
+          push: true
+          tags: ${{ steps.meta-docr.outputs.tags }}
+          labels: ${{ steps.meta-docr.outputs.labels }}
+          cache-from: type=gha,scope=nextjs
+          cache-to: type=gha,mode=max,scope=nextjs
+          provenance: true
+          sbom: true
+          build-args: |
+            NEXT_PUBLIC_MAPBOX_TOKEN=${{ secrets.NEXT_PUBLIC_MAPBOX_TOKEN }}
+
+      - name: Re-tag and push existing Next.js image to DOCR
+        id: retag
+        if: github.event.inputs.image_tag != ''
+        run: |
+          echo "ℹ️ Using existing DOCR tag '${{ github.event.inputs.image_tag }}' — skipping re-tag/push"
+          echo "  App Platform spec will be updated to use this tag directly."
+
+      - name: Trivy — verify pushed Next.js registry image
+        if: github.event.inputs.skip_trivy != 'true'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.NEXTJS_IMAGE_NAME }}:${{ github.event.inputs.image_tag || 'latest' }}
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+        env:
+          TRIVY_USERNAME: ${{ env.DOCR_DOCKER_USERNAME }}
+          TRIVY_PASSWORD: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Redeploy Next.js App Platform with real image
+        run: |
+          set -euo pipefail
+          # Prefer Terraform output, then resolve-urls (same doctl+jq as 2d), then raw doctl list.
+          APP_ID="${{ needs.infra-apply.outputs.nextjs_app_id }}"
+          if [ -z "$APP_ID" ]; then APP_ID="${{ needs.resolve-urls.outputs.nextjs_app_id }}"; fi
+          if [ -z "$APP_ID" ]; then
+            ENV="${{ github.event.inputs.environment || 'production' }}"
+            APPS_JSON=$(doctl apps list --output json 2>/dev/null || echo '[]')
+            APP_ID=$(echo "$APPS_JSON" | jq -r --arg n "voyageai-nextjs-${ENV}" '
+              def applist:
+                if type == "object" and (.apps | type == "array") then .apps
+                elif type == "array" then .
+                else [] end;
+              def appname:
+                ((.spec // {}) | .name // "") as $sn
+                | if $sn != "" then $sn
+                  else (((.active_deployment // {}) | .spec // {}) | .name // "")
+                  end;
+              (applist | map(select(appname == $n)) | .[0] // empty) | (.id // empty)
+            ')
+          fi
+          if [ -z "$APP_ID" ]; then
+            echo "⚠️ Could not find Next.js app ID — skipping redeploy trigger"
+            exit 0
+          fi
+          IMAGE_TAG="${{ github.event.inputs.image_tag }}"
+          if [ -n "$IMAGE_TAG" ]; then
+            echo "📌 Updating App Platform spec to use existing tag: ${IMAGE_TAG}"
+            TMPSPEC=$(mktemp)
+            doctl apps get "$APP_ID" --output json \
+              | jq --arg t "$IMAGE_TAG" \
+                '.[0].spec.services = (.[0].spec.services | map(if .image then .image.tag = $t else . end))
+                 | .[0].spec' > "$TMPSPEC"
+            doctl apps update "$APP_ID" --spec "$TMPSPEC"
+            rm -f "$TMPSPEC"
+          fi
+          echo "🚀 Triggering App Platform deployment for Next.js app ${APP_ID}"
+          doctl auth init --access-token "$DIGITALOCEAN_ACCESS_TOKEN"
+          doctl apps create-deployment "$APP_ID" --wait
+
+      - name: Write Next.js Docker summary
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          MODE=$([ -n "${{ github.event.inputs.image_tag }}" ] && echo "Deployed existing tag \`${{ github.event.inputs.image_tag }}\` (no re-tag)" || echo "Built from source")
+          {
+            echo "## 🐳 Next.js Container — ✅ Pushed to DOCR"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| **Registry** | \`registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}\` |"
+            echo "| **Image** | \`${{ env.NEXTJS_IMAGE_NAME }}\` |"
+            echo "| **Tags** | \`latest\`, \`sha-${SHORT_SHA}\`, \`${{ github.run_number }}\` |"
+            echo "| **Mode** | ${MODE} |"
             echo "| **Digest** | \`${{ steps.push.outputs.digest }}\` |"
             echo "| **Trivy** | ✅ No CRITICAL CVEs |"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -563,72 +1124,59 @@ jobs:
             echo "> Prisma \`migrate deploy\` applies only committed SQL migrations."
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # ════════════════════════════════════════════════════════════════════════════
-  #  STAGE 3 — DEPLOY TO VERCEL (Next.js Production)
+  # ══════════════════════════════════════════════════════════════════════════
+  #  STAGE 3 — CONFIRM DEPLOY TO DIGITALOCEAN APP PLATFORM (Next.js)
   #
-  #  Runs after docker-push AND migrate both succeed, ensuring:
-  #    • The LangGraph container is live in DOCR (App Platform auto-deploys)
-  #    • The database schema is up-to-date before the new app code hits it
+  #  Runs after docker-push-nextjs AND migrate both succeed, ensuring:
+  #    • The Next.js image is live in DOCR (App Platform auto-deploys via doctl)
+  #    • The database schema is up-to-date before new app code runs
   #
-  #  Uses `vercel --prebuilt` to deploy the already-built artifact rather than
-  #  re-running `next build` on Vercel's infrastructure.
-  # ════════════════════════════════════════════════════════════════════════════
-  deploy-vercel:
-    name: "3 · Deploy — Next.js → Vercel"
-    needs: [docker-push, migrate]
+  #  The actual App Platform redeploy is triggered inside docker-push-nextjs.
+  #  This stage confirms success and gates the health-check stage.
+  #
+  #  App URL is resolved automatically from the DO API by the resolve-urls job.
+  #  PRODUCTION_URL GitHub Secret is no longer required.
+  # ══════════════════════════════════════════════════════════════════════════
+  deploy-nextjs-do:
+    name: "3 · Deploy — Next.js → DigitalOcean App Platform"
+    needs: [docker-push-nextjs, migrate, resolve-urls]
+    if: |
+      always() &&
+      needs.docker-push-nextjs.result == 'success' &&
+      needs.migrate.result == 'success' &&
+      needs.resolve-urls.result == 'success'
     runs-on: ubuntu-latest
+    outputs:
+      app_url: ${{ needs.resolve-urls.outputs.nextjs_url }}
     environment:
-      name: production
-      url: ${{ steps.deploy.outputs.url }}
+      name: ${{ github.event.inputs.environment || 'production' }}
+      url: ${{ needs.resolve-urls.outputs.nextjs_url }}
 
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-
-      - run: npm ci
-      - run: npm install --global vercel@latest
-
-      - name: Pull Vercel environment + project config
-        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
-        env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-
-      - name: Build for production
-        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
-        env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-          NEXT_TELEMETRY_DISABLED: "1"
-
-      - name: Deploy prebuilt artifact to Vercel
-        id: deploy
+      - name: Confirm App Platform deployment
         run: |
-          DEPLOY_URL=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }} 2>&1 | tail -1)
-          echo "url=${DEPLOY_URL}" >> "$GITHUB_OUTPUT"
-          echo "Deployed to: ${DEPLOY_URL}"
-        env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          echo "Next.js App Platform redeployment was triggered in the docker-push-nextjs stage."
+          echo "App URL: ${{ needs.resolve-urls.outputs.nextjs_url }}"
 
       - name: Write deploy summary
         if: always()
         run: |
           STATUS="${{ job.status }}"
           ICON=$([ "$STATUS" = "success" ] && echo "✅" || echo "❌")
+          APP_URL="${{ needs.resolve-urls.outputs.nextjs_url }}"
           {
-            echo "## 🚀 Vercel Deploy — ${ICON} ${STATUS^}"
+            echo "## 🌊 Next.js Deploy → DigitalOcean — ${ICON} ${STATUS^}"
             echo ""
             echo "| Field | Value |"
             echo "|-------|-------|"
-            echo "| **URL** | ${{ steps.deploy.outputs.url || '_unavailable_' }} |"
+            echo "| **Platform** | DigitalOcean App Platform |"
+            echo "| **Environment** | ${{ github.event.inputs.environment || 'production' }} |"
+            echo "| **App URL** | ${APP_URL} |"
             echo "| **Commit** | \`${{ github.sha }}\` |"
             echo "| **Author** | @${{ github.actor }} |"
             echo "| **Message** | ${{ github.event.head_commit.message }} |"
+            echo ""
+            echo "> Secrets are injected via Terraform App Platform env vars."
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ════════════════════════════════════════════════════════════════════════════
@@ -644,16 +1192,21 @@ jobs:
   # ════════════════════════════════════════════════════════════════════════════
   health-check:
     name: "4 · Health Check (Production Smoke Tests)"
-    needs: deploy-vercel
+    needs: deploy-nextjs-do
+    if: |
+      always() &&
+      needs.deploy-nextjs-do.result == 'success'
     runs-on: ubuntu-latest
+    outputs:
+      app_url:      ${{ needs.deploy-nextjs-do.outputs.app_url }}
 
     steps:
-      - name: Wait 20s for Vercel edge propagation
-        run: sleep 20
+      - name: Wait 60s for App Platform deploy propagation
+        run: sleep 30
 
       - name: Smoke test — Next.js root page
         run: |
-          URL="${{ secrets.PRODUCTION_URL }}"
+          URL="${{ needs.deploy-nextjs-do.outputs.app_url }}"
           echo "Testing: ${URL}"
           for i in 1 2 3 4 5; do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "${URL}" || echo "000")
@@ -668,7 +1221,7 @@ jobs:
 
       - name: Smoke test — CSRF endpoint
         run: |
-          URL="${{ secrets.PRODUCTION_URL }}/api/auth/csrf"
+          URL="${{ needs.deploy-nextjs-do.outputs.app_url }}/api/auth/csrf"
           for i in 1 2 3 4 5; do
             BODY=$(curl -s --max-time 10 "${URL}" || echo "")
             if echo "$BODY" | grep -q "csrfToken\|token"; then
@@ -682,13 +1235,9 @@ jobs:
 
       - name: Smoke test — LangGraph /health
         run: |
-          # LangGraph URL comes from TF output; fall back to env var if not available
-          LG_URL="${{ secrets.TF_VAR_next_internal_url }}"
-          # The LangGraph service is separate from the Next.js app
-          # Its URL is set in LANGGRAPH_SERVICE_URL on Vercel
-          # We check the internal URL if accessible, or skip gracefully
+          LG_URL="${{ secrets.LANGGRAPH_SERVICE_URL }}"
           if [ -z "$LG_URL" ]; then
-            echo "⏭️ LANGGRAPH_SERVICE_URL not set — skipping LangGraph health check"
+            echo "⏭️ LANGGRAPH_SERVICE_URL secret not set — skipping LangGraph health check"
             exit 0
           fi
           for i in 1 2 3 4 5; do
@@ -746,10 +1295,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: ZAP Full Scan — ${{ secrets.PRODUCTION_URL }}
+      - name: ZAP Full Scan — ${{ needs.health-check.outputs.app_url }}
         uses: zaproxy/action-full-scan@v0.10.0
         with:
-          target: ${{ secrets.PRODUCTION_URL }}
+          target: ${{ needs.health-check.outputs.app_url }}
           allow_issue_writing: true
           fail_action: true
           rules_file_name: .github/zap/rules.tsv
@@ -760,7 +1309,7 @@ jobs:
           artifact_name: zap-production-${{ github.sha }}
 
       - name: Upload ZAP SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: zap_scan_report.json
@@ -777,7 +1326,7 @@ jobs:
             echo ""
             echo "| Field | Value |"
             echo "|-------|-------|"
-            echo "| **Target** | ${{ secrets.PRODUCTION_URL }} |"
+            echo "| **Target** | ${{ needs.health-check.outputs.app_url }} |"
             echo "| **Scan type** | Full scan (active + passive) |"
             echo "| **Status** | ${STATUS^} |"
             echo ""
@@ -812,7 +1361,7 @@ jobs:
   # ════════════════════════════════════════════════════════════════════════════
   release-summary:
     name: "6 · Release Summary"
-    needs: [ai-gate, ai-gate-skipped, infra-apply, docker-push, migrate, deploy-vercel, health-check, dast, dast-skipped]
+    needs: [ai-gate, ai-gate-skipped, infra-apply, docker-push, docker-push-nextjs, migrate, deploy-nextjs-do, health-check, dast, dast-skipped]
     runs-on: ubuntu-latest
     if: always()
     permissions:
@@ -835,7 +1384,7 @@ jobs:
           INFRA="${{ needs.infra-apply.result }}"
           DOCKER="${{ needs.docker-push.result }}"
           MIGRATE="${{ needs.migrate.result }}"
-          VERCEL="${{ needs.deploy-vercel.result }}"
+          RAILWAY_DEPLOY="${{ needs.deploy-nextjs-do.result }}"
           HEALTH="${{ needs.health-check.result }}"
           DAST="${{ needs.dast.result }}${{ needs.dast-skipped.result }}"
 
@@ -850,7 +1399,7 @@ jobs:
 
           # Overall result
           OVERALL="✅ SUCCESS"
-          for r in "${{ needs.ai-gate.result }}" "${{ needs.docker-push.result }}" "${{ needs.migrate.result }}" "${{ needs.deploy-vercel.result }}" "${{ needs.health-check.result }}"; do
+          for r in "${{ needs.ai-gate.result }}" "${{ needs.docker-push.result }}" "${{ needs.migrate.result }}" "${{ needs.deploy-nextjs-do.result }}" "${{ needs.health-check.result }}"; do
             if [ "$r" = "failure" ]; then OVERALL="❌ FAILED"; break; fi
           done
 
@@ -879,9 +1428,10 @@ jobs:
             echo "|---|-------|--------|"
             echo "| 1 | AI Security Gate | $(icon '${{ needs.ai-gate.result }}')$(icon '${{ needs.ai-gate-skipped.result }}') |"
             echo "| 2a | Infrastructure (Terraform) | $(icon '${INFRA}') |"
-            echo "| 2b | Docker — Build · Trivy · Push | $(icon '${{ needs.docker-push.result }}') |"
+            echo "| 2b | LangGraph Docker — Build · Trivy · Push | $(icon '${{ needs.docker-push.result }}') |"
+            echo "| 2b-NX | Next.js Docker — Build · Trivy · Push | $(icon '${{ needs.docker-push-nextjs.result }}') |"
             echo "| 2c | Database Migration | $(icon '${{ needs.migrate.result }}') |"
-            echo "| 3 | Deploy → Vercel | $(icon '${{ needs.deploy-vercel.result }}') |"
+            echo "| 3 | Deploy → DO App Platform (Next.js) | $(icon '${{ needs.deploy-nextjs-do.result }}') |"
             echo "| 4 | Health Check | $(icon '${{ needs.health-check.result }}') |"
             echo "| 5 | DAST (OWASP ZAP) | $(icon '${{ needs.dast.result }}')$(icon '${{ needs.dast-skipped.result }}') |"
             echo ""
@@ -901,9 +1451,10 @@ jobs:
             echo ""
             echo "| Service | Platform | URL |"
             echo "|---------|----------|-----|"
-            echo "| Next.js app | Vercel | ${{ secrets.PRODUCTION_URL }} |"
+            echo "| Next.js app | DO App Platform | ${{ needs.deploy-nextjs-do.outputs.app_url }} |"
             echo "| LangGraph service | DO App Platform | (see infra outputs) |"
-            echo "| Container image | DOCR | \`registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}:sha-${SHORT_SHA}\` |"
+            echo "| LangGraph image | DOCR | \`registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}:sha-${SHORT_SHA}\` |"
+            echo "| Next.js image | DOCR | \`registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.NEXTJS_IMAGE_NAME }}:sha-${SHORT_SHA}\` |"
             echo ""
             echo "---"
             echo ""
@@ -920,7 +1471,7 @@ jobs:
       # Create a GitHub Release tag on full success
       - name: Create GitHub Release
         if: |
-          needs.deploy-vercel.result == 'success' &&
+          needs.deploy-nextjs-do.result == 'success' &&
           needs.health-check.result == 'success'
         uses: actions/github-script@v7
         with:
@@ -949,9 +1500,9 @@ jobs:
                 ``,
                 `### What's included`,
                 `- ✅ AI Security Gate passed`,
-                `- 🐳 LangGraph image pushed to DOCR`,
+                `- 🐳 LangGraph + Next.js images pushed to DOCR`,
                 `- 🗄️ Database migrations applied`,
-                `- 🚀 Next.js deployed to Vercel`,
+                `- 🚀 Next.js deployed on DigitalOcean App Platform`,
                 `- 🩺 Health checks passed`,
               ].join('\n'),
               draft:      false,

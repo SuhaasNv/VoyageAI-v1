@@ -65,6 +65,7 @@ services:
       # ── Optional ────────────────────────────────────────────────────────────
       NEXT_PUBLIC_MAPBOX_TOKEN: ${NEXT_PUBLIC_MAPBOX_TOKEN:-}
       PEXELS_API_KEY: ${PEXELS_API_KEY:-}
+      REDIS_URL: ${REDIS_URL:-}
       UPSTASH_REDIS_REST_URL: ${UPSTASH_REDIS_REST_URL:-}
       UPSTASH_REDIS_REST_TOKEN: ${UPSTASH_REDIS_REST_TOKEN:-}
       NEXT_TELEMETRY_DISABLED: "1"
@@ -117,7 +118,6 @@ services:
     # Comment this out for a fully isolated build (recommended in staging/prod)
     volumes:
       - ./python/agent_graph:/app:ro
-
 volumes:
   pgdata:
     driver: local

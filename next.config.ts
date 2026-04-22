@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Produce a minimal self-contained server in .next/standalone — required for
+  // the production Docker image (Dockerfile.app).
+  output: "standalone",
   // pdf-parse reads test fixtures at require-time; keep it out of the Next.js bundle.
   serverExternalPackages: ["pdf-parse", "pdfjs-dist"],
   async redirects() {

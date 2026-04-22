@@ -1,5 +1,5 @@
 langgraph==0.2.74
-langchain-core==0.3.57
+langchain-core==0.3.81
 fastapi==0.115.12
 uvicorn[standard]==0.34.0
 httpx==0.28.1

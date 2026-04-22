@@ -6,8 +6,8 @@
 #  Remote state backend: DigitalOcean Spaces (S3-compatible).
 #  The bucket must exist before `terraform init` can succeed.
 #
-#  One-time bootstrap (run locally, once per project):
-#    doctl spaces create voyageai-tfstate --region nyc3
+#  One-time bootstrap (run locally, once per project — region must match CI):
+#    doctl spaces create voyageai-tfstate --region sgp1
 #
 #  Credentials are injected at init time via -backend-config flags in CI
 #  (see .github/workflows/infra.yml) so no secrets are baked into this file.
@@ -33,11 +33,13 @@ terraform {
     # Spaces does not have real AWS regions; use this placeholder.
     region = "us-east-1"
 
-    # Spaces-specific overrides — endpoint is injected via -backend-config in CI.
+    # Spaces-specific overrides.
+    # `endpoint` is deprecated in TF >= 1.6; set AWS_ENDPOINT_URL_S3 in CI instead.
     skip_credentials_validation = true
     skip_metadata_api_check     = true
     skip_region_validation      = true
-    force_path_style            = true
+    skip_requesting_account_id  = true
+    use_path_style              = true
   }
 }
 

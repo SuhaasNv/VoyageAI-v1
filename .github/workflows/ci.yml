@@ -14,6 +14,22 @@ on:
         description: "Force push Docker image to DOCR even on non-main branch"
         required: false
         default: "false"
+        type: boolean
+      ignore_test_failures:
+        description: "Bypass quality gate — allow build/push even if tests, SAST, or validations fail (emergency only)"
+        required: false
+        default: "false"
+        type: boolean
+      skip_deploy:
+        description: "Skip push-to-DOCR and DAST (build and scan only)"
+        required: false
+        default: "false"
+        type: boolean
+      skip_tests:
+        description: "Skip all test and validation stages (4–12) and go straight to quality gate and build"
+        required: false
+        default: "false"
+        type: boolean
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -23,21 +39,33 @@ concurrency:
 #  Shared environment
 #  LLM_PROVIDER=mock  → zero real API calls in CI.
 #  SKIP_ENV_VALIDATION → bypasses production-only boot-time secret checks.
+#
+#  Railway (Postgres + Redis):
+#    Set repo secrets DATABASE_URL, DIRECT_URL, REDIS_URL to your Railway
+#    service variables (same strings as in Railway dashboard). When unset,
+#    DATABASE_URL/DIRECT_URL fall back to a local placeholder so fork PRs
+#    without secrets can still run lint-only paths (jobs that need DB may fail).
 # ─────────────────────────────────────────────────────────────────────────────
 env:
   NODE_VERSION: "20"
   NEXT_TELEMETRY_DISABLED: "1"
   SKIP_ENV_VALIDATION: "1"
   LLM_PROVIDER: "mock"
-  DATABASE_URL: "postgresql://ci:ci@localhost:5432/voyageai_ci"
-  DIRECT_URL: "postgresql://ci:ci@localhost:5432/voyageai_ci"
+  DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgresql://ci:ci@localhost:5432/voyageai_ci' }}
+  DIRECT_URL: ${{ secrets.DIRECT_URL || secrets.DATABASE_URL || 'postgresql://ci:ci@localhost:5432/voyageai_ci' }}
+  REDIS_URL: ${{ secrets.REDIS_URL || '' }}
   JWT_ACCESS_SECRET: "ci-jwt-access-secret-at-least-32-characters-long"
   JWT_REFRESH_SECRET: "ci-jwt-refresh-secret-at-least-32-characters-long"
   CSRF_SECRET: "ci-csrf-secret-at-least-32-characters-long-ok"
   NEXT_PUBLIC_MAPBOX_TOKEN: "ci-mapbox-token"
-  # Docker image name — prefixed with registry.digitalocean.com/<DO_REGISTRY_NAME>/ on push
+  # Docker / DOCR
   IMAGE_NAME: voyageai-langgraph
+  NEXTJS_IMAGE_NAME: voyageai-nextjs
   PYTHON_VERSION: "3.11"
+  # Registry slug — must match Terraform (default voyageai-docr unless REGISTRY_NAME / DO_REGISTRY_NAME is set).
+  DOCR_REGISTRY_NAME: ${{ secrets.DO_REGISTRY_NAME || vars.REGISTRY_NAME || 'voyageai-docr' }}
+  # Default username "token" + PAT matches DO `docker login -u token` (avoids 401 if email unset or wrong account).
+  DOCR_DOCKER_USERNAME: ${{ secrets.DIGITALOCEAN_REGISTRY_USER || vars.DIGITALOCEAN_EMAIL || 'token' }}
 
 defaults:
   run:
@@ -70,9 +98,19 @@ defaults:
 #  16 dast          ← trivy-scan  (main only)  ──────┘
 #
 #  Required secrets for stages 15–16:
-#    DIGITALOCEAN_ACCESS_TOKEN  — DO API token (write:registry)
-#    DO_REGISTRY_NAME           — registry slug, e.g. "voyageai"
-#    STAGING_URL                — staging URL for DAST, e.g. https://voyageai-staging.vercel.app
+#    DIGITALOCEAN_ACCESS_TOKEN  — DO API token (write:registry; rotate on 401 from registry auth)
+#    DIGITALOCEAN_EMAIL         — Optional — DO account email for docker login; if unset, workflows use username "token" + PAT
+#    DO_REGISTRY_NAME           — registry slug (overrides vars.REGISTRY_NAME; default voyageai-docr)
+#    PRODUCTION_URL             — public Railway app URL for DAST (main only), e.g. https://xxx.up.railway.app
+#
+#  workflow_dispatch inputs:
+#    force_push           — push to DOCR even on non-main branch
+#    ignore_test_failures — bypass quality gate on test/SAST/validation failure (emergency)
+#    skip_deploy          — run build + scan only; skip push-to-DOCR and DAST
+#    skip_tests           — skip stages 4–12 entirely; go straight to quality gate + build
+#
+#  Recommended (Railway — used by jobs that touch DB/Redis):
+#    DATABASE_URL, DIRECT_URL, REDIS_URL
 # ─────────────────────────────────────────────────────────────────────────────
 
 jobs:
@@ -312,6 +350,7 @@ jobs:
     name: "4 · Unit Tests"
     needs: build
     runs-on: ubuntu-latest
+    if: github.event.inputs.skip_tests != 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -342,6 +381,7 @@ jobs:
     name: "5 · SAST (CodeQL)"
     needs: lint
     runs-on: ubuntu-latest
+    if: github.event.inputs.skip_tests != 'true'
     permissions:
       actions: read
       contents: read
@@ -377,6 +417,7 @@ jobs:
     name: "6 · SCA (dependencies)"
     needs: build
     runs-on: ubuntu-latest
+    if: github.event.inputs.skip_tests != 'true'
     permissions:
       contents: read
       security-events: write
@@ -433,6 +474,7 @@ jobs:
     name: "7 · Data Validation"
     needs: build
     runs-on: ubuntu-latest
+    if: github.event.inputs.skip_tests != 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -462,6 +504,7 @@ jobs:
     name: "8 · Model Validation"
     needs: build
     runs-on: ubuntu-latest
+    if: github.event.inputs.skip_tests != 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -497,6 +540,7 @@ jobs:
     name: "9 · Prompt Validation"
     needs: model-validation
     runs-on: ubuntu-latest
+    if: github.event.inputs.skip_tests != 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -526,6 +570,7 @@ jobs:
     name: "10 · Prompt Tests"
     needs: [unittest, prompt-validation]
     runs-on: ubuntu-latest
+    if: github.event.inputs.skip_tests != 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -555,6 +600,7 @@ jobs:
     name: "11 · Safety Tests (toxicity, jailbreak)"
     needs: [unittest, prompt-validation]
     runs-on: ubuntu-latest
+    if: github.event.inputs.skip_tests != 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -584,6 +630,7 @@ jobs:
     name: "12 · Evaluation (offline metrics)"
     needs: [prompt-tests, safety-tests]
     runs-on: ubuntu-latest
+    if: github.event.inputs.skip_tests != 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -685,27 +732,51 @@ jobs:
     name: "✅ Quality Gate (all checks)"
     needs: [unittest, sast, sca, data-validation, evaluation]
     runs-on: ubuntu-latest
-    # Default (no `if`) means: only run when ALL needs completed with success.
-    # If any needed job failed or was skipped, this job is also skipped,
-    # which propagates the block to build-image.
+    # Runs when all needs completed (any result) so we can inspect them ourselves.
+    # When ignore_test_failures=true we pass regardless; otherwise we require
+    # all upstream jobs to have succeeded.
+    if: always()
 
     steps:
-      - name: All quality gates passed
+      - name: Evaluate gate
         run: |
+          IGNORE="${{ github.event.inputs.ignore_test_failures }}"
+
+          UNITTEST="${{ needs.unittest.result }}"
+          SAST="${{ needs.sast.result }}"
+          SCA="${{ needs.sca.result }}"
+          DATA="${{ needs.data-validation.result }}"
+          EVAL="${{ needs.evaluation.result }}"
+
+          FAILED=0
+          for JOB in "$UNITTEST" "$SAST" "$SCA" "$DATA" "$EVAL"; do
+            if [ "$JOB" != "success" ] && [ "$JOB" != "skipped" ]; then
+              FAILED=1
+            fi
+          done
+
+          if [ "$FAILED" = "1" ] && [ "$IGNORE" != "true" ]; then
+            echo "::error::Quality gate FAILED — one or more upstream checks did not pass."
+            echo "To bypass in an emergency, re-run with ignore_test_failures=true."
+            exit 1
+          fi
+
           {
-            echo "## ✅ Quality Gate — All Checks Passed"
+            if [ "$IGNORE" = "true" ] && [ "$FAILED" = "1" ]; then
+              echo "## ⚠️ Quality Gate — BYPASSED (ignore_test_failures=true)"
+              echo ""
+              echo "> **Warning:** test failures were ignored by manual override."
+            else
+              echo "## ✅ Quality Gate — All Checks Passed"
+            fi
             echo ""
             echo "| Check | Stage | Result |"
             echo "|-------|-------|--------|"
-            echo "| Unit Tests         | 4  | ✅ |"
-            echo "| SAST (CodeQL)      | 5  | ✅ |"
-            echo "| SCA (deps CVE)     | 6  | ✅ |"
-            echo "| Data Validation    | 7  | ✅ |"
-            echo "| Model Validation   | 8  | ✅ |"
-            echo "| Prompt Validation  | 9  | ✅ |"
-            echo "| Prompt Tests       | 10 | ✅ |"
-            echo "| Safety Tests       | 11 | ✅ |"
-            echo "| Evaluation         | 12 | ✅ |"
+            echo "| Unit Tests         | 4  | $( [ "$UNITTEST" = "success" ] && echo '✅' || echo '⚠️' ) ${UNITTEST} |"
+            echo "| SAST (CodeQL)      | 5  | $( [ "$SAST"     = "success" ] && echo '✅' || echo '⚠️' ) ${SAST} |"
+            echo "| SCA (deps CVE)     | 6  | $( [ "$SCA"      = "success" ] && echo '✅' || echo '⚠️' ) ${SCA} |"
+            echo "| Data Validation    | 7  | $( [ "$DATA"     = "success" ] && echo '✅' || echo '⚠️' ) ${DATA} |"
+            echo "| Evaluation         | 12 | $( [ "$EVAL"     = "success" ] && echo '✅' || echo '⚠️' ) ${EVAL} |"
             echo ""
             echo "> Pipeline cleared for Docker build and delivery stages."
           } >> "$GITHUB_STEP_SUMMARY"
@@ -720,6 +791,9 @@ jobs:
     name: "13 · Build Docker Image (LangGraph)"
     needs: quality-gate
     runs-on: ubuntu-latest
+    # always() breaks the cascading-skip caused by transitive failures upstream.
+    # The second condition ensures we only run when the gate actually passed.
+    if: always() && needs.quality-gate.result == 'success'
     outputs:
       image-tag: ${{ steps.meta.outputs.tags }}
       image-digest: ${{ steps.build.outputs.digest }}
@@ -745,7 +819,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./python/agent_graph
-          dockerfile: ./python/agent_graph/Dockerfile
+          file: ./python/agent_graph/Dockerfile
           push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -776,6 +850,10 @@ jobs:
     name: "14 · Trivy — Container Vulnerability Scan"
     needs: build-image
     runs-on: ubuntu-latest
+    if: |
+      always() &&
+      needs.build-image.result == 'success' &&
+      github.event.inputs.skip_tests != 'true'
     permissions:
       contents: read
       security-events: write
@@ -804,13 +882,15 @@ jobs:
           scanners: "vuln,secret,config"
 
       - name: Upload SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy-results.sarif
           category: trivy-container
+        continue-on-error: true
 
       - name: Trivy — gate on CRITICAL CVEs (blocks pipeline)
+        # Non-blocking when skip_tests or ignore_test_failures is active
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.IMAGE_NAME }}:latest
@@ -819,7 +899,7 @@ jobs:
           ignore-unfixed: true
           vuln-type: "os,library"
           scanners: "vuln"
-          exit-code: "1"
+          exit-code: ${{ (github.event.inputs.skip_tests == 'true' || github.event.inputs.ignore_test_failures == 'true') && '0' || '1' }}
 
       - name: Trivy — warn on HIGH CVEs (non-blocking)
         uses: aquasecurity/trivy-action@master
@@ -838,7 +918,7 @@ jobs:
           image-ref: ${{ env.IMAGE_NAME }}:latest
           format: table
           scanners: "secret"
-          exit-code: "1"
+          exit-code: ${{ (github.event.inputs.skip_tests == 'true' || github.event.inputs.ignore_test_failures == 'true') && '0' || '1' }}
 
       - name: Trivy — Dockerfile misconfig scan
         uses: aquasecurity/trivy-action@master
@@ -846,7 +926,7 @@ jobs:
           scan-type: config
           scan-ref: ./python/agent_graph
           format: table
-          exit-code: "1"
+          exit-code: ${{ (github.event.inputs.skip_tests == 'true' || github.event.inputs.ignore_test_failures == 'true') && '0' || '1' }}
           severity: "CRITICAL,HIGH"
 
       - name: Upload Trivy SARIF artifact
@@ -865,16 +945,21 @@ jobs:
   #      Attaches SLSA provenance + CycloneDX SBOM to the image manifest.
   #
   #  Required secrets:
-  #    DIGITALOCEAN_ACCESS_TOKEN  — DO personal access token (write:registry)
-  #    DO_REGISTRY_NAME           — registry slug (e.g. "voyageai")
+#    DIGITALOCEAN_ACCESS_TOKEN  — DO personal access token (write:registry)
+#    DIGITALOCEAN_EMAIL         — Optional — DO login email for DOCR; else username "token" + PAT
+  #    DO_REGISTRY_NAME           — registry slug (overrides vars; default voyageai-docr)
   # ══════════════════════════════════════════════════════════════════════════
   push-to-docr:
     name: "15 · Push to DigitalOcean Container Registry"
-    needs: trivy-scan
+    needs: [build-image, trivy-scan]
     runs-on: ubuntu-latest
     if: |
+      always() &&
+      needs.build-image.result == 'success' &&
+      (needs.trivy-scan.result == 'success' || needs.trivy-scan.result == 'skipped') &&
       (github.ref == 'refs/heads/main' || github.event.inputs.force_push == 'true') &&
-      github.event_name != 'pull_request'
+      github.event_name != 'pull_request' &&
+      github.event.inputs.skip_deploy != 'true'
     permissions:
       packages: write
       contents: read
@@ -885,19 +970,18 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Install doctl
-        uses: digitalocean/action-doctl@v2
-        with:
-          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
-
       - name: Log in to DigitalOcean Container Registry
-        run: doctl registry login --expiry-seconds 600
+        uses: docker/login-action@v3
+        with:
+          registry: registry.digitalocean.com
+          username: ${{ env.DOCR_DOCKER_USERNAME }}
+          password: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
       - name: Compute registry image metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}
+          images: registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}
           tags: |
             type=sha,prefix=sha-,format=short
             type=raw,value=latest
@@ -908,7 +992,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./python/agent_graph
-          dockerfile: ./python/agent_graph/Dockerfile
+          file: ./python/agent_graph/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -920,13 +1004,13 @@ jobs:
       - name: Trivy — verify pushed image in registry
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}:latest
+          image-ref: registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.IMAGE_NAME }}:latest
           format: table
           severity: CRITICAL
           ignore-unfixed: true
-          exit-code: "1"
+          exit-code: ${{ (github.event.inputs.skip_tests == 'true' || github.event.inputs.ignore_test_failures == 'true') && '0' || '1' }}
         env:
-          TRIVY_USERNAME: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          TRIVY_USERNAME: ${{ env.DOCR_DOCKER_USERNAME }}
           TRIVY_PASSWORD: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
       - name: Write push summary
@@ -936,8 +1020,229 @@ jobs:
             echo ""
             echo "| Field | Value |"
             echo "|-------|-------|"
-            echo "| **Registry** | \`registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}\` |"
+            echo "| **Registry** | \`registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}\` |"
             echo "| **Image** | \`${{ env.IMAGE_NAME }}\` |"
+            echo "| **Tags** | \`latest\`, \`sha-$(echo ${{ github.sha }} | head -c7)\`, \`${{ github.run_number }}\` |"
+            echo "| **Digest** | \`${{ steps.push.outputs.digest }}\` |"
+            echo "| **Commit** | \`${{ github.sha }}\` |"
+            echo "| **Actor** | @${{ github.actor }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ══════════════════════════════════════════════════════════════════════════
+  #  13b. BUILD NEXT.JS DOCKER IMAGE
+  #       Builds the production Next.js image from Dockerfile.app using
+  #       Next.js standalone output.  Runs in parallel with build-image (13).
+  # ══════════════════════════════════════════════════════════════════════════
+  build-nextjs:
+    name: "13b · Build Next.js Docker Image"
+    needs: quality-gate
+    runs-on: ubuntu-latest
+    if: |
+      always() &&
+      needs.quality-gate.result == 'success'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Next.js image and export tarball
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.app
+          push: false
+          tags: ${{ env.NEXTJS_IMAGE_NAME }}:latest
+          outputs: type=docker,dest=/tmp/nextjs-image.tar
+          cache-from: type=gha,scope=nextjs
+          cache-to: type=gha,mode=max,scope=nextjs
+          build-args: |
+            NEXT_PUBLIC_MAPBOX_TOKEN=${{ env.NEXT_PUBLIC_MAPBOX_TOKEN }}
+            DATABASE_URL=${{ secrets.DATABASE_URL || 'postgresql://prisma:prisma@127.0.0.1:5432/prisma' }}
+
+      - name: Upload image tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: nextjs-image-${{ github.sha }}
+          path: /tmp/nextjs-image.tar
+          retention-days: 1
+
+  # ══════════════════════════════════════════════════════════════════════════
+  #  14b. TRIVY SCAN — NEXT.JS IMAGE
+  #       Security scan of the Next.js Docker image.
+  #       Runs in parallel with trivy-scan (14).
+  # ══════════════════════════════════════════════════════════════════════════
+  trivy-scan-nextjs:
+    name: "14b · Trivy — Next.js Image Security Scan"
+    needs: build-nextjs
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Next.js image tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: nextjs-image-${{ github.sha }}
+          path: /tmp/
+
+      - name: Load image into Docker daemon
+        run: docker load --input /tmp/nextjs-image.tar
+
+      - name: Trivy — SARIF (all severities → Security tab)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.NEXTJS_IMAGE_NAME }}:latest
+          format: sarif
+          output: trivy-nextjs.sarif
+          severity: "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          scanners: "vuln,secret,config"
+
+      - name: Upload SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: trivy-nextjs.sarif
+          category: trivy-nextjs
+        continue-on-error: true
+
+      - name: Trivy — gate on CRITICAL CVEs
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.NEXTJS_IMAGE_NAME }}:latest
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          scanners: "vuln"
+          exit-code: ${{ (github.event.inputs.skip_tests == 'true' || github.event.inputs.ignore_test_failures == 'true') && '0' || '1' }}
+
+      - name: Trivy — warn on HIGH CVEs (non-blocking)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.NEXTJS_IMAGE_NAME }}:latest
+          format: table
+          severity: HIGH
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          scanners: "vuln"
+          exit-code: "0"
+
+      - name: Trivy — secret scan inside image filesystem
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.NEXTJS_IMAGE_NAME }}:latest
+          format: table
+          scanners: "secret"
+          exit-code: ${{ (github.event.inputs.skip_tests == 'true' || github.event.inputs.ignore_test_failures == 'true') && '0' || '1' }}
+
+      - name: Trivy — Dockerfile misconfig scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          scan-ref: .
+          config: Dockerfile.app
+          format: table
+          exit-code: ${{ (github.event.inputs.skip_tests == 'true' || github.event.inputs.ignore_test_failures == 'true') && '0' || '1' }}
+          severity: "CRITICAL,HIGH"
+
+      - name: Upload Trivy Next.js SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-nextjs-results-${{ github.sha }}
+          path: trivy-nextjs.sarif
+          retention-days: 30
+
+  # ══════════════════════════════════════════════════════════════════════════
+  #  15b. PUSH NEXT.JS TO DIGITALOCEAN CONTAINER REGISTRY
+  #       Runs only on main (or when force_push=true via workflow_dispatch).
+  #       Re-builds with DOCR registry tags using the GHA layer cache.
+  #
+  #  Required secrets:
+#    DIGITALOCEAN_ACCESS_TOKEN  — DO personal access token (write:registry)
+#    DIGITALOCEAN_EMAIL         — Optional — DO login email for DOCR; else username "token" + PAT
+  #    DO_REGISTRY_NAME           — registry slug (overrides vars; default voyageai-docr)
+  # ══════════════════════════════════════════════════════════════════════════
+  push-nextjs-to-docr:
+    name: "15b · Push Next.js to DigitalOcean Container Registry"
+    needs: [build-nextjs, trivy-scan-nextjs]
+    runs-on: ubuntu-latest
+    if: |
+      always() &&
+      needs.build-nextjs.result == 'success' &&
+      (needs.trivy-scan-nextjs.result == 'success' || needs.trivy-scan-nextjs.result == 'skipped') &&
+      (github.ref == 'refs/heads/main' || github.event.inputs.force_push == 'true') &&
+      github.event_name != 'pull_request' &&
+      github.event.inputs.skip_deploy != 'true'
+    permissions:
+      packages: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to DigitalOcean Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: registry.digitalocean.com
+          username: ${{ env.DOCR_DOCKER_USERNAME }}
+          password: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Compute registry image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.NEXTJS_IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest
+            type=raw,value=${{ github.run_number }}
+
+      - name: Build and push Next.js to DOCR (layers cached from stage 13b)
+        id: push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.app
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=nextjs
+          cache-to: type=gha,mode=max,scope=nextjs
+          provenance: true
+          sbom: true
+          build-args: |
+            NEXT_PUBLIC_MAPBOX_TOKEN=${{ secrets.NEXT_PUBLIC_MAPBOX_TOKEN || env.NEXT_PUBLIC_MAPBOX_TOKEN }}
+            DATABASE_URL=${{ secrets.DATABASE_URL || 'postgresql://prisma:prisma@127.0.0.1:5432/prisma' }}
+
+      - name: Trivy — verify pushed Next.js image in registry
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.NEXTJS_IMAGE_NAME }}:latest
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: ${{ (github.event.inputs.skip_tests == 'true' || github.event.inputs.ignore_test_failures == 'true') && '0' || '1' }}
+        env:
+          TRIVY_USERNAME: ${{ env.DOCR_DOCKER_USERNAME }}
+          TRIVY_PASSWORD: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Write Next.js push summary
+        run: |
+          {
+            echo "## 🐳 Next.js Container Push — ✅ Published"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| **Registry** | \`registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}\` |"
+            echo "| **Image** | \`${{ env.NEXTJS_IMAGE_NAME }}\` |"
             echo "| **Tags** | \`latest\`, \`sha-$(echo ${{ github.sha }} | head -c7)\`, \`${{ github.run_number }}\` |"
             echo "| **Digest** | \`${{ steps.push.outputs.digest }}\` |"
             echo "| **Commit** | \`${{ github.sha }}\` |"
@@ -956,17 +1261,21 @@ jobs:
   #        • Information disclosure in error responses
   #
   #  Required secret:
-  #    STAGING_URL — e.g. https://voyageai-staging.vercel.app
+  #    PRODUCTION_URL — public Railway HTTPS URL (same as NEXT_PUBLIC_APP_URL origin)
   #
   #  False-positive suppressions: .github/zap/rules.tsv
   # ══════════════════════════════════════════════════════════════════════════
   dast:
     name: "16 · DAST (OWASP ZAP)"
-    needs: trivy-scan
+    needs: [build-image, trivy-scan]
     runs-on: ubuntu-latest
     if: |
+      always() &&
+      needs.build-image.result == 'success' &&
+      (needs.trivy-scan.result == 'success' || needs.trivy-scan.result == 'skipped') &&
       github.ref == 'refs/heads/main' &&
-      github.event_name != 'pull_request'
+      github.event_name != 'pull_request' &&
+      github.event.inputs.skip_deploy != 'true'
     permissions:
       contents: read
       security-events: write
@@ -975,10 +1284,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: ZAP Full Scan — ${{ secrets.STAGING_URL }}
+      - name: ZAP Full Scan — ${{ secrets.PRODUCTION_URL }}
         uses: zaproxy/action-full-scan@v0.10.0
         with:
-          target: ${{ secrets.STAGING_URL }}
+          target: ${{ secrets.PRODUCTION_URL }}
           allow_issue_writing: true
           fail_action: true
           rules_file_name: .github/zap/rules.tsv
@@ -989,7 +1298,7 @@ jobs:
           artifact_name: zap-report-${{ github.sha }}
 
       - name: Upload ZAP SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: zap_scan_report.json
@@ -1004,7 +1313,7 @@ jobs:
             echo ""
             echo "| Field | Value |"
             echo "|-------|-------|"
-            echo "| **Target** | ${{ secrets.STAGING_URL }} |"
+            echo "| **Target** | ${{ secrets.PRODUCTION_URL }} |"
             echo "| **Scan type** | Full (active + passive) |"
             echo "| **Commit** | \`${{ github.sha }}\` |"
             echo ""
