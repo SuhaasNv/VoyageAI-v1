@@ -22,6 +22,11 @@
 
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from "fs";
 import path from "path";
+import { PlannerAgent } from "../../src/agents/planner/plannerAgent.js";
+import { LogisticsAgent } from "../../src/agents/logistics/logisticsAgent.js";
+import { BudgetAgent } from "../../src/agents/budget/budgetAgent.js";
+import { SafetyAgent } from "../../src/agents/safety/safetyAgent.js";
+import type { EnrichedTripContext } from "../../src/agents/research/researchAgent.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -96,27 +101,53 @@ async function measureLatency(label: string, fn: () => Promise<void>): Promise<n
     return ms;
 }
 
-// Mock agent simulation (no real LLM — pure logic cost)
-import { PlannerAgent } from "../../src/agents/planner/plannerAgent.js";
-import { LogisticsAgent } from "../../src/agents/logistics/logisticsAgent.js";
-import { BudgetAgent } from "../../src/agents/budget/budgetAgent.js";
-import { SafetyAgent } from "../../src/agents/safety/safetyAgent.js";
+// ─── Main ─────────────────────────────────────────────────────────────────────
+//
+// Wrapped in an async IIFE because tsx transpiles this file as CJS (no
+// "type": "module" in package.json), and top-level await is not supported
+// under the CJS output format.
 
-const plannerAgent = new PlannerAgent();
+void (async () => {
+
+// Mock agent simulation (no real LLM — pure logic cost).
+// LogisticsAgent is pure TypeScript; Budget/Safety only call LLM in conditional
+// branches that don't trigger with this fixture data. PlannerAgent, however,
+// eagerly creates an LLM client in its constructor, so under LLM_PROVIDER=mock
+// we skip it and feed the downstream stages a hand-built fixture TripContext.
+const isMockMode = (process.env.LLM_PROVIDER ?? "").trim().toLowerCase() === "mock";
+
 const logisticsAgent = new LogisticsAgent();
 const budgetAgent = new BudgetAgent();
 const safetyAgent = new SafetyAgent();
 
 // Planner latency
 let plannerLatencyMs = 0;
-let plannerCtx: Awaited<ReturnType<typeof plannerAgent.run>> | null = null;
-plannerLatencyMs = await measureLatency("PlannerAgent.run", async () => {
-    plannerCtx = await plannerAgent.run("5 days in Tokyo with a $2000 budget");
-});
+let plannerCtx: import("../../src/agents/planner/plannerAgent.js").TripContext | null = null;
+
+if (isMockMode) {
+    console.log("  PlannerAgent.run: skipped (LLM_PROVIDER=mock — using fixture)");
+    plannerCtx = {
+        destination: "Tokyo",
+        startDate: "2026-05-01",
+        endDate: "2026-05-05",
+        durationDays: 5,
+        preferences: { budget: 2000, style: "balanced", pace: "moderate" },
+        days: [
+            { day: 1, theme: "Arrival" },
+            { day: 2, theme: "Culture" },
+            { day: 3, theme: "Nature" },
+            { day: 4, theme: "Markets" },
+            { day: 5, theme: "Hidden Gems" },
+        ],
+    };
+} else {
+    const plannerAgent = new PlannerAgent();
+    plannerLatencyMs = await measureLatency("PlannerAgent.run", async () => {
+        plannerCtx = await plannerAgent.run("5 days in Tokyo with a $2000 budget");
+    });
+}
 
 // Build enriched context for downstream agents
-import type { EnrichedTripContext } from "../../src/agents/research/researchAgent.js";
-
 const enrichedCtx: EnrichedTripContext = {
     ...plannerCtx!,
     days: plannerCtx!.days.map((d) => ({
@@ -272,3 +303,8 @@ writeFileSync(path.join("reports", "evaluation.json"), JSON.stringify(report, nu
 
 console.log(`\n${passed ? "✅ Evaluation PASSED" : "❌ Evaluation FAILED"} — ${metrics.filter((m) => m.passed).length}/${metrics.length} gates passed`);
 process.exit(passed ? 0 : 1);
+
+})().catch((err: unknown) => {
+    console.error("Evaluation crashed:", err);
+    process.exit(1);
+});

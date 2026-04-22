@@ -41,7 +41,8 @@
       "Bash(npm test *)",
       "Bash(npx vitest *)",
       "Bash(npm audit *)",
-      "Bash(LLM_PROVIDER=mock SKIP_ENV_VALIDATION=1 npx tsx scripts/ci/prompt-tests.ts)"
+      "Bash(LLM_PROVIDER=mock SKIP_ENV_VALIDATION=1 npx tsx scripts/ci/prompt-tests.ts)",
+      "Bash(LLM_PROVIDER=mock SKIP_ENV_VALIDATION=1 npx tsx scripts/ci/evaluate.ts)"
     ]
   }
 }
