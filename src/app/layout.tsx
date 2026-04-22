@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { headers } from "next/headers";
 import "mapbox-gl/dist/mapbox-gl.css";
 import "./globals.css";
 import { ServiceWorkerRegistration } from "@/ui/components/ServiceWorkerRegistration";
@@ -52,13 +53,17 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Read the per-request nonce set by proxy.ts so Next.js can attach it to
+  // the inline hydration scripts it emits (required for strict CSP compliance).
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
+
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className="dark" {...(nonce ? { nonce } : {})}>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >

@@ -27,8 +27,7 @@ import { HERO_GLOBE_ARCS, HERO_GLOBE_MARKERS } from "@/ui/components/hero-globe-
 import { useMotionValue, useSpring, useTransform, useReducedMotion } from "framer-motion";
 
 const MotionDiv = dynamic(
-    () => import("framer-motion").then((m) => m.motion.div),
-    { ssr: false }
+    () => import("framer-motion").then((m) => m.motion.div)
 );
 
 const RotatingEarth = dynamic(
