@@ -68,10 +68,12 @@ jobs:
   provision:
     name: "1 · Provision DO Droplet"
     runs-on: ubuntu-latest
+    # Job outputs read from the final 'resolve' step so they are correct
+    # whether the Droplet already existed OR was just created this run.
     outputs:
-      droplet_ip: ${{ steps.get-ip.outputs.ip }}
-      droplet_id: ${{ steps.get-ip.outputs.id }}
-      already_existed: ${{ steps.get-ip.outputs.existed }}
+      droplet_ip:      ${{ steps.resolve.outputs.ip }}
+      droplet_id:      ${{ steps.resolve.outputs.id }}
+      already_existed: ${{ steps.check.outputs.existed }}
 
     steps:
       - name: Install doctl
@@ -80,7 +82,7 @@ jobs:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
       - name: Check if Droplet already exists
-        id: get-ip
+        id: check
         shell: bash
         run: |
           set -euo pipefail
@@ -91,19 +93,20 @@ jobs:
           if [[ -n "$INFO" ]]; then
             ID=$(echo "$INFO" | awk '{print $1}')
             IP=$(echo "$INFO" | awk '{print $3}')
-            echo "id=$ID"   >> "$GITHUB_OUTPUT"
-            echo "ip=$IP"   >> "$GITHUB_OUTPUT"
-            echo "existed=true" >> "$GITHUB_OUTPUT"
+            echo "id=$ID"        >> "$GITHUB_OUTPUT"
+            echo "ip=$IP"        >> "$GITHUB_OUTPUT"
+            echo "existed=true"  >> "$GITHUB_OUTPUT"
             echo "✅ Droplet already exists: ${{ env.DROPLET_NAME }} ($IP)"
           else
-            echo "existed=false" >> "$GITHUB_OUTPUT"
-            echo "ip="           >> "$GITHUB_OUTPUT"
             echo "id="           >> "$GITHUB_OUTPUT"
+            echo "ip="           >> "$GITHUB_OUTPUT"
+            echo "existed=false" >> "$GITHUB_OUTPUT"
             echo "📦 Droplet not found — will create"
           fi
 
       - name: Create Droplet (if new)
-        if: steps.get-ip.outputs.existed == 'false'
+        id: create
+        if: steps.check.outputs.existed == 'false'
         shell: bash
         run: |
           set -euo pipefail
@@ -118,14 +121,14 @@ jobs:
 
           echo "🚀 Creating Droplet ${{ env.DROPLET_NAME }} ..."
           doctl compute droplet create "${{ env.DROPLET_NAME }}" \
-            --size    "${{ env.DROPLET_SIZE }}" \
-            --image   "${{ env.DROPLET_IMAGE }}" \
-            --region  "${{ env.DROPLET_REGION }}" \
-            --ssh-keys "$KEY_FP" \
+            --size      "${{ env.DROPLET_SIZE }}" \
+            --image     "${{ env.DROPLET_IMAGE }}" \
+            --region    "${{ env.DROPLET_REGION }}" \
+            --ssh-keys  "$KEY_FP" \
             --tag-names "monitoring,voyageai" \
             --wait
 
-          # Fetch IP after creation
+          # Fetch IP immediately after creation
           IP=$(doctl compute droplet list \
             --format "Name,PublicIPv4" --no-header \
             | grep -w "${{ env.DROPLET_NAME }}" | awk '{print $2}')
@@ -133,13 +136,42 @@ jobs:
             --format "ID,Name" --no-header \
             | grep -w "${{ env.DROPLET_NAME }}" | awk '{print $1}')
 
+          [[ -z "$IP" ]] && { echo "❌ Could not read IP after creation"; exit 1; }
+
           echo "id=$ID" >> "$GITHUB_OUTPUT"
           echo "ip=$IP" >> "$GITHUB_OUTPUT"
-          echo "✅ Droplet created: $IP"
+          echo "✅ Droplet created: $IP (id=$ID)"
           echo ""
-          echo "⚠️  IMPORTANT: after this run, copy the Droplet SSH host fingerprint"
-          echo "   into the MONITORING_SSH_FINGERPRINT GitHub secret:"
-          echo "   ssh-keyscan -H $IP | grep ed25519 | awk '{print \$2\" \"\$3}'"
+          echo "⚠️  IMPORTANT: after this run, save the SSH fingerprint:"
+          echo "   ssh-keyscan -H $IP | grep ed25519"
+          echo "   → set as MONITORING_SSH_FINGERPRINT GitHub secret"
+
+      # Always runs — consolidates IP from whichever step produced it
+      - name: Resolve Droplet IP
+        id: resolve
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Prefer the freshly-created IP; fall back to the pre-existing one
+          IP="${{ steps.create.outputs.ip || steps.check.outputs.ip }}"
+          ID="${{ steps.create.outputs.id || steps.check.outputs.id }}"
+
+          # Fallback: re-query doctl in case the expressions above are both empty
+          if [[ -z "$IP" ]]; then
+            echo "ℹ️  Re-querying doctl for Droplet IP..."
+            INFO=$(doctl compute droplet list \
+              --format "ID,Name,PublicIPv4" --no-header 2>/dev/null \
+              | grep -w "${{ env.DROPLET_NAME }}" | head -1 || true)
+            IP=$(echo "$INFO" | awk '{print $3}')
+            ID=$(echo "$INFO" | awk '{print $1}')
+          fi
+
+          [[ -z "$IP" ]] && { echo "❌ Could not resolve Droplet IP"; exit 1; }
+
+          echo "ip=$IP" >> "$GITHUB_OUTPUT"
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
+          echo "✅ Resolved Droplet IP: $IP (id=$ID)"
 
   # ── Stage 2: Bootstrap ──────────────────────────────────────────────────────
   bootstrap:
