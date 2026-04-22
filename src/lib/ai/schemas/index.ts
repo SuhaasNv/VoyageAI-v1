@@ -210,7 +210,10 @@ export type ReoptimizeResponse = z.infer<typeof ReoptimizeResponseSchema>;
 //  Request Schemas — AI Chat Companion
 // ─────────────────────────────────────────
 
-export const ChatRoleSchema = z.enum(["user", "assistant", "system"]);
+// "system" is intentionally excluded: the system prompt is always constructed
+// server-side. Accepting system-role messages from clients is a prompt-injection
+// vector because they bypass the sanitization applied only to "user" messages.
+export const ChatRoleSchema = z.enum(["user", "assistant"]);
 
 export const ChatMessageSchema = z.object({
     role: ChatRoleSchema,

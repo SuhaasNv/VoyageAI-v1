@@ -6,7 +6,7 @@ import { checkRateLimit } from "@/security/rateLimiter";
 import { getLLMClient, executeWithRetry, parseJSONResponse, AIServiceError } from "@/lib/ai/llm";
 import { getDestinationImage } from "@/lib/services/image.service";
 import { logInfo, logError } from "@/infrastructure/logger";
-import { validateLLMOutput } from "@/security/safety";
+import { validateLLMOutput, sanitizeUserInput } from "@/security/safety";
 import { selectModelConfig } from "@/lib/ai/modelRouter";
 import {
     destinationInfoCacheKey,
@@ -34,10 +34,16 @@ export async function GET(req: NextRequest) {
         }
 
         const url = new URL(req.url);
-        const name = url.searchParams.get("name")?.trim();
+        const rawName = url.searchParams.get("name")?.trim();
 
-        if (!name) {
+        if (!rawName) {
             return NextResponse.json({ success: false, error: "Destination name is required" }, { status: 400 });
+        }
+
+        // Sanitize before any LLM embedding or use as a cache/DB key.
+        const name = sanitizeUserInput(rawName.slice(0, 200));
+        if (!name) {
+            return NextResponse.json({ success: false, error: "Invalid destination name" }, { status: 400 });
         }
 
         try {
