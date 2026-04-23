@@ -395,6 +395,11 @@ export default function AdminAssistant() {
 
             {!minimized && (
                 <>
+                    <div className="px-4 py-2 border-b border-white/[0.06] bg-white/[0.01]">
+                        <p className="text-[11px] text-slate-500">
+                            Responses are generated from system logs. Not autonomous analysis.
+                        </p>
+                    </div>
                     {/* Thread */}
                     <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 scroll-smooth">
                         {isEmpty && (

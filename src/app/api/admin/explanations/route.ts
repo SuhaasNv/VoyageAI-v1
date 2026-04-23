@@ -29,10 +29,13 @@ export async function GET(req: NextRequest) {
         const auth = requireAdminApiAuth(req);
         if (!auth.ok) return auth.response;
 
-        const params = req.nextUrl.searchParams;
-        const rawType = params.get("type") ?? "";
+        const searchParams = req.nextUrl.searchParams;
+        const rawType = searchParams.get("type") ?? "";
         const type = VALID_TYPES.has(rawType as DecisionType) ? (rawType as DecisionType) : undefined;
-        const limit = Math.min(200, Math.max(1, parseInt(params.get("limit") ?? "100", 10)));
+        const rawLimit = Number.parseInt(searchParams.get("limit") ?? "100", 10);
+        const limit = Number.isFinite(rawLimit)
+            ? Math.min(Math.max(rawLimit, 1), 200)
+            : 100;
 
         try {
             const decisions = await getRecentDecisions(limit, type);

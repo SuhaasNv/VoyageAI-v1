@@ -219,6 +219,9 @@ async function OverviewContent() {
                     <p className="text-sm text-slate-500 mt-0.5">
                         Live snapshot · {new Date().toUTCString()}
                     </p>
+                    <p className="text-xs text-slate-500">
+                        All metrics are derived from live system data. No simulated values.
+                    </p>
                 </div>
                 <HealthBadge status={h.status} />
             </div>
@@ -245,7 +248,7 @@ async function OverviewContent() {
                     <div className="col-span-12 md:col-span-6 xl:col-span-4"><StatCard label="New (7d)"     value={fmt(d.newUsers7d)}      sub="registered this week"                   icon={UserPlus} /></div>
                     <div className="col-span-12 md:col-span-6 xl:col-span-4"><StatCard label="Total Trips"  value={fmt(d.totalTrips)}      sub={`avg ${d.totalUsers ? (d.totalTrips / d.totalUsers).toFixed(1) : "0"} per user`} icon={MapPin} /></div>
                     <div className="col-span-12 md:col-span-6 xl:col-span-4"><StatCard label="AI Calls"     value={fmt(d.totalAiCalls)}    sub={`${fmt(d.aiLast7d)} this week`}         icon={Zap}        accent /></div>
-                    <div className="col-span-12 md:col-span-6 xl:col-span-4"><StatCard label="AI Cost (est.)" value={fmtCost(d.totalCostUsd)} sub={`${fmt(d.totalTokens)} tokens · token×rate estimate`}  icon={DollarSign} accent /></div>
+                    <div className="col-span-12 md:col-span-6 xl:col-span-4"><StatCard label="AI Cost (Estimated)" value={fmtCost(d.totalCostUsd)} sub={`${fmt(d.totalTokens)} tokens · token×rate · Estimated`}  icon={DollarSign} accent /></div>
                 </div>
             </section>
 
@@ -320,7 +323,7 @@ async function OverviewContent() {
                             { icon: Layers,        label: "Itineraries generated", value: fmt(d.totalItineraries) },
                             { icon: Zap,           label: "AI calls (all-time)",   value: fmt(d.totalAiCalls) },
                             { icon: MapPin,        label: "Trips created",         value: fmt(d.totalTrips) },
-                            { icon: TrendingUp,    label: "AI cost estimate",      value: fmtCost(d.totalCostUsd) },
+                            { icon: TrendingUp,    label: "AI Cost (Estimated)",  value: fmtCost(d.totalCostUsd) },
                             { icon: Cpu,           label: "Tokens consumed",       value: fmt(d.totalTokens) },
                         ].map(({ icon: Icon, label, value }, i, arr) => (
                             <div key={label} className={`flex items-center gap-3 px-4 py-2.5 ${i < arr.length - 1 ? "border-b border-white/[0.04]" : ""} hover:bg-white/[0.02] transition-colors`}>

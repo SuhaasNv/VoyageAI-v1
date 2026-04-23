@@ -183,7 +183,7 @@ async function MetricsContent() {
                     <div className="col-span-12 md:col-span-6 xl:col-span-4"><StatCard label="Total Tokens"   value={fmt(m.totalTokens)} /></div>
                     <div className="col-span-12 md:col-span-6 xl:col-span-4"><StatCard label="Avg Latency"    value={`${fmt(m.avgLatencyMs)} ms`} /></div>
                     <div className="col-span-12 md:col-span-6 xl:col-span-4"><StatCard label="Error Rate"     value={fmtPct(m.errorRate)} sub={`${fmt(m.errorCount)} failed calls`} warn={m.errorRate > 5} /></div>
-                    <div className="col-span-12 md:col-span-6 xl:col-span-4"><StatCard label="Cost Estimate"  value={fmtCost(m.totalCostUsd)} sub="token × rate · estimated, not billed" accent /></div>
+                    <div className="col-span-12 md:col-span-6 xl:col-span-4"><StatCard label="Estimated Cost" value={fmtCost(m.totalCostUsd)} sub="token × rate · Estimated, not billed" accent /></div>
                     <div className="col-span-12 md:col-span-6 xl:col-span-4"><StatCard label="Success Rate"   value={fmtPct(m.totalCalls > 0 ? (m.successCount / m.totalCalls) * 100 : 0)} sub={`${fmt(m.successCount)} / ${fmt(m.totalCalls)}`} /></div>
                 </div>
             </section>

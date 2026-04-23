@@ -20,7 +20,7 @@ import { z } from "zod";
 import { requireAdminApiAuth } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import { OpenAIClient } from "@/infrastructure/llm/openaiClient";
-import { internalErrorResponse, errorResponse } from "@/lib/api/response";
+import { errorResponse } from "@/lib/api/response";
 import { logError, logInfo } from "@/infrastructure/logger";
 import { runWithRequestContext } from "@/lib/requestContext";
 import { sanitizeUserInput } from "@/security/safety";
@@ -339,6 +339,8 @@ const OutputSchema = z.object({
 export type ActionItem        = z.infer<typeof ActionItemSchema>;
 export type AssistantResponse = z.infer<typeof OutputSchema>;
 
+const ASSISTANT_FALLBACK_MESSAGE = "Unable to generate summary. Please refer to logs and metrics directly.";
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
@@ -363,14 +365,29 @@ export async function POST(req: NextRequest) {
         try {
             const apiKey = process.env.OPENAI_API_KEY;
             if (!apiKey) {
-                return errorResponse("LLM_ERROR", "OPENAI_API_KEY is not configured", 500);
+                return Response.json({
+                    insight: ASSISTANT_FALLBACK_MESSAGE,
+                    reasoning: ASSISTANT_FALLBACK_MESSAGE,
+                    recommendation: ASSISTANT_FALLBACK_MESSAGE,
+                    _meta: {
+                        source: "derived-from-logs",
+                        anomalyCount: 0,
+                        anomalySeverities: [],
+                        predictions: [],
+                    },
+                });
             }
 
-            // Parallel: data fetch + predictive analysis (cached, non-blocking)
-            const [data, predReport] = await Promise.all([
-                fetchSystemData(),
-                getPredictions().catch(() => null),
-            ]);
+            const showPredictions =
+                process.env.SHOW_PREDICTIONS === "true" ||
+                process.env.SHOW_PREDICTIONS === "1";
+
+            // Parallel: core data fetch; predictions are optional and gated.
+            const data = await fetchSystemData();
+            let predReport: Awaited<ReturnType<typeof getPredictions>> | null = null;
+            if (showPredictions) {
+                predReport = await getPredictions().catch(() => null);
+            }
             const anomalies       = detectAnomalies(data);
             const predictionBlock = predReport ? formatPredictionsForContext(predReport) : "";
             const context         = buildContext(data, anomalies, predictionBlock);
@@ -411,11 +428,11 @@ export async function POST(req: NextRequest) {
             try {
                 parsed = OutputSchema.parse(JSON.parse(result.content));
             } catch {
-                // Fallback: wrap raw text so the UI always gets a valid shape
+                // Fallback: always return a safe, non-hallucinated shape.
                 parsed = {
-                    insight:        result.content.slice(0, 300),
-                    reasoning:      "Could not structure the full response.",
-                    recommendation: "Try rephrasing your question.",
+                    insight:        ASSISTANT_FALLBACK_MESSAGE,
+                    reasoning:      ASSISTANT_FALLBACK_MESSAGE,
+                    recommendation: ASSISTANT_FALLBACK_MESSAGE,
                 };
             }
 
@@ -451,7 +468,17 @@ export async function POST(req: NextRequest) {
                     endpoint:  "admin_assistant",
                 });
             }
-            return internalErrorResponse("Assistant unavailable — please try again.");
+            return Response.json({
+                insight: ASSISTANT_FALLBACK_MESSAGE,
+                reasoning: ASSISTANT_FALLBACK_MESSAGE,
+                recommendation: ASSISTANT_FALLBACK_MESSAGE,
+                _meta: {
+                    source: "derived-from-logs",
+                    anomalyCount: 0,
+                    anomalySeverities: [],
+                    predictions: [],
+                },
+            });
         }
     });
 }

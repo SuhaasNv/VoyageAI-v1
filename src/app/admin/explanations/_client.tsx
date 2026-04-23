@@ -40,6 +40,18 @@ const FILTER_TABS: { id: DecisionTypeFilter; label: string }[] = [
     { id: "AUTO_HEAL",          label: "Auto-Heal"    },
 ];
 
+const FALLBACK_TYPE_CONFIG = {
+    label: "Assistant",
+    icon: Brain,
+    color: "text-violet-400",
+    badge: "bg-violet-500/10 border-violet-500/20 text-violet-300",
+} as const;
+
+function getTypeConfig(type: string | null | undefined) {
+    if (!type) return FALLBACK_TYPE_CONFIG;
+    return TYPE_CONFIG[type] ?? FALLBACK_TYPE_CONFIG;
+}
+
 // ─── Confidence bar ───────────────────────────────────────────────────────────
 //
 // ⚠  Values shown are HEURISTIC scores, not calibrated probabilities.
@@ -60,7 +72,7 @@ function ConfidenceBar({ value }: { value: number | null }) {
                 <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
             </div>
             <span className="text-[10px] text-slate-500 tabular-nums">{pct}%</span>
-            <span className="text-[9px] text-slate-700 font-medium uppercase tracking-wide">heuristic</span>
+            <span className="text-[9px] text-slate-700 font-medium uppercase tracking-wide">Heuristic</span>
         </div>
     );
 }
@@ -68,7 +80,7 @@ function ConfidenceBar({ value }: { value: number | null }) {
 // ─── Explanation drawer (inline expansion) ────────────────────────────────────
 
 function ExplanationPanel({ decision }: { decision: DecisionEntry }) {
-    const cfg  = TYPE_CONFIG[decision.decisionType] ?? TYPE_CONFIG.ASSISTANT_RESPONSE;
+    const cfg  = getTypeConfig(decision.decisionType);
     const Icon = cfg.icon;
 
     const relTime = useMemo(() => {
@@ -150,7 +162,7 @@ function DecisionRow({
     isExpanded: boolean;
     onToggle:   () => void;
 }) {
-    const cfg  = TYPE_CONFIG[decision.decisionType] ?? TYPE_CONFIG.ASSISTANT_RESPONSE;
+    const cfg  = getTypeConfig(decision.decisionType);
     const Icon = cfg.icon;
 
     const timeStr = new Date(decision.createdAt).toLocaleTimeString([], {
@@ -214,7 +226,7 @@ function EmptyState({ hasFilter }: { hasFilter: boolean }) {
                 <BarChart3 className="w-5 h-5 text-slate-600" />
             </div>
             <p className="text-sm font-medium text-slate-400">
-                {hasFilter ? "No decisions match this filter" : "No AI decisions logged yet"}
+                {hasFilter ? "No decisions match this filter" : "No decisions recorded yet. Use the system to populate logs."}
             </p>
             <p className="text-xs text-slate-600 max-w-xs leading-relaxed">
                 {hasFilter
@@ -330,8 +342,8 @@ export default function ExplanationsClient({ decisions }: ExplanationsClientProp
             {/* Stats strip */}
             {decisions.length > 0 && (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    {(["ASSISTANT_RESPONSE", "AUTO_HEAL"] as const).map((type) => {
-                        const cfg   = TYPE_CONFIG[type];
+                    {Object.keys(TYPE_CONFIG).map((type) => {
+                        const cfg   = getTypeConfig(type);
                         const Icon  = cfg.icon;
                         const count = counts[type] ?? 0;
                         return (
