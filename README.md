@@ -1,6 +1,5 @@
 # 🚀 VoyageAI — Intelligent Multi-Agent Travel Planner
 
-### 🔥 One-line pitch (VERY IMPORTANT)
 VoyageAI turns a free-text travel brief into a staged, reviewable itinerary pipeline where each agent is explicit, auditable, and persisted step-by-step instead of hidden behind a single black-box LLM call.
 
 ---
@@ -161,7 +160,7 @@ Why this matters:
 
 ---
 
-## ⚠️ Limitations (IMPORTANT — boosts grade)
+## ⚠️ Limitations
 
 - Canonical runtime is staged client orchestration, while legacy/experimental paths still exist (possible architecture confusion if not explained clearly).
 - Confidence is heuristic or metric-derived (e.g., R² in prediction contexts), not calibrated correctness probability.
