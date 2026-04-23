@@ -330,7 +330,7 @@ export default function ExplanationsClient({ decisions }: ExplanationsClientProp
             {/* Stats strip */}
             {decisions.length > 0 && (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    {(["ASSISTANT_RESPONSE", "AUTO_HEAL", "AUTONOMOUS_ACTION", "OPTIMIZATION"] as const).map((type) => {
+                    {(["ASSISTANT_RESPONSE", "AUTO_HEAL"] as const).map((type) => {
                         const cfg   = TYPE_CONFIG[type];
                         const Icon  = cfg.icon;
                         const count = counts[type] ?? 0;
