@@ -20,6 +20,7 @@ import { runWithRequestContext } from "@/lib/requestContext";
 import { logError } from "@/infrastructure/logger";
 import { serializeTrip, parseStoredItinerary, type TripDTO } from "@/lib/services/trips";
 import { getDestinationImage } from "@/lib/services/image.service";
+import { plannerTripUpdatedTotal, plannerTripDeletedTotal } from "@/lib/monitoring/businessMetrics";
 
 const UpdateTripSchema = z.object({
     destination: z.string().min(2).max(200).trim().optional(),
@@ -109,6 +110,10 @@ export async function PATCH(
                 prisma.itinerary.findFirst({ where: { tripId: id }, orderBy: { createdAt: "desc" } }),
             ]);
             const itinerary = itineraryRow ? parseStoredItinerary(itineraryRow) : [];
+            
+            // Prometheus metrics
+            plannerTripUpdatedTotal.inc();
+            
             return successResponse<TripDTO>(serializeTrip(updated, itinerary));
         } catch (err) {
             logError(`[PATCH /api/trips/${id}] DB error`, err);
@@ -132,6 +137,10 @@ export async function DELETE(
             if (!trip || trip.userId !== auth.user.sub) return errorResponse("NOT_FOUND", "Trip not found", 404);
 
             await prisma.trip.delete({ where: { id } });
+            
+            // Prometheus metrics
+            plannerTripDeletedTotal.inc();
+            
             return successResponse({ deleted: true });
         } catch (err) {
             logError(`[DELETE /api/trips/${id}] DB error`, err);
