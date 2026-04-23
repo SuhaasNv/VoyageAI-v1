@@ -39,6 +39,7 @@ const FILTER_TABS: { id: DecisionTypeFilter; label: string }[] = [
     { id: "ASSISTANT_RESPONSE", label: "Assistant"    },
     { id: "AUTO_HEAL",          label: "Auto-Heal"    },
 ];
+const STATS_TYPES: Exclude<DecisionTypeFilter, "ALL">[] = ["ASSISTANT_RESPONSE", "AUTO_HEAL"];
 
 const FALLBACK_TYPE_CONFIG = {
     label: "Assistant",
@@ -342,7 +343,7 @@ export default function ExplanationsClient({ decisions }: ExplanationsClientProp
             {/* Stats strip */}
             {decisions.length > 0 && (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    {Object.keys(TYPE_CONFIG).map((type) => {
+                    {STATS_TYPES.map((type) => {
                         const cfg   = getTypeConfig(type);
                         const Icon  = cfg.icon;
                         const count = counts[type] ?? 0;
