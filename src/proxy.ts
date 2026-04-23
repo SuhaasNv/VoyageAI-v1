@@ -1,11 +1,13 @@
 /**
- * proxy.ts  (Next.js 16+ request proxy, formerly middleware)
+ * proxy.ts  (Next.js 16+ middleware entry point)
  *
- * Runs on every matched request BEFORE it reaches route handlers (Node.js runtime).
+ * Next.js 16 requires the file to be named "proxy.ts" but the export must be "middleware".
+ * This runs on every matched request BEFORE it reaches route handlers (Node.js runtime).
  *
  * Responsibilities:
  *  1. CSRF validation on state-mutating API routes (POST / PUT / PATCH / DELETE)
  *  2. Add security response headers on every response
+ *  3. Record HTTP request metrics (count, latency, errors) for Prometheus
  *
  * Token validation is performed in API routes and page layouts using verifyAccessToken().
  */
@@ -15,10 +17,10 @@ import { checkCsrf } from "@/middleware/csrf";
 import { recordRequest, normaliseRoute } from "@/lib/monitoring/apiMetrics";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Proxy
+// Middleware (formerly named "proxy" in Next.js 15)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function proxy(req: NextRequest): Promise<NextResponse> {
+export async function middleware(req: NextRequest): Promise<NextResponse> {
     const proxyStart = performance.now();
     const { pathname } = req.nextUrl;
 
