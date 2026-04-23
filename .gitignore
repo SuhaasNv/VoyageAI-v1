@@ -60,3 +60,7 @@ infra/plan.txt
 infra/plan-readable.txt
 infra/terraform.tfvars
 infra/*.auto.tfvars
+
+# local AI tooling
+.claude/
+.cursor/
