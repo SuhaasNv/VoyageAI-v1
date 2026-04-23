@@ -50,7 +50,22 @@ const FALLBACK_TYPE_CONFIG = {
 
 function getTypeConfig(type: string | null | undefined) {
     if (!type) return FALLBACK_TYPE_CONFIG;
-    return TYPE_CONFIG[type] ?? FALLBACK_TYPE_CONFIG;
+    // Guard against unknown values and prototype-chain keys from stale/corrupt data.
+    if (Object.prototype.hasOwnProperty.call(TYPE_CONFIG, type)) {
+        return TYPE_CONFIG[type];
+    }
+    return FALLBACK_TYPE_CONFIG;
+}
+
+function isDecisionEntry(value: DecisionEntry | null | undefined): value is DecisionEntry {
+    if (!value) return false;
+    return (
+        typeof value.id === "string" &&
+        typeof value.source === "string" &&
+        typeof value.reasoning === "string" &&
+        typeof value.outcome === "string" &&
+        typeof value.createdAt === "string"
+    );
 }
 
 // ─── Confidence bar ───────────────────────────────────────────────────────────
@@ -81,8 +96,8 @@ function ConfidenceBar({ value }: { value: number | null }) {
 // ─── Explanation drawer (inline expansion) ────────────────────────────────────
 
 function ExplanationPanel({ decision }: { decision: DecisionEntry }) {
-    const cfg  = getTypeConfig(decision.decisionType);
-    const Icon = cfg.icon;
+    const cfg  = getTypeConfig(decision?.decisionType);
+    const Icon = cfg?.icon ?? Brain;
 
     const relTime = useMemo(() => {
         // eslint-disable-next-line react-hooks/purity
@@ -163,8 +178,8 @@ function DecisionRow({
     isExpanded: boolean;
     onToggle:   () => void;
 }) {
-    const cfg  = getTypeConfig(decision.decisionType);
-    const Icon = cfg.icon;
+    const cfg  = getTypeConfig(decision?.decisionType);
+    const Icon = cfg?.icon ?? Brain;
 
     const timeStr = new Date(decision.createdAt).toLocaleTimeString([], {
         hour: "2-digit", minute: "2-digit",
@@ -249,8 +264,13 @@ export default function ExplanationsClient({ decisions }: ExplanationsClientProp
     const [search, setSearch]       = React.useState("");
     const [expandedId, setExpandedId] = React.useState<string | null>(null);
 
+    const safeDecisions = React.useMemo(
+        () => decisions.filter(isDecisionEntry),
+        [decisions]
+    );
+
     const filtered = React.useMemo(() => {
-        let result = decisions;
+        let result = safeDecisions;
         if (filter !== "ALL") {
             result = result.filter((d) => d.decisionType === filter);
         }
@@ -264,15 +284,15 @@ export default function ExplanationsClient({ decisions }: ExplanationsClientProp
             );
         }
         return result;
-    }, [decisions, filter, search]);
+    }, [safeDecisions, filter, search]);
 
     const counts = React.useMemo(() => {
-        const c: Record<string, number> = { ALL: decisions.length };
-        for (const d of decisions) {
+        const c: Record<string, number> = { ALL: safeDecisions.length };
+        for (const d of safeDecisions) {
             c[d.decisionType] = (c[d.decisionType] ?? 0) + 1;
         }
         return c;
-    }, [decisions]);
+    }, [safeDecisions]);
 
     const toggle = (id: string) =>
         setExpandedId((prev) => (prev === id ? null : id));
@@ -288,10 +308,10 @@ export default function ExplanationsClient({ decisions }: ExplanationsClientProp
                     </p>
                 </div>
                 <div className="flex items-center gap-2 text-xs text-slate-500">
-                    {decisions.length > 0 ? (
+                    {safeDecisions.length > 0 ? (
                         <>
                             <CircleCheck className="w-3.5 h-3.5 text-[#10B981]" />
-                            {decisions.length} decision{decisions.length !== 1 ? "s" : ""} logged
+                            {safeDecisions.length} decision{safeDecisions.length !== 1 ? "s" : ""} logged
                         </>
                     ) : (
                         <>
@@ -341,7 +361,7 @@ export default function ExplanationsClient({ decisions }: ExplanationsClientProp
             </div>
 
             {/* Stats strip */}
-            {decisions.length > 0 && (
+            {safeDecisions.length > 0 && (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {STATS_TYPES.map((type) => {
                         const cfg   = getTypeConfig(type);
@@ -386,7 +406,7 @@ export default function ExplanationsClient({ decisions }: ExplanationsClientProp
             )}
 
             {/* Info footer */}
-            {decisions.length > 0 && (
+            {safeDecisions.length > 0 && (
                 <div className="flex items-center gap-2 px-1 text-[11px] text-slate-600">
                     <AlertCircle className="w-3 h-3 shrink-0" />
                     Input summaries are sanitized — no user data, API keys, or sensitive information is stored.

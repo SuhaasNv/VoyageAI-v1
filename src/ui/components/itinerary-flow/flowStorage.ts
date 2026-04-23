@@ -3,6 +3,7 @@
 import type { FlowState } from "./types";
 
 export const STORAGE_KEY = "voyageai_flow_session_v2";
+const VALID_STAGES = new Set(["planner", "research", "logistics", "budget", "safety", "saved"]);
 
 // Sessions older than 24 hours are considered stale and discarded.
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -36,6 +37,10 @@ export function loadFromStorage(): FlowState | null {
 
         // Validate required shape
         if (!state.stage || !state.input || !state.sessionId) return null;
+        if (!VALID_STAGES.has(state.stage)) {
+            clearStorage();
+            return null;
+        }
 
         // Discard completed sessions
         if (state.stage === "saved") return null;
