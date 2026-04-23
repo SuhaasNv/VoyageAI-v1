@@ -57,21 +57,23 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  DROPLET_NAME:   voyageai-monitoring
-  DROPLET_SIZE:   ${{ vars.MONITORING_DROPLET_SIZE || 's-1vcpu-1gb' }}
-  DROPLET_REGION: ${{ vars.MONITORING_DROPLET_REGION || 'nyc3' }}
-  DROPLET_IMAGE:  ubuntu-22-04-x64
-  INSTALL_DIR:    /opt/voyageai-monitoring
+  DROPLET_NAME: voyageai-monitoring
+  DROPLET_SIZE: ${{ vars.MONITORING_DROPLET_SIZE || 's-1vcpu-1gb' }}
+  DROPLET_REGION: ${{ vars.MONITORING_DROPLET_REGION || 'sgp1' }}
+  DROPLET_IMAGE: ubuntu-22-04-x64
+  INSTALL_DIR: /opt/voyageai-monitoring
 
 jobs:
   # ── Stage 1: Provision ──────────────────────────────────────────────────────
   provision:
     name: "1 · Provision DO Droplet"
     runs-on: ubuntu-latest
+    # Job outputs read from the final 'resolve' step so they are correct
+    # whether the Droplet already existed OR was just created this run.
     outputs:
-      droplet_ip:       ${{ steps.get-ip.outputs.ip }}
-      droplet_id:       ${{ steps.get-ip.outputs.id }}
-      already_existed:  ${{ steps.get-ip.outputs.existed }}
+      droplet_ip:      ${{ steps.resolve.outputs.ip }}
+      droplet_id:      ${{ steps.resolve.outputs.id }}
+      already_existed: ${{ steps.check.outputs.existed }}
 
     steps:
       - name: Install doctl
@@ -80,7 +82,7 @@ jobs:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
       - name: Check if Droplet already exists
-        id: get-ip
+        id: check
         shell: bash
         run: |
           set -euo pipefail
@@ -91,19 +93,20 @@ jobs:
           if [[ -n "$INFO" ]]; then
             ID=$(echo "$INFO" | awk '{print $1}')
             IP=$(echo "$INFO" | awk '{print $3}')
-            echo "id=$ID"   >> "$GITHUB_OUTPUT"
-            echo "ip=$IP"   >> "$GITHUB_OUTPUT"
-            echo "existed=true" >> "$GITHUB_OUTPUT"
+            echo "id=$ID"        >> "$GITHUB_OUTPUT"
+            echo "ip=$IP"        >> "$GITHUB_OUTPUT"
+            echo "existed=true"  >> "$GITHUB_OUTPUT"
             echo "✅ Droplet already exists: ${{ env.DROPLET_NAME }} ($IP)"
           else
-            echo "existed=false" >> "$GITHUB_OUTPUT"
-            echo "ip="           >> "$GITHUB_OUTPUT"
             echo "id="           >> "$GITHUB_OUTPUT"
+            echo "ip="           >> "$GITHUB_OUTPUT"
+            echo "existed=false" >> "$GITHUB_OUTPUT"
             echo "📦 Droplet not found — will create"
           fi
 
       - name: Create Droplet (if new)
-        if: steps.get-ip.outputs.existed == 'false'
+        id: create
+        if: steps.check.outputs.existed == 'false'
         shell: bash
         run: |
           set -euo pipefail
@@ -118,14 +121,14 @@ jobs:
 
           echo "🚀 Creating Droplet ${{ env.DROPLET_NAME }} ..."
           doctl compute droplet create "${{ env.DROPLET_NAME }}" \
-            --size    "${{ env.DROPLET_SIZE }}" \
-            --image   "${{ env.DROPLET_IMAGE }}" \
-            --region  "${{ env.DROPLET_REGION }}" \
-            --ssh-keys "$KEY_FP" \
+            --size      "${{ env.DROPLET_SIZE }}" \
+            --image     "${{ env.DROPLET_IMAGE }}" \
+            --region    "${{ env.DROPLET_REGION }}" \
+            --ssh-keys  "$KEY_FP" \
             --tag-names "monitoring,voyageai" \
             --wait
 
-          # Fetch IP after creation
+          # Fetch IP immediately after creation
           IP=$(doctl compute droplet list \
             --format "Name,PublicIPv4" --no-header \
             | grep -w "${{ env.DROPLET_NAME }}" | awk '{print $2}')
@@ -133,13 +136,42 @@ jobs:
             --format "ID,Name" --no-header \
             | grep -w "${{ env.DROPLET_NAME }}" | awk '{print $1}')
 
+          [[ -z "$IP" ]] && { echo "❌ Could not read IP after creation"; exit 1; }
+
           echo "id=$ID" >> "$GITHUB_OUTPUT"
           echo "ip=$IP" >> "$GITHUB_OUTPUT"
-          echo "✅ Droplet created: $IP"
+          echo "✅ Droplet created: $IP (id=$ID)"
           echo ""
-          echo "⚠️  IMPORTANT: after this run, copy the Droplet SSH host fingerprint"
-          echo "   into the MONITORING_SSH_FINGERPRINT GitHub secret:"
-          echo "   ssh-keyscan -H $IP | grep ed25519 | awk '{print \$2\" \"\$3}'"
+          echo "⚠️  IMPORTANT: after this run, save the SSH fingerprint:"
+          echo "   ssh-keyscan -H $IP | grep ed25519"
+          echo "   → set as MONITORING_SSH_FINGERPRINT GitHub secret"
+
+      # Always runs — consolidates IP from whichever step produced it
+      - name: Resolve Droplet IP
+        id: resolve
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Prefer the freshly-created IP; fall back to the pre-existing one
+          IP="${{ steps.create.outputs.ip || steps.check.outputs.ip }}"
+          ID="${{ steps.create.outputs.id || steps.check.outputs.id }}"
+
+          # Fallback: re-query doctl in case the expressions above are both empty
+          if [[ -z "$IP" ]]; then
+            echo "ℹ️  Re-querying doctl for Droplet IP..."
+            INFO=$(doctl compute droplet list \
+              --format "ID,Name,PublicIPv4" --no-header 2>/dev/null \
+              | grep -w "${{ env.DROPLET_NAME }}" | head -1 || true)
+            IP=$(echo "$INFO" | awk '{print $3}')
+            ID=$(echo "$INFO" | awk '{print $1}')
+          fi
+
+          [[ -z "$IP" ]] && { echo "❌ Could not resolve Droplet IP"; exit 1; }
+
+          echo "ip=$IP" >> "$GITHUB_OUTPUT"
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
+          echo "✅ Resolved Droplet IP: $IP (id=$ID)"
 
   # ── Stage 2: Bootstrap ──────────────────────────────────────────────────────
   bootstrap:
@@ -155,6 +187,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup SSH key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.MONITORING_SSH_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          mkdir -p ~/.ssh
+          if echo "$SSH_PRIVATE_KEY" | base64 -d 2>/dev/null | grep -q 'PRIVATE KEY'; then
+            echo "$SSH_PRIVATE_KEY" | base64 -d > ~/.ssh/monitor_key
+          else
+            printf '%s' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/monitor_key
+          fi
+          echo "" >> ~/.ssh/monitor_key
+          chmod 600 ~/.ssh/monitor_key
+          ssh-keygen -y -f ~/.ssh/monitor_key > /dev/null \
+            || { echo "❌ SSH key invalid. Re-encode with: cat KEY | base64 -w0"; exit 1; }
+
       - name: Wait for SSH to become available
         shell: bash
         run: |
@@ -168,15 +216,13 @@ jobs:
           echo "❌ SSH never became available" && exit 1
 
       - name: Run bootstrap script on Droplet
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host:        ${{ needs.provision.outputs.droplet_ip }}
-          username:    root
-          key:         ${{ secrets.MONITORING_SSH_PRIVATE_KEY }}
-          fingerprint: ${{ secrets.MONITORING_SSH_FINGERPRINT }}
-          script_stop: true
-          timeout:     300s
-          script: |
+        shell: bash
+        run: |
+          IP="${{ needs.provision.outputs.droplet_ip }}"
+          ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts 2>/dev/null
+          SSH="ssh -i ~/.ssh/monitor_key -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 root@$IP"
+
+          $SSH bash -s << 'BOOTSTRAP'
             set -euo pipefail
             export DEBIAN_FRONTEND=noninteractive
             apt-get update -qq
@@ -202,6 +248,7 @@ jobs:
             ufw --force enable
 
             echo "✅ Bootstrap done"
+          BOOTSTRAP
 
   # ── Stage 3: Upload config files ───────────────────────────────────────────
   upload:
@@ -229,24 +276,66 @@ jobs:
           # Trim leading whitespace added by heredoc indentation
           sed -i 's/^[[:space:]]*//' monitoring/.env
 
-      - name: Inject scrape secret into prometheus.yml
+      - name: Inject secrets into config files
         shell: bash
         run: |
+          # Prometheus — substitute production hostnames
+          sed -i "s|NEXTJS_PROD_HOST|${{ secrets.NEXTJS_PROD_URL }}|g"     monitoring/prometheus.yml
+          sed -i "s|LANGGRAPH_PROD_HOST|${{ secrets.LANGGRAPH_PROD_URL }}|g" monitoring/prometheus.yml
+
+          # Prometheus — substitute scrape bearer token
           sed -i "s|\${METRICS_SCRAPE_SECRET}|${{ secrets.METRICS_SCRAPE_SECRET }}|g" \
             monitoring/prometheus.yml
 
+          # Alertmanager — inject Slack webhook only when the secret is set.
+          # An empty URL causes alertmanager to crash with "unsupported scheme".
+          SLACK_URL="${{ secrets.SLACK_WEBHOOK_URL }}"
+          if [[ -n "$SLACK_URL" ]]; then
+            WEBHOOK_BLOCK="    webhook_configs:\n      - url: \"$SLACK_URL\"\n        send_resolved: true"
+            sed -i "s|    # SLACK_WEBHOOK_PLACEHOLDER|$WEBHOOK_BLOCK|g" monitoring/alertmanager.yml
+          else
+            # Remove the placeholder comment so alertmanager config stays valid
+            sed -i '/# SLACK_WEBHOOK_PLACEHOLDER/d' monitoring/alertmanager.yml
+          fi
+
       - name: Rsync monitoring files to Droplet
         shell: bash
+        env:
+          # Accept key in either raw PEM or base64-encoded PEM form.
+          # Base64 is preferred — it survives Windows CRLF and copy-paste mangling.
+          SSH_PRIVATE_KEY: ${{ secrets.MONITORING_SSH_PRIVATE_KEY }}
         run: |
-          # Write SSH key
           mkdir -p ~/.ssh
-          echo "${{ secrets.MONITORING_SSH_PRIVATE_KEY }}" > ~/.ssh/monitor_key
+
+          # ── Write the key ──────────────────────────────────────────────────────
+          # Try base64 decode first; if that fails write the value as raw PEM.
+          if echo "$SSH_PRIVATE_KEY" | base64 -d 2>/dev/null | grep -q 'PRIVATE KEY'; then
+            echo "🔑 Key is base64-encoded — decoding..."
+            echo "$SSH_PRIVATE_KEY" | base64 -d > ~/.ssh/monitor_key
+          else
+            echo "🔑 Key appears to be raw PEM — writing directly..."
+            # Strip Windows carriage returns (\r) that corrupt PEM parsing
+            printf '%s' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/monitor_key
+          fi
+          # Ensure the required trailing newline is present
+          echo "" >> ~/.ssh/monitor_key
           chmod 600 ~/.ssh/monitor_key
 
-          IP="${{ needs.provision.outputs.droplet_ip }}"
-          SSH_OPTS="-i ~/.ssh/monitor_key -o StrictHostKeyChecking=no -o ConnectTimeout=15"
+          # Sanity-check
+          ssh-keygen -y -f ~/.ssh/monitor_key > /dev/null \
+            || { echo "❌ SSH key is still invalid after normalisation."; \
+                 echo "   Re-encode it with:  cat YOUR_KEY | base64 -w0  (Linux)"; \
+                 echo "                  or:  cat YOUR_KEY | base64       (macOS)"; \
+                 echo "   Then paste that single line into MONITORING_SSH_PRIVATE_KEY."; \
+                 exit 1; }
 
-          rsync -az --delete $SSH_OPTS \
+          IP="${{ needs.provision.outputs.droplet_ip }}"
+
+          # Trust the Droplet's host key
+          ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts 2>/dev/null
+
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/monitor_key -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15" \
             monitoring/ \
             "root@$IP:${{ env.INSTALL_DIR }}/"
 
@@ -261,99 +350,124 @@ jobs:
 
     env:
       MONITORING_DOMAIN: ${{ vars.MONITORING_DOMAIN || '' }}
-      MONITORING_EMAIL:  ${{ vars.MONITORING_EMAIL || 'admin@voyageai.app' }}
+      MONITORING_EMAIL: ${{ vars.MONITORING_EMAIL || 'admin@voyageai.app' }}
 
     steps:
+      - name: Setup SSH key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.MONITORING_SSH_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          mkdir -p ~/.ssh
+          if echo "$SSH_PRIVATE_KEY" | base64 -d 2>/dev/null | grep -q 'PRIVATE KEY'; then
+            echo "$SSH_PRIVATE_KEY" | base64 -d > ~/.ssh/monitor_key
+          else
+            printf '%s' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/monitor_key
+          fi
+          echo "" >> ~/.ssh/monitor_key
+          chmod 600 ~/.ssh/monitor_key
+          ssh-keygen -y -f ~/.ssh/monitor_key > /dev/null \
+            || { echo "❌ SSH key invalid. Re-encode with: cat KEY | base64 -w0"; exit 1; }
+          IP="${{ needs.provision.outputs.droplet_ip }}"
+          ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts 2>/dev/null
+
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host:        ${{ needs.provision.outputs.droplet_ip }}
-          username:    root
-          key:         ${{ secrets.MONITORING_SSH_PRIVATE_KEY }}
-          fingerprint: ${{ secrets.MONITORING_SSH_FINGERPRINT }}
-          script_stop: true
-          timeout:     300s
-          envs:        MONITORING_DOMAIN,MONITORING_EMAIL
-          script: |
-            set -euo pipefail
-            cd /opt/voyageai-monitoring
+        shell: bash
+        run: |
+          IP="${{ needs.provision.outputs.droplet_ip }}"
 
-            # ── Nginx site config ────────────────────────────────────────────
-            DOMAIN="${MONITORING_DOMAIN:-}"
-            IP=$(curl -sf http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/address || echo "")
+          # Pass domain/email as remote env vars — cleaner than positional args
+          # and avoids any quoting issues when the values contain spaces.
+          ssh -i ~/.ssh/monitor_key \
+            -o StrictHostKeyChecking=accept-new \
+            -o ConnectTimeout=60 \
+            "root@$IP" \
+            env \
+              DEPLOY_DOMAIN="${MONITORING_DOMAIN:-}" \
+              DEPLOY_EMAIL="${MONITORING_EMAIL:-admin@voyageai.app}" \
+            bash << 'DEPLOY'
+          set -euo pipefail
+          DOMAIN="${DEPLOY_DOMAIN:-}"
+          EMAIL="${DEPLOY_EMAIL:-admin@voyageai.app}"
+          cd /opt/voyageai-monitoring
 
-            if [[ -n "$DOMAIN" ]]; then
-              SERVE_HOST="$DOMAIN"
+          # ── Ensure dependencies are present (self-healing if bootstrap was skipped) ──
+          if ! command -v nginx &>/dev/null || ! command -v docker &>/dev/null; then
+            echo "Missing dependencies — running bootstrap inline..."
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq
+            apt-get install -y -qq curl gnupg ca-certificates lsb-release \
+              nginx certbot python3-certbot-nginx apache2-utils ufw
+            if ! command -v docker &>/dev/null; then
+              curl -fsSL https://get.docker.com | sh
+              systemctl enable --now docker
+            fi
+            mkdir -p /opt/voyageai-monitoring/grafana/{provisioning/{datasources,dashboards},dashboards}
+          fi
+
+          # ── Nginx: resolve server_name ───────────────────────────────────
+          SERVER_IP=$(curl -sf http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/address || echo "")
+          SERVE_HOST="${DOMAIN:-$SERVER_IP}"
+
+          # Write nginx config using printf — avoids nested heredoc over SSH
+          printf 'server {\n\
+              listen 80;\n\
+              server_name %s;\n\
+              location /.well-known/acme-challenge/ { root /var/www/html; }\n\
+              location / {\n\
+                  proxy_pass         http://127.0.0.1:3001;\n\
+                  proxy_http_version 1.1;\n\
+                  proxy_set_header   Host              $host;\n\
+                  proxy_set_header   X-Real-IP         $remote_addr;\n\
+                  proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;\n\
+                  proxy_set_header   X-Forwarded-Proto $scheme;\n\
+                  proxy_set_header   Upgrade           $http_upgrade;\n\
+                  proxy_set_header   Connection        "upgrade";\n\
+              }\n\
+          }\n' "$SERVE_HOST" > /etc/nginx/sites-available/voyageai-monitoring
+
+          ln -sf /etc/nginx/sites-available/voyageai-monitoring \
+                 /etc/nginx/sites-enabled/voyageai-monitoring
+          rm -f /etc/nginx/sites-enabled/default
+          nginx -t && systemctl reload nginx
+
+          # ── TLS cert (only with a real domain) ──────────────────────────
+          if [[ -n "$DOMAIN" ]]; then
+            if [[ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]]; then
+              echo "Obtaining TLS cert for $DOMAIN ..."
+              certbot --nginx -d "$DOMAIN" \
+                --non-interactive --agree-tos -m "$EMAIL" --redirect
+              (crontab -l 2>/dev/null
+               echo "0 3 * * * certbot renew --quiet && systemctl reload nginx"
+              ) | crontab - 2>/dev/null || true
             else
-              # Fall back to bare IP (HTTP only — no TLS without a domain)
-              SERVE_HOST="$IP"
+              certbot renew --quiet
             fi
+          fi
 
-            cat > /etc/nginx/sites-available/voyageai-monitoring << NGINX_CONF
-            server {
-                listen 80;
-                server_name $SERVE_HOST;
-                location /.well-known/acme-challenge/ { root /var/www/html; }
-                location / {
-                    proxy_pass         http://127.0.0.1:3001;
-                    proxy_http_version 1.1;
-                    proxy_set_header   Host              \$host;
-                    proxy_set_header   X-Real-IP         \$remote_addr;
-                    proxy_set_header   X-Forwarded-For   \$proxy_add_x_forwarded_for;
-                    proxy_set_header   X-Forwarded-Proto \$scheme;
-                    proxy_set_header   Upgrade           \$http_upgrade;
-                    proxy_set_header   Connection        "upgrade";
-                }
-            }
-            NGINX_CONF
+          # ── Docker stack ─────────────────────────────────────────────────
+          echo "Pulling images..."
+          docker compose pull --quiet
 
-            ln -sf /etc/nginx/sites-available/voyageai-monitoring \
-                   /etc/nginx/sites-enabled/voyageai-monitoring
-            rm -f /etc/nginx/sites-enabled/default
-            nginx -t && systemctl reload nginx
+          echo "Starting stack..."
+          docker compose up -d --remove-orphans
 
-            # ── TLS cert (only if we have a real domain) ─────────────────────
-            if [[ -n "$DOMAIN" ]]; then
-              if [[ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]]; then
-                echo "🔐 Obtaining Let's Encrypt cert for $DOMAIN ..."
-                certbot --nginx -d "$DOMAIN" \
-                  --non-interactive --agree-tos -m "${MONITORING_EMAIL}" \
-                  --redirect
-                # Auto-renew
-                (crontab -l 2>/dev/null; echo "0 3 * * * certbot renew --quiet && systemctl reload nginx") | crontab - 2>/dev/null || true
-              else
-                echo "🔐 TLS cert already present — renewing if needed..."
-                certbot renew --quiet
-              fi
-            fi
+          # ── Health checks ────────────────────────────────────────────────
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:9090/-/ready > /dev/null && break
+            [[ $i -eq 30 ]] && echo "Prometheus did not become ready" && exit 1
+            sleep 2
+          done
 
-            # ── Pull latest images ───────────────────────────────────────────
-            echo "📦 Pulling Docker images..."
-            docker compose pull --quiet
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:3001/api/health > /dev/null && break
+            [[ $i -eq 30 ]] && echo "Grafana did not become ready" && exit 1
+            sleep 2
+          done
 
-            # ── Start / restart stack ────────────────────────────────────────
-            echo "🚀 Starting monitoring stack..."
-            docker compose up -d --remove-orphans
-
-            # ── Wait for health ──────────────────────────────────────────────
-            echo "⏳ Waiting for Prometheus..."
-            for i in $(seq 1 30); do
-              curl -sf http://127.0.0.1:9090/-/ready &>/dev/null && break
-              [[ $i -eq 30 ]] && echo "❌ Prometheus timeout" && exit 1
-              sleep 2
-            done
-
-            echo "⏳ Waiting for Grafana..."
-            for i in $(seq 1 30); do
-              curl -sf http://127.0.0.1:3001/api/health &>/dev/null && break
-              [[ $i -eq 30 ]] && echo "❌ Grafana timeout" && exit 1
-              sleep 2
-            done
-
-            # ── Hot-reload Prometheus config ─────────────────────────────────
-            curl -s -XPOST http://127.0.0.1:9090/-/reload || true
-
-            echo "✅ Stack is up!"
+          curl -s -XPOST http://127.0.0.1:9090/-/reload || true
+          echo "Stack is up!"
+          DEPLOY
 
   # ── Stage 5: Smoke test ─────────────────────────────────────────────────────
   smoke-test:
@@ -363,38 +477,57 @@ jobs:
     if: always() && needs.deploy.result == 'success'
 
     steps:
+      - name: Setup SSH key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.MONITORING_SSH_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          mkdir -p ~/.ssh
+          if echo "$SSH_PRIVATE_KEY" | base64 -d 2>/dev/null | grep -q 'PRIVATE KEY'; then
+            echo "$SSH_PRIVATE_KEY" | base64 -d > ~/.ssh/monitor_key
+          else
+            printf '%s' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/monitor_key
+          fi
+          echo "" >> ~/.ssh/monitor_key
+          chmod 600 ~/.ssh/monitor_key
+          ssh-keygen -y -f ~/.ssh/monitor_key > /dev/null \
+            || { echo "❌ SSH key invalid"; exit 1; }
+          IP="${{ needs.provision.outputs.droplet_ip }}"
+          ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts 2>/dev/null
+
       - name: Verify Prometheus API
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host:        ${{ needs.provision.outputs.droplet_ip }}
-          username:    root
-          key:         ${{ secrets.MONITORING_SSH_PRIVATE_KEY }}
-          fingerprint: ${{ secrets.MONITORING_SSH_FINGERPRINT }}
-          script_stop: true
-          script: |
+        shell: bash
+        run: |
+          IP="${{ needs.provision.outputs.droplet_ip }}"
+          SSH="ssh -i ~/.ssh/monitor_key -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 root@$IP"
+
+          $SSH bash -s << 'SMOKETEST'
             set -euo pipefail
 
-            # Prometheus ready
             STATUS=$(curl -sf http://127.0.0.1:9090/-/ready || echo "FAIL")
-            [[ "$STATUS" == *"Prometheus"* || "$STATUS" == "" ]] && echo "✅ Prometheus ready" || { echo "❌ Prometheus: $STATUS"; exit 1; }
+            [[ "$STATUS" == *"Prometheus"* || "$STATUS" == "" ]] \
+              && echo "✅ Prometheus ready" \
+              || { echo "❌ Prometheus: $STATUS"; exit 1; }
 
-            # Grafana health
-            GRAFANA=$(curl -sf http://127.0.0.1:3001/api/health | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('database',''))" 2>/dev/null || echo "FAIL")
-            [[ "$GRAFANA" == "ok" ]] && echo "✅ Grafana healthy" || { echo "❌ Grafana DB: $GRAFANA"; exit 1; }
+            GRAFANA=$(curl -sf http://127.0.0.1:3001/api/health \
+              | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('database',''))" 2>/dev/null || echo "FAIL")
+            [[ "$GRAFANA" == "ok" ]] \
+              && echo "✅ Grafana healthy" \
+              || { echo "❌ Grafana DB: $GRAFANA"; exit 1; }
 
-            # Prometheus targets (at least node-exporter should be up)
             TARGETS=$(curl -sf "http://127.0.0.1:9090/api/v1/targets" \
               | python3 -c "import sys,json; d=json.load(sys.stdin); active=[t for t in d['data']['activeTargets'] if t['health']=='up']; print(len(active))")
             echo "✅ Prometheus has $TARGETS healthy target(s)"
             [[ "$TARGETS" -ge 1 ]] || { echo "❌ No healthy Prometheus targets"; exit 1; }
 
+            SERVER_IP=$(curl -sf http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/address)
             echo ""
-            IP=$(curl -sf http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/address)
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "  Grafana       → http://$IP  (or https://<your-domain>)"
-            echo "  Prometheus    → http://$IP:9090  (loopback only)"
-            echo "  Alertmanager  → http://$IP:9093  (loopback only)"
+            echo "  Grafana       → http://$SERVER_IP"
+            echo "  Prometheus    → http://$SERVER_IP:9090  (loopback only)"
+            echo "  Alertmanager  → http://$SERVER_IP:9093  (loopback only)"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          SMOKETEST
 
   # ── Summary ─────────────────────────────────────────────────────────────────
   summary:
