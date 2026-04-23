@@ -279,6 +279,10 @@ jobs:
       - name: Inject secrets into config files
         shell: bash
         run: |
+          # Prometheus — substitute production hostnames
+          sed -i "s|NEXTJS_PROD_HOST|${{ secrets.NEXTJS_PROD_URL }}|g"     monitoring/prometheus.yml
+          sed -i "s|LANGGRAPH_PROD_HOST|${{ secrets.LANGGRAPH_PROD_URL }}|g" monitoring/prometheus.yml
+
           # Prometheus — substitute scrape bearer token
           sed -i "s|\${METRICS_SCRAPE_SECRET}|${{ secrets.METRICS_SCRAPE_SECRET }}|g" \
             monitoring/prometheus.yml
