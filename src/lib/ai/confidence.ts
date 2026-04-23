@@ -3,6 +3,17 @@
  *
  * Heuristic confidence scoring for the VoyageAI pipeline stages.
  *
+ * ─── ⚠  IMPORTANT — WHAT THESE SCORES ARE AND ARE NOT ─────────────────────────
+ *
+ *   These scores are HEURISTIC indicators, NOT statistically calibrated
+ *   probabilities. A score of 0.82 does NOT mean the output will be correct
+ *   82% of the time. It means the execution path that produced the output is
+ *   classified as moderately reliable (LLM + external data), with no observed
+ *   quality penalties.
+ *
+ *   Every score is rule-derived and fully traceable — no ML model, no
+ *   retrospective validation, no calibration curve behind these numbers.
+ *
  * ─── Design rationale ─────────────────────────────────────────────────────────
  *
  * Confidence reflects two orthogonal dimensions:
@@ -36,8 +47,17 @@
  *   "Confidence starts from the execution mode (deterministic / grounded / LLM-only)
  *    and is reduced by observable quality signals such as fallback usage, low
  *    geocoding accuracy, or partial data — so every score is directly traceable
- *    to what the system actually did."
+ *    to what the system actually did, not to a statistical success rate."
  */
+
+/**
+ * Tag exported so every API response and UI label can declare the epistemological
+ * category of the score rather than displaying a bare number.
+ *
+ * All scores produced by `computeConfidence()` carry this type.
+ */
+export const CONFIDENCE_TYPE = "heuristic" as const;
+export type ConfidenceType = typeof CONFIDENCE_TYPE;
 
 // ─── Base scores ──────────────────────────────────────────────────────────────
 

@@ -8,7 +8,7 @@ import { Suspense } from "react";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/admin";
 import { whereAiCallFailed } from "@/lib/metrics/aiUsageLog";
-import { CallsBarChart, CostLineChart, ProviderDonut, TokensAreaChart, type DailyBucket } from "./_charts";
+import { CallsBarChart, CostLineChart, ProviderDonut, type DailyBucket } from "./_charts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -183,7 +183,7 @@ async function MetricsContent() {
                     <div className="col-span-12 md:col-span-6 xl:col-span-4"><StatCard label="Total Tokens"   value={fmt(m.totalTokens)} /></div>
                     <div className="col-span-12 md:col-span-6 xl:col-span-4"><StatCard label="Avg Latency"    value={`${fmt(m.avgLatencyMs)} ms`} /></div>
                     <div className="col-span-12 md:col-span-6 xl:col-span-4"><StatCard label="Error Rate"     value={fmtPct(m.errorRate)} sub={`${fmt(m.errorCount)} failed calls`} warn={m.errorRate > 5} /></div>
-                    <div className="col-span-12 md:col-span-6 xl:col-span-4"><StatCard label="Cost Estimate"  value={fmtCost(m.totalCostUsd)} sub="sum of costEstimateUsd" accent /></div>
+                    <div className="col-span-12 md:col-span-6 xl:col-span-4"><StatCard label="Cost Estimate"  value={fmtCost(m.totalCostUsd)} sub="token × rate · estimated, not billed" accent /></div>
                     <div className="col-span-12 md:col-span-6 xl:col-span-4"><StatCard label="Success Rate"   value={fmtPct(m.totalCalls > 0 ? (m.successCount / m.totalCalls) * 100 : 0)} sub={`${fmt(m.successCount)} / ${fmt(m.totalCalls)}`} /></div>
                 </div>
             </section>
@@ -213,14 +213,6 @@ async function MetricsContent() {
                     </div>
                 </div>
 
-                <div className="col-span-12 lg:col-span-6 rounded-xl border border-white/[0.08] bg-white/[0.03] p-5">
-                    <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-4">Token Usage (14d)</p>
-                    <TokensAreaChart data={m.dailyBuckets} />
-                    <div className="flex justify-between mt-2">
-                        <span className="text-[10px] text-slate-600">{m.dailyBuckets[0]?.label}</span>
-                        <span className="text-[10px] text-slate-600">{m.dailyBuckets[m.dailyBuckets.length - 1]?.label}</span>
-                    </div>
-                </div>
             </section>
 
             {/* Tables — side by side on xl */}

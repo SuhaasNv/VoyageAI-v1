@@ -112,6 +112,16 @@ export function activeCooldowns(): number {
 export interface ProposedAction {
     type:       AutonomousActionType;
     reason:     string;
+    /**
+     * Confidence score for this proposed action.
+     *
+     * ⚠  Epistemological category depends on source:
+     *  - LLM-proposed actions: self-reported by the model (not statistically calibrated).
+     *  - Rule-based fallback:  heuristic values hand-tuned per action type.
+     *
+     * Used as a gate: actions below MIN_CONFIDENCE (0.7) are rejected regardless
+     * of other checks.  The threshold is a policy choice, not a statistical threshold.
+     */
     confidence: number;
     anomalyId:  string;
 }

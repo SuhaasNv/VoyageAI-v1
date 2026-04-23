@@ -332,7 +332,7 @@ Return ONLY a valid JSON object:
   ],
   "riskWarnings": ["string (e.g. 'Day 3 is very packed', 'Walking distance too long')"],
   "relatedTips": ["string"],
-  "confidenceScore": number (0.0-1.0),
+  "confidenceScore": number (0.0-1.0, self-assessed — not a calibrated probability),
   "modelVersion": "voyage-ai-v1.0",
   "respondedAt": "ISO 8601 datetime"
 }`,

@@ -1,3 +1,11 @@
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║  PRIMARY PRODUCTION PATH — Stage 4 of 5: Budget Agent                  ║
+ * ║  Called by ItineraryCreationFlow.tsx after the Logistics stage.         ║
+ * ║  Deterministically allocates and optimises spend across trip components.║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ */
+
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { getAuthContext, validateBody } from "@/lib/api/request";

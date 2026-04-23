@@ -215,7 +215,7 @@ async function OverviewContent() {
             {/* Title */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-black text-white tracking-tight">Intelligence Dashboard</h1>
+                    <h1 className="text-2xl font-black text-white tracking-tight">Admin Overview</h1>
                     <p className="text-sm text-slate-500 mt-0.5">
                         Live snapshot · {new Date().toUTCString()}
                     </p>
@@ -245,7 +245,7 @@ async function OverviewContent() {
                     <div className="col-span-12 md:col-span-6 xl:col-span-4"><StatCard label="New (7d)"     value={fmt(d.newUsers7d)}      sub="registered this week"                   icon={UserPlus} /></div>
                     <div className="col-span-12 md:col-span-6 xl:col-span-4"><StatCard label="Total Trips"  value={fmt(d.totalTrips)}      sub={`avg ${d.totalUsers ? (d.totalTrips / d.totalUsers).toFixed(1) : "0"} per user`} icon={MapPin} /></div>
                     <div className="col-span-12 md:col-span-6 xl:col-span-4"><StatCard label="AI Calls"     value={fmt(d.totalAiCalls)}    sub={`${fmt(d.aiLast7d)} this week`}         icon={Zap}        accent /></div>
-                    <div className="col-span-12 md:col-span-6 xl:col-span-4"><StatCard label="AI Cost"      value={fmtCost(d.totalCostUsd)} sub={`${fmt(d.totalTokens)} total tokens`}  icon={DollarSign} accent /></div>
+                    <div className="col-span-12 md:col-span-6 xl:col-span-4"><StatCard label="AI Cost (est.)" value={fmtCost(d.totalCostUsd)} sub={`${fmt(d.totalTokens)} tokens · token×rate estimate`}  icon={DollarSign} accent /></div>
                 </div>
             </section>
 

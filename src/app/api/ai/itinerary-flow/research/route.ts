@@ -1,3 +1,11 @@
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║  PRIMARY PRODUCTION PATH — Stage 2 of 5: Research Agent                ║
+ * ║  Called by ItineraryCreationFlow.tsx after the Planner stage completes. ║
+ * ║  Enriches the trip plan with real-world activity and destination data.  ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ */
+
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { getAuthContext, validateBody } from "@/lib/api/request";
@@ -8,6 +16,7 @@ import { logStructured } from "@/infrastructure/logger";
 import { ResearchAgent } from "@/agents/research/researchAgent";
 import { formatAIResponse } from "@/lib/ai/explainability";
 import { computeConfidence, lowGeoFraction } from "@/lib/ai/confidence";
+import { sanitizeUserInput, validateLLMOutput } from "@/security/safety";
 
 const DaySchema = z.object({
     day: z.number(),
@@ -45,7 +54,9 @@ export async function POST(req: NextRequest) {
             const t0 = Date.now();
             const agent = new ResearchAgent();
             const { _feedback, ...tripContext } = body.data;
-            const result = await agent.run(tripContext, flowSessionId, _feedback);
+            const safeFeedback = _feedback ? sanitizeUserInput(_feedback) : undefined;
+            const result = await agent.run(tripContext, flowSessionId, safeFeedback);
+            validateLLMOutput(JSON.stringify(result), "json");
             const durationMs = Date.now() - t0;
 
             const totalActivitiesCount = result.days.reduce((s, d) => s + d.activities.length, 0);

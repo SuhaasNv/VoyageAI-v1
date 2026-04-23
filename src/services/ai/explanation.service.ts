@@ -54,7 +54,16 @@ export type DecisionType =
     | "AUTONOMOUS_ACTION"
     | "OPTIMIZATION";
 
-/** Maps LLM / severity assessment levels to a 0–1 confidence score. */
+/**
+ * Ordinal severity-to-score mapping used when persisting AI decision logs.
+ *
+ * ⚠  HEURISTIC — these are hand-tuned ordinal values, NOT calibrated
+ * probabilities.  A value of 0.92 for CRITICAL does NOT mean the system will
+ * be correct 92% of the time.  It means "this decision was triggered by a
+ * critical anomaly and is therefore logged as high-certainty that action is
+ * warranted."  The mapping makes severity levels comparable within the admin
+ * panel; it carries no statistical guarantee.
+ */
 export const ASSESSMENT_CONFIDENCE: Record<string, number> = {
     CRITICAL: 0.92,
     HIGH:     0.82,
@@ -216,7 +225,11 @@ export async function getDecisionById(id: string): Promise<DecisionEntry | null>
 
 /**
  * Derive an assistant confidence score from anomaly + prediction context.
- * Critical anomalies → high confidence that the AI's analysis is relevant.
+ *
+ * ⚠  HEURISTIC — returns a fixed score based on the presence of anomaly
+ * severity levels.  It does NOT reflect statistical accuracy; it reflects
+ * how much operational signal was available to inform the assistant response.
+ * Higher score = more high-severity context was present, not "more likely correct."
  */
 export function deriveAssistantConfidence(
     anomalySeverities: string[],

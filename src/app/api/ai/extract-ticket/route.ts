@@ -24,6 +24,9 @@ import { logError } from "@/infrastructure/logger";
 import { checkRateLimit } from "@/security/rateLimiter";
 import { formatErrorResponse } from "@/lib/errors";
 import { successResponse, errorResponse, unauthorizedResponse } from "@/lib/api/response";
+import { formatAIResponse } from "@/lib/ai/explainability";
+import { computeConfidence } from "@/lib/ai/confidence";
+import { sanitizeUserInput, validateLLMOutput } from "@/security/safety";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -71,9 +74,15 @@ export async function POST(req: NextRequest) {
                 );
             }
 
-            const extracted = await extractTripFromTicket(text);
+            const safeText = sanitizeUserInput(text);
+            const extracted = await extractTripFromTicket(safeText);
+            validateLLMOutput(JSON.stringify(extracted), "json");
 
-            return successResponse(extracted, 200);
+            return successResponse(formatAIResponse(extracted as object, {
+                confidence: computeConfidence({ mode: "LLM_ONLY" }),
+                reasoning:  "Structured trip details extracted from PDF ticket text via LLM parsing.",
+                sources:    ["PDF ticket text (user-uploaded)", "LLM structured extraction"],
+            }), 200);
         } catch (err) {
             logError("[POST /api/ai/extract-ticket]", err);
             return formatErrorResponse(err);

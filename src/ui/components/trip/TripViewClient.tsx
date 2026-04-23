@@ -286,6 +286,9 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
                             onDayChange={setSelectedDay}
                             onActivityFocus={setFocusedActivity}
                             onEventsReorder={handleEventsReorder}
+                            // PRIMARY PRODUCTION PATH: opens ItineraryCreationFlow
+                            // instead of calling the legacy /api/ai/itinerary route.
+                            onRequestNewItinerary={() => setShowFlow(true)}
                         />
                         {/* Soft gradient fade at the very bottom of the timeline */}
                         <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-[#0B0F14]/60 to-transparent pointer-events-none z-30" />

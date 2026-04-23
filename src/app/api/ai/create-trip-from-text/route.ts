@@ -21,6 +21,7 @@ import { getDestinationImage } from "@/lib/services/image.service";
 import { extractTripFromText } from "@/services/ai/create-trip-from-text.service";
 import { CreateTripFromTextInputSchema } from "@/lib/ai/schemas";
 import { getTravelPreferenceContext } from "@/memory/contextStore";
+import { sanitizeUserInput, validateLLMOutput } from "@/security/safety";
 
 export async function POST(req: NextRequest) {
     return runWithRequestContext(req, async () => {
@@ -30,13 +31,14 @@ export async function POST(req: NextRequest) {
         const validation = await validateBody(req, CreateTripFromTextInputSchema);
         if (!validation.ok) return validation.response;
 
-        const { text } = validation.data;
+        const safeText = sanitizeUserInput(validation.data.text);
 
         try {
             await checkRateLimit(`ai:${auth.user.sub}:create-trip`);
 
             const dnaContext = await getTravelPreferenceContext(auth.user.sub);
-            const extracted = await extractTripFromText(text, dnaContext || undefined);
+            const extracted = await extractTripFromText(safeText, dnaContext || undefined);
+            validateLLMOutput(JSON.stringify(extracted), "json");
 
             const defaultStart = new Date();
             defaultStart.setDate(defaultStart.getDate() + 30);

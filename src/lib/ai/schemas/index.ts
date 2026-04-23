@@ -264,6 +264,12 @@ export const ChatResponseSchema = z.object({
         .default([]),
     riskWarnings: z.array(z.string()).default([]),
     relatedTips: z.array(z.string()).default([]),
+    /**
+     * LLM self-reported confidence — the model assigns this number itself as
+     * part of its JSON output.  It is NOT a calibrated probability; it reflects
+     * the model's own (unverified) assessment of how confident it is.
+     * Treat as a relative signal, not an absolute accuracy estimate.
+     */
     confidenceScore: z.number().min(0).max(1),
     modelVersion: z.string(),
     respondedAt: z.string().datetime(),

@@ -6,8 +6,10 @@
  * budget/style preferences chosen by the user, creates a Trip record,
  * and returns the serialised TripDTO.
  *
- * The caller (wizard) is responsible for subsequently calling
- * POST /api/ai/itinerary to generate the day-by-day plan.
+ * After this call completes, FlightTicketWizard fires the onFlowStart callback
+ * which opens ItineraryCreationFlow — the PRIMARY PRODUCTION PATH
+ * (/api/ai/itinerary-flow/*) — to generate the day-by-day plan.
+ * NOTE: the legacy POST /api/ai/itinerary route must NOT be called here.
  */
 
 import { NextRequest } from "next/server";

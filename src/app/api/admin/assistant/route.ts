@@ -280,9 +280,9 @@ ${ai.byProvider.map((p) => `${p.provider}: ${p._count.id} calls, ${(p._sum.total
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are an AI operations analyst for VoyageAI, an AI-powered travel planning SaaS.
+const SYSTEM_PROMPT = `You are a query and summarization tool for VoyageAI admin data. You receive system log snapshots and return structured summaries grounded in those numbers.
 
-Your job is not to answer questions — it is to analyze system data, detect problems, and drive decisions.
+Your job is to summarize the system log data provided, surface observations, and suggest next steps. You do not have access to real-time data beyond the snapshot supplied.
 
 You will receive:
 - A live system snapshot with user, trip, and AI usage data
@@ -315,9 +315,10 @@ Rules:
 - If anomalies are detected, lead with them; they are highest priority
 - actions[] is optional (omit if no concrete next steps); max 4 items
 - Each action must have a unique id, a clear label, and an exact type from the list above
-- Be direct and opinionated — you are a senior analyst, not a neutral reporter
+- Be direct and factual — cite the exact numbers from the snapshot
 - Numbers must match the snapshot exactly
-- If data is sparse (low counts), note it explicitly and temper conclusions`;
+- If data is sparse (low counts), state that explicitly and do not extrapolate
+- Do not claim capabilities or awareness beyond the data in the snapshot`;
 
 // ─── Output schema ────────────────────────────────────────────────────────────
 
@@ -433,6 +434,7 @@ export async function POST(req: NextRequest) {
             return Response.json({
                 ...parsed,
                 _meta: {
+                    source:            "derived-from-logs",
                     anomalyCount:      anomalies.length,
                     anomalySeverities: anomalies.map((a) => ({ label: a.label, severity: a.severity })),
                     predictions:       predReport?.predictions ?? [],

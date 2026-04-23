@@ -1,3 +1,11 @@
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║  PRIMARY PRODUCTION PATH — Budget Apply                                 ║
+ * ║  Called by ItineraryCreationFlow.tsx when the user accepts a budget     ║
+ * ║  optimisation plan. Atomically applies the OptimalPlan to trip context. ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ */
+
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { getAuthContext, validateBody } from "@/lib/api/request";

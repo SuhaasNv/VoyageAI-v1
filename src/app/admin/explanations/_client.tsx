@@ -2,7 +2,7 @@
 
 import React, { useMemo } from "react";
 import {
-    Brain, Bot, Wrench, TrendingUp, ChevronDown,
+    Brain, Wrench, ChevronDown,
     BookOpen, Database, BarChart3, ArrowRight, Search,
     Clock, CircleCheck, AlertCircle,
 } from "lucide-react";
@@ -10,7 +10,9 @@ import type { DecisionEntry } from "@/services/ai/explanation.service";
 
 // ─── Decision type config ─────────────────────────────────────────────────────
 
-type DecisionTypeFilter = "ALL" | "ASSISTANT_RESPONSE" | "AUTO_HEAL" | "AUTONOMOUS_ACTION" | "OPTIMIZATION";
+// AUTONOMOUS_ACTION and OPTIMIZATION are omitted — these types are only logged
+// when AUTONOMY_MODE is active (default: OFF). Showing empty filter tabs breaks trust.
+type DecisionTypeFilter = "ALL" | "ASSISTANT_RESPONSE" | "AUTO_HEAL";
 
 const TYPE_CONFIG: Record<string, {
     label:  string;
@@ -30,40 +32,35 @@ const TYPE_CONFIG: Record<string, {
         color: "text-amber-400",
         badge: "bg-amber-500/10 border-amber-500/20 text-amber-300",
     },
-    AUTONOMOUS_ACTION: {
-        label: "Autonomous",
-        icon:  Bot,
-        color: "text-[#10B981]",
-        badge: "bg-[#10B981]/10 border-[#10B981]/20 text-[#10B981]",
-    },
-    OPTIMIZATION: {
-        label: "Optimization",
-        icon:  TrendingUp,
-        color: "text-blue-400",
-        badge: "bg-blue-500/10 border-blue-500/20 text-blue-300",
-    },
 };
 
 const FILTER_TABS: { id: DecisionTypeFilter; label: string }[] = [
     { id: "ALL",                label: "All decisions" },
     { id: "ASSISTANT_RESPONSE", label: "Assistant"    },
     { id: "AUTO_HEAL",          label: "Auto-Heal"    },
-    { id: "AUTONOMOUS_ACTION",  label: "Autonomous"   },
-    { id: "OPTIMIZATION",       label: "Optimization" },
 ];
 
 // ─── Confidence bar ───────────────────────────────────────────────────────────
+//
+// ⚠  Values shown are HEURISTIC scores, not calibrated probabilities.
+// Pipeline-stage scores come from a rule-based formula (mode + penalties).
+// Decision-log scores come from ordinal severity mappings.
+// Neither should be interpreted as "X% chance of being correct."
 
 function ConfidenceBar({ value }: { value: number | null }) {
     if (value === null) return <span className="text-[10px] text-slate-600">—</span>;
     const pct = Math.round(value * 100);
     const color = pct >= 75 ? "#10B981" : pct >= 50 ? "#F59E0B" : "#EF4444";
     return (
-        <div className="flex items-center gap-1.5">
+        <div
+            className="flex items-center gap-1.5"
+            title="Heuristic score — rule-derived, not a statistical probability"
+        >
             <div className="w-16 h-1.5 rounded-full bg-white/[0.08] overflow-hidden">
                 <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
             </div>
             <span className="text-[10px] text-slate-500 tabular-nums">{pct}%</span>
+            <span className="text-[9px] text-slate-700 font-medium uppercase tracking-wide">heuristic</span>
         </div>
     );
 }

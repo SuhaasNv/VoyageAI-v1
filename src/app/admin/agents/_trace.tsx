@@ -41,6 +41,17 @@ function agentStyle(name: string) {
     return AGENT_META[name.toLowerCase()] ?? { color: "text-slate-400", bg: "bg-white/[0.04]", border: "border-white/[0.08]" };
 }
 
+// One-line summary of an agent payload: lists the top-level keys so the admin
+// can see what data the agent received / produced without expanding the full JSON.
+function summarisePayload(data: unknown): string {
+    if (data === null || data === undefined) return "—";
+    if (typeof data !== "object" || Array.isArray(data)) return typeof data === "string" ? data.slice(0, 50) : String(data).slice(0, 50);
+    const keys = Object.keys(data as Record<string, unknown>);
+    if (keys.length === 0) return "{}";
+    const preview = keys.slice(0, 4).join(", ");
+    return keys.length > 4 ? `${preview} +${keys.length - 4}` : preview;
+}
+
 // ─── Pipeline Timeline Bar ────────────────────────────────────────────────────
 
 function PipelineBar({ steps }: { steps: ReplayStep[] }) {
@@ -126,11 +137,18 @@ function StepCard({ step, llmCalls }: { step: ReplayStep; llmCalls: LLMCallSumma
                     {step.agentName}
                 </span>
 
-                {/* Error message */}
+                {/* Error message — takes flex-1 when present */}
                 {step.errorMsg && (
                     <span className="text-[11px] text-red-400/80 truncate flex-1 hidden sm:block">{step.errorMsg}</span>
                 )}
-                <span className="flex-1" />
+
+                {/* Input → output summary — visible without expanding */}
+                {!step.errorMsg && (
+                    <span className="text-[10px] text-slate-600 font-mono truncate flex-1 hidden md:block"
+                        title="Keys present in the input and output payloads for this agent step">
+                        {summarisePayload(step.inputJson)} → {summarisePayload(step.outputJson)}
+                    </span>
+                )}
 
                 {/* Latency */}
                 <span className="text-[11px] text-slate-500 tabular-nums shrink-0">{fmtMs(step.latencyMs)}</span>
@@ -149,8 +167,8 @@ function StepCard({ step, llmCalls }: { step: ReplayStep; llmCalls: LLMCallSumma
                             {step.errorMsg}
                         </div>
                     )}
-                    <JsonViewer label="Input" data={step.inputJson} />
-                    <JsonViewer label="Output" data={step.outputJson} />
+                    <JsonViewer label="Input — received by this agent" data={step.inputJson} />
+                    <JsonViewer label="Output — passed to next agent" data={step.outputJson} />
                     {step.metadata !== null && step.metadata !== undefined && <JsonViewer label="Metadata" data={step.metadata as Record<string, unknown>} />}
 
                     {agentLlmCalls.length > 0 && (
@@ -272,6 +290,9 @@ function ReplayPanel({ requestId, onClose }: { requestId: string; onClose: () =>
                         {/* Step cards */}
                         {trace.steps.length > 0 ? (
                             <div className="space-y-2">
+                                <p className="text-[11px] text-slate-600 pb-0.5">
+                                    Each row is one agent. The inline summary shows input → output field names. Expand a step to inspect the full payload.
+                                </p>
                                 {trace.steps.map((step) => (
                                     <StepCard key={step.id} step={step} llmCalls={trace.llmCalls} />
                                 ))}

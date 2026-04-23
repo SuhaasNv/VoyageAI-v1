@@ -6,6 +6,8 @@ import { runWithRequestContext } from "@/lib/requestContext";
 import { getLLMClient } from "@/lib/ai/llm";
 import { logError } from "@/infrastructure/logger";
 import { sanitizeUserInput, validateLLMOutput } from "@/security/safety";
+import { formatAIResponse } from "@/lib/ai/explainability";
+import { computeConfidence } from "@/lib/ai/confidence";
 
 // ─── Request schema ────────────────────────────────────────────────────────────
 
@@ -81,10 +83,24 @@ Return ONLY the insight text. No preamble.`;
             });
 
             validateLLMOutput(response.content, "text");
-            return successResponse({ insight: response.content.trim() });
+            return successResponse(formatAIResponse(
+                { insight: response.content.trim() },
+                {
+                    confidence: computeConfidence({ mode: "LLM_ONLY" }),
+                    reasoning:  `Dashboard intelligence insight generated for ${safeDest} (${safeStart}–${safeEnd}) via LLM.`,
+                    sources:    ["Trip destination & dates", ...(dna ? ["Travel DNA preferences"] : []), "LLM knowledge base"],
+                },
+            ));
         } catch (err) {
             logError("[AI Trip Intelligence] Failed to generate insight", err);
-            return successResponse({ insight: "Review your itinerary and ensure your documents are ready." });
+            return successResponse(formatAIResponse(
+                { insight: "Review your itinerary and ensure your documents are ready." },
+                {
+                    confidence: computeConfidence({ mode: "DETERMINISTIC" }),
+                    reasoning:  "LLM unavailable — static fallback insight returned.",
+                    sources:    ["Static fallback"],
+                },
+            ));
         }
     });
 }

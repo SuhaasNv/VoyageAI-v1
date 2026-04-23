@@ -1,3 +1,11 @@
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║  PRIMARY PRODUCTION PATH — Stage 6 of 6: Save                          ║
+ * ║  Called by ItineraryCreationFlow.tsx after all 5 agent stages complete. ║
+ * ║  Persists the finalised SafeTripContext to the database as an Itinerary.║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ */
+
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { getAuthContext, validateBody } from "@/lib/api/request";
@@ -8,6 +16,8 @@ import { logStructured } from "@/infrastructure/logger";
 import { prisma } from "@/lib/prisma";
 import { safeTripContextToItinerary } from "@/lib/services/trips";
 import type { SafeTripContext } from "@/agents/safety/safetyAgent";
+import { formatAIResponse } from "@/lib/ai/explainability";
+import { computeConfidence } from "@/lib/ai/confidence";
 
 const Schema = z.object({
     tripId: z.string(),
@@ -87,7 +97,14 @@ export async function POST(req: NextRequest) {
                 },
             });
 
-            return successResponse({ tripId: body.data.tripId, itineraryId: itinerary.id });
+            return successResponse(formatAIResponse(
+                { tripId: body.data.tripId, itineraryId: itinerary.id },
+                {
+                    confidence: computeConfidence({ mode: "DETERMINISTIC" }),
+                    reasoning:  "Deterministic DB write — SafeTripContext persisted as Itinerary. No AI inference at this stage.",
+                    sources:    ["Safety agent output (SafeTripContext)", "Database"],
+                },
+            ));
         } catch (err) {
             return formatErrorResponse(err);
         }
