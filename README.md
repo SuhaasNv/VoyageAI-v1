@@ -1,341 +1,226 @@
-# VoyageAI
+# 🚀 VoyageAI — Intelligent Multi-Agent Travel Planner
 
-<p align="center">
-  <strong>Smart & Simple Trip Planning</strong>
-</p>
-<p align="center">
-  AI-powered travel planning that turns your ideas into complete itineraries in seconds.
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/Next.js-16-black?logo=next.js" alt="Next.js" />
-  <img src="https://img.shields.io/badge/TypeScript-5-blue?logo=typescript" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/Prisma-7-2D3748?logo=prisma" alt="Prisma" />
-  <img src="https://img.shields.io/badge/Tailwind-4-38B2AC?logo=tailwindcss" alt="Tailwind" />
-  <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react" alt="React" />
-</p>
+### 🔥 One-line pitch (VERY IMPORTANT)
+VoyageAI turns a free-text travel brief into a staged, reviewable itinerary pipeline where each agent is explicit, auditable, and persisted step-by-step instead of hidden behind a single black-box LLM call.
 
 ---
 
-## 📖 About the Project
+## 🧠 Problem
 
-**VoyageAI** is a full-stack travel planning application that leverages AI to help users create personalized trip itineraries, get packing recommendations, simulate travel scenarios, and chat with an intelligent companion—all in one place. Built with Next.js 16, React 19, and a modern TypeScript stack, it offers a seamless experience from landing page to trip management.
-
-### What Makes It Special
-
-- **Natural language input** — Describe your dream trip in plain English (e.g., "Create a 5-day trip to Bali") and get a full itinerary
-- **AI chat companion** — Ask questions, reoptimize plans, and get recommendations within each trip context
-- **Interactive Mapbox maps** — Visualize your itinerary with markers, routes, and 3D terrain
-- **Travel DNA** — Onboarding captures your preferences (pace, style, budget) for personalized suggestions
-- **Flight ticket parsing** — Upload a PDF ticket to auto-create a trip with dates and destination
-- **Trip comparison** — Compare two trips side-by-side with AI-powered analysis
-- **Shareable trips** — Generate public links to share itineraries with friends
+- Trip planners are often either static templates or opaque chatbots with weak traceability.
+- Users need **cost control**, **safety checks**, and **route realism**, not just generic recommendations.
+- Final-year AI systems need to defend: reliability under failure, explainability claims, and security controls under adversarial input.
 
 ---
 
-## ✨ Features
+## 💡 Solution Overview
 
-| Feature | Description |
-|---------|-------------|
-| **AI Itinerary** | Generate day-by-day plans from destination, dates, and travel style |
-| **AI Chat** | Trip-specific companion for questions, suggestions, and reoptimization |
-| **Smart Packing** | AI-generated packing lists based on destination and duration |
-| **Trip Simulation** | Preview scenarios (weather, costs, alternatives) before you go |
-| **Interactive Map** | Mapbox-powered map with markers, routes, and 3D terrain |
-| **Budget Tracking** | Track spending and compare against your plan |
-| **Google OAuth** | Sign in with Google or email/password |
-| **Travel DNA** | Onboarding to capture preferences (pace, style, budget) |
-| **Flight Ticket Import** | Upload PDF tickets to auto-create trips |
-| **Trip Comparison** | Compare two trips with AI analysis |
-| **Shareable Links** | Public share tokens for itineraries |
-| **Favorites** | Save favorite destinations |
-| **Admin Panel** | User management, AI metrics, image cache control |
+- VoyageAI implements a **multi-agent staged planner**: users approve each stage before moving forward.
+- Each stage has a narrow responsibility (plan, research, logistics, budget, safety).
+- Outputs are persisted with metadata (`_meta`) so decisions are inspectable in UI/admin rather than hidden in prompts.
+
+---
+
+## ⚙️ System Architecture (CRITICAL)
+
+Canonical architecture in production is **client-orchestrated staged execution**.
+
+- Orchestration happens in `src/ui/components/itinerary-flow/ItineraryCreationFlow.tsx`.
+- Backend API routes execute one agent per stage under `src/app/api/ai/itinerary-flow/*`.
+- Final output is saved by `src/app/api/ai/itinerary-flow/save/route.ts` into Prisma/Postgres.
+
+Flow:
+
+1. User opens itinerary creation flow UI.
+2. `planner` route returns `TripContext`.
+3. `research` route enriches to `EnrichedTripContext`.
+4. `logistics` route optimizes to `OptimizedTripContext`.
+5. `budget` route computes `BudgetedTripContext`.
+6. `safety` route returns `SafeTripContext`.
+7. `save` route persists itinerary JSON and marks trip completed.
+
+Production vs non-production paths:
+
+- **Production path:** staged `/api/ai/itinerary-flow/*`.
+- **Legacy path:** `/api/ai/itinerary` (kept for backward compatibility).
+- **Experimental path:** `src/orchestrator/agentOrchestrator.ts` + LangGraph bridge/internal endpoint (not primary browser runtime).
+
+---
+
+## 🤖 Agent Design
+
+- **Planner**
+  - Role: parse user intent and create day themes.
+  - I/O: `input string -> TripContext`.
+  - Nature: LLM-assisted parsing + deterministic normalization.
+
+- **Research**
+  - Role: gather activities/hotels from external data.
+  - I/O: `TripContext -> EnrichedTripContext`.
+  - Nature: mixed LLM + external data tooling (Bright Data, geocoding support).
+
+- **Logistics**
+  - Role: sequence activities, assign slots, choose route/hotel strategy.
+  - I/O: `EnrichedTripContext -> OptimizedTripContext`.
+  - Nature: largely deterministic optimization logic.
+
+- **Budget**
+  - Role: estimate costs and detect over-budget conditions.
+  - I/O: `OptimizedTripContext -> BudgetedTripContext`.
+  - Nature: deterministic calculations, with optional LLM phrasing in parts of UX.
+
+- **Safety**
+  - Role: apply risk rules and produce warnings/tips.
+  - I/O: `BudgetedTripContext -> SafeTripContext`.
+  - Nature: deterministic rule engine with optional LLM-generated advice text.
+
+---
+
+## 🔍 Explainability & Responsible AI
+
+- Stage responses use `formatAIResponse()` (`src/lib/ai/explainability.ts`) to attach:
+  - `confidence`
+  - `confidenceType`
+  - `reasoning`
+  - `sources`
+  - optional `durationMs` and `decisionsLog`.
+- Confidence in `src/lib/ai/confidence.ts` is explicitly **heuristic** (`base score - penalties`), not calibrated probability.
+- Admin explainability logs persist decision records (`AiDecisionLog`) via `src/services/ai/explanation.service.ts`.
+
+What is explainable:
+
+- Stage-level metadata and reasoning strings.
+- Decision logs for assistant/auto-heal/autonomous actions in admin.
+
+What is not fully explainable:
+
+- Confidence is not statistically calibrated.
+- Some reasoning entries are narrative summaries, not event-sourced causal traces.
+
+---
+
+## 🔐 Security & Reliability
+
+- **Validation:** Zod-based request schemas and shared `validateBody()` pipeline.
+- **Prompt/input safety:** `sanitizeUserInput()` and output checks in `src/security/safety.ts`.
+- **Auth:** JWT access + rotating refresh token family with revocation.
+- **CSRF:** double-submit cookie + HMAC checks in proxy/middleware layer.
+- **Rate limiting:** Redis-backed controls with endpoint-specific behavior.
+- **Fallbacks:** provider fallbacks (OpenAI/Gemini paths), cache fallbacks, staged UI retry handling.
+
+Known caveats (important):
+
+- AI rate limiting has fail-open behavior on Redis infra errors in some paths.
+- Security posture is stronger on auth endpoints than uniformly across every AI route.
+
+---
+
+## 🧪 Testing & Evaluation
+
+- **Unit/integration:** Vitest (`npm test`) on core logic and contracts.
+- **E2E:** dedicated tests exist under `tests/e2e/*` for itinerary/security behavior.
+- **CI gates:** lint/type/build + model/data/prompt/safety scripts + SAST/SCA/DAST workflows.
+
+What is real vs mocked:
+
+- CI AI checks frequently run with mock provider settings for determinism/speed.
+- E2E covers production-like route paths, but default `npm test` excludes `tests/e2e/*`.
+
+Reliability proven vs assumed:
+
+- Proven: compile/type checks, core tests, route generation, CI security pipeline execution.
+- Assumed/partial: full live-provider behavior under all third-party outage conditions.
 
 ---
 
 ## 🛠 Tech Stack
 
-| Layer | Technology |
-|-------|------------|
-| **Framework** | Next.js 16 (App Router, Turbopack) |
-| **UI** | React 19 |
-| **Language** | TypeScript 5 |
-| **Database** | PostgreSQL (Supabase or any Postgres) |
-| **ORM** | Prisma 7 |
-| **Auth** | JWT + httpOnly refresh tokens, Google OAuth 2.0 |
-| **AI / LLM** | Groq (LLaMA) or Google Gemini |
-| **Maps** | Mapbox GL JS |
-| **Images** | Pexels, Unsplash |
-| **Styling** | Tailwind CSS 4 |
-| **Animation** | Framer Motion |
-| **State** | Zustand (persisted) |
-| **Drag & Drop** | @dnd-kit |
-| **Validation** | Zod |
-| **Cache / Rate Limit** | Upstash Redis (optional) |
+- **Frontend:** Next.js 16 (App Router), React 19, TypeScript, Tailwind, Framer Motion
+- **Backend:** Next.js API routes (`src/app/api/*`)
+- **AI:** OpenAI/Gemini provider integration + route-level model routing
+- **DB:** Prisma + PostgreSQL
+- **Infra:** Redis caching/rate limit, Docker (Next + LangGraph service), Terraform (DigitalOcean), GitHub Actions
+- **External APIs:** Bright Data, Mapbox, Pexels, Google OAuth
 
 ---
 
-## 📁 Project Structure
+## 📊 Admin & Observability
 
-```
-voyageai_1/
-├── prisma/
-│   ├── schema.prisma          # Database schema
-│   └── migrations/            # SQL migrations
-├── src/
-│   ├── app/
-│   │   ├── (auth)/            # Login, signup
-│   │   ├── (marketing)/       # Landing, about, blog, destinations, etc.
-│   │   ├── dashboard/         # Protected app
-│   │   │   ├── page.tsx       # Trip list, budget overview, AI suggestions
-│   │   │   ├── compare/       # Trip comparison
-│   │   │   ├── settings/      # User settings
-│   │   │   └── trip/[id]/     # Trip detail + map + AI chat
-│   │   ├── admin/             # Admin panel (users, AI metrics)
-│   │   ├── share/[token]/     # Public trip sharing
-│   │   └── api/               # API routes
-│   │       ├── auth/          # Login, register, refresh, Google OAuth, CSRF
-│   │       ├── profile/       # GET/PATCH user profile
-│   │       ├── trips/         # Trip CRUD, chat, share, from-ticket
-│   │       ├── ai/            # Itinerary, packing, reoptimize, simulation, landing, compare, export
-│   │       ├── preferences/   # Travel DNA
-│   │       ├── favorites/     # Favorite destinations
-│   │       └── admin/         # Clear cache, AI metrics
-│   ├── components/
-│   │   ├── dashboard/         # Dashboard UI, modals, sidebar
-│   │   ├── trip/              # Map, itinerary, chat drawer
-│   │   ├── marketing/         # Landing page sections
-│   │   └── ui/                # Shared UI components
-│   ├── lib/                   # Utilities, auth, Prisma, env, API helpers
-│   ├── services/              # AI services (chat, packing, simulation, create-trip)
-│   ├── stores/                # Zustand (auth store)
-│   ├── hooks/                 # useTrips, etc.
-│   └── proxy.ts               # CSRF, security headers (Next.js 16+)
-├── scripts/                   # clear-image-cache, measure-perf
-├── docs/                      # Architecture, audits
-└── public/
-```
+Admin surface (`src/app/admin/*`) includes:
+
+- system health and latency/error windows
+- AI usage metrics and cost estimates
+- agent replay traces
+- explainability decision logs
+- cache control operations
+
+Why this matters:
+
+- Enables auditability for viva/demo.
+- Distinguishes pipeline failures, model issues, and ops signals instead of relying on anecdotal UI behavior.
 
 ---
 
-## 🚀 Getting Started
+## ⚠️ Limitations (IMPORTANT — boosts grade)
 
-### Prerequisites
+- Canonical runtime is staged client orchestration, while legacy/experimental paths still exist (possible architecture confusion if not explained clearly).
+- Confidence is heuristic or metric-derived (e.g., R² in prediction contexts), not calibrated correctness probability.
+- Third-party dependency risk remains (LLM providers, Bright Data, Mapbox, Redis).
+- E2E coverage is present but not in default Vitest execution path.
+- Some admin metrics are operational estimates, not billing-grade truth.
 
-- **Node.js** 20+
-- **npm** or **pnpm**
-- **PostgreSQL** (or [Supabase](https://supabase.com) account)
+---
 
-### 1. Clone & Install
+## 🚀 How to Run
+
+1. Install dependencies
 
 ```bash
-git clone https://github.com/your-org/voyageai_1.git
-cd voyageai_1
-npm install
+npm ci
 ```
 
-### 2. Environment Variables
+2. Configure environment (`.env`)
 
-Create a `.env` file in the project root:
+High-level required variables:
 
-```env
-# ── Database (e.g. Supabase Postgres) ───────────────────────────────────────
-# DATABASE_URL: use the pooled connection string from Supabase (Transaction pooler).
-# DIRECT_URL: use the direct/session connection for migrations (port 5432).
-# If you omit DIRECT_URL, Prisma migrations fall back to DATABASE_URL.
-DATABASE_URL="postgresql://..."
-DIRECT_URL="postgresql://..."
+- `DATABASE_URL`
+- `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`
+- `CSRF_SECRET`
+- `LLM_PROVIDER` + provider key (`OPENAI_API_KEY` or `GEMINI_API_KEY`)
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
 
-# ── JWT ─────────────────────────────────────────────────────────────────────
-JWT_ACCESS_SECRET="your-64-byte-hex-access-secret"
-JWT_REFRESH_SECRET="your-64-byte-hex-refresh-secret"
+Common optional integrations:
 
-# ── CSRF ────────────────────────────────────────────────────────────────────
-CSRF_SECRET="your-32-byte-hex-csrf-secret"
+- `REDIS_URL`
+- `NEXT_PUBLIC_MAPBOX_TOKEN`
+- `PEXELS_API_KEY`
+- `BRIGHT_DATA_API_KEY`
+- `LANGGRAPH_SERVICE_URL`, `INTERNAL_AGENT_SECRET`
 
-# ── App ────────────────────────────────────────────────────────────────────
-NEXT_PUBLIC_APP_URL="http://localhost:3000"
-NODE_ENV="development"
-
-# ── Google OAuth ───────────────────────────────────────────────────────────
-GOOGLE_CLIENT_ID="your-google-client-id"
-GOOGLE_CLIENT_SECRET="your-google-client-secret"
-
-# ── LLM ─────────────────────────────────────────────────────────────────────
-LLM_PROVIDER="groq"
-GROQ_API_KEY="your-groq-api-key"
-
-# Optional: Gemini fallback
-# GEMINI_API_KEY="your-gemini-api-key"
-# GEMINI_MODEL="gemini-1.5-flash"
-
-# ── Mapbox ──────────────────────────────────────────────────────────────────
-NEXT_PUBLIC_MAPBOX_TOKEN="your-mapbox-token"
-
-# ── Pexels (destination images) ────────────────────────────────────────────
-PEXELS_API_KEY="your-pexels-api-key"
-
-# ── Optional: Upstash Redis (rate limiting, caching) ────────────────────────
-# UPSTASH_REDIS_REST_URL="https://xxx.upstash.io"
-# UPSTASH_REDIS_REST_TOKEN="your-token"
-```
-
-**Development fallbacks:** In dev mode, `DATABASE_URL`, `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, and `CSRF_SECRET` fall back to defaults if unset. Production requires all values.
-
-### 3. Database setup (Supabase)
-
-Point `.env` at your Supabase project (no local Docker Postgres required). Then:
+3. Prepare database
 
 ```bash
 npx prisma generate
 npx prisma migrate dev
 ```
 
-Use `migrate deploy` instead of `migrate dev` in CI or when you only want to apply existing migrations.
-
-### 4. Run Development Server
+4. Run app
 
 ```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+5. Recommended validation before demo
+
+```bash
+npm run type-check
+npm run build
+npm test
+```
 
 ---
 
-## 🔌 API Overview
+## 🎯 Final Note
 
-### Auth
-
-| Route | Method | Description |
-|-------|--------|-------------|
-| `/api/auth/login` | POST | Email/password login |
-| `/api/auth/register` | POST | Create account |
-| `/api/auth/refresh` | POST | Rotate tokens (httpOnly cookie) |
-| `/api/auth/logout` | POST | Revoke session |
-| `/api/auth/google` | GET | Google OAuth redirect |
-| `/api/auth/google/callback` | GET | OAuth callback |
-| `/api/auth/csrf` | GET | Get CSRF token |
-| `/api/auth/onboard` | POST | Complete Travel DNA onboarding |
-
-### User
-
-| Route | Method | Description |
-|-------|--------|-------------|
-| `/api/profile` | GET, PATCH | User profile |
-| `/api/preferences` | GET, POST | Travel preferences (DNA) |
-
-### Trips
-
-| Route | Method | Description |
-|-------|--------|-------------|
-| `/api/trips` | GET, POST | List/create trips |
-| `/api/trips/[id]` | GET, PATCH, DELETE | Trip CRUD |
-| `/api/trips/[id]/chat` | GET | Chat history |
-| `/api/trips/[id]/itinerary` | POST | Save itinerary |
-| `/api/trips/[id]/share` | POST, DELETE | Create/revoke share link |
-| `/api/trips/from-ticket` | POST | Create trip from PDF ticket |
-
-### AI
-
-| Route | Method | Description |
-|-------|--------|-------------|
-| `/api/ai/landing` | POST | Landing page prompt (create trip, chat, hotel search) |
-| `/api/ai/itinerary` | POST | Generate itinerary |
-| `/api/ai/packing` | POST | Generate packing list |
-| `/api/ai/reoptimize` | POST | Reoptimize itinerary |
-| `/api/ai/simulation` | POST | Trip simulation |
-| `/api/ai/chat` | POST | AI chat (streaming) |
-| `/api/ai/compare` | POST | Compare two trips |
-| `/api/ai/create-trip` | POST | Create trip with params |
-| `/api/ai/create-trip-from-text` | POST | Create trip from natural language |
-| `/api/ai/extract-ticket` | POST | Extract data from ticket PDF |
-| `/api/ai/export` | POST | Export trip (e.g. PDF) |
-
-### Other
-
-| Route | Method | Description |
-|-------|--------|-------------|
-| `/api/favorites` | GET, POST, DELETE | Favorite destinations |
-| `/api/suggestions` | GET | AI destination suggestions |
-| `/api/itinerary/optimize` | POST | Optimize itinerary order |
-| `/api/admin/clear-image-cache` | POST | Clear destination image cache |
-| `/api/admin/ai-metrics` | GET | AI usage metrics |
-
----
-
-## 🗄 Database Schema (Overview)
-
-| Model | Purpose |
-|-------|---------|
-| **User** | Accounts, OAuth, preferences |
-| **RefreshToken** | Session rotation, reuse detection |
-| **AuditLog** | Login, logout, register events |
-| **RateLimitEntry** | DB-backed rate limiting |
-| **AiUsageLog** | LLM token usage, cost tracking |
-| **Trip** | Trips with destination, dates, budget |
-| **Itinerary** | AI-generated itinerary JSON |
-| **ChatMessage** | Trip chat history |
-| **TravelPreference** | Travel DNA data |
-| **FavoriteDestination** | User favorites |
-
----
-
-## 🔒 Security
-
-- **JWT access tokens** (short-lived) + **httpOnly refresh cookies** (7 days)
-- **CSRF protection** on state-mutating requests (Double Submit Cookie + HMAC)
-- **Token rotation** with reuse detection (family revocation)
-- **Rate limiting** on auth endpoints (DB or Upstash Redis)
-- **Secure headers** (CSP, HSTS, X-Frame-Options, X-Content-Type-Options)
-- **Server-only API keys** (Pexels, Groq, Gemini never exposed to client)
-
----
-
-## 📜 Scripts
-
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start dev server (Turbopack) |
-| `npm run build` | Production build |
-| `npm run start` | Start production server |
-| `npm run type-check` | TypeScript check |
-| `npm run lint` | Run ESLint |
-| `npm run clear-image-cache` | Clear destination image cache |
-| `npm run measure-perf` | Measure dashboard performance |
-
----
-
-## 🚢 Deployment
-
-### Vercel (Recommended)
-
-1. Push to GitHub
-2. Import project in [Vercel](https://vercel.com)
-3. Add all environment variables
-4. Deploy
-
-### Required Services
-
-| Service | Purpose |
-|---------|---------|
-| **Supabase** (or Postgres) | Database |
-| **Groq** or **Google AI** | LLM (itinerary, chat, packing) |
-| **Mapbox** | Maps |
-| **Pexels** | Destination images |
-| **Google Cloud** | OAuth credentials |
-| **Upstash Redis** (optional) | Rate limiting, caching |
-
-### Production Checklist
-
-- Set `NODE_ENV=production`
-- Configure `NEXT_PUBLIC_APP_URL` for your domain
-- Ensure `LLM_PROVIDER` and corresponding API key
-- Add `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` for production rate limiting
-- Configure Google OAuth redirect URIs for your domain
-
----
-
-## 📄 License
-
-MIT
+VoyageAI is strong because it treats trip generation as a **transparent systems problem** (staged agents, contracts, metadata, admin observability), not just a prompt-engineering demo.  
+To reach clear A+ maturity, the next step is tighter architectural consolidation (single narrative path) and stronger empirical calibration/evaluation of AI confidence and safety behavior.
