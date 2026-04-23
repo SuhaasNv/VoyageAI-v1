@@ -1,8 +1,8 @@
 /**
- * proxy.ts  (Next.js 16+ middleware entry point)
+ * proxy.ts  (Next.js 16+ request proxy, replaces middleware.ts)
  *
- * Next.js 16 requires the file to be named "proxy.ts" but the export must be "middleware".
- * This runs on every matched request BEFORE it reaches route handlers (Node.js runtime).
+ * Next.js 16 requires the file to be named "proxy.ts" and export a function
+ * named "proxy". This runs on every matched request BEFORE route handlers.
  *
  * Responsibilities:
  *  1. CSRF validation on state-mutating API routes (POST / PUT / PATCH / DELETE)
@@ -17,10 +17,10 @@ import { checkCsrf } from "@/middleware/csrf";
 import { recordRequest, normaliseRoute } from "@/lib/monitoring/apiMetrics";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Middleware (formerly named "proxy" in Next.js 15)
+// Proxy
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function middleware(req: NextRequest): Promise<NextResponse> {
+export async function proxy(req: NextRequest): Promise<NextResponse> {
     const proxyStart = performance.now();
     const { pathname } = req.nextUrl;
 
