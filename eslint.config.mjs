@@ -16,6 +16,15 @@ const eslintConfig = defineConfig([
     "scripts/**",
     // Placeholder image for DigitalOcean App Platform — CJS, not part of the app.
     "infra/placeholder/**",
+    // Generated load/perf artifacts (JMeter HTML bundles third-party vendor JS).
+    "report-clean/**",
+    "report/**",
+    "performance/report/**",
+    "jmeter/results/**",
+    "coverage/**",
+    // Generated test artifacts.
+    "playwright-report/**",
+    "test-results/**",
   ]),
 ]);
 
