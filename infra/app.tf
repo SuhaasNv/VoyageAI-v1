@@ -245,6 +245,13 @@ resource "digitalocean_app" "nextjs" {
 
       # ── Secrets (encrypted at rest, masked in logs) ─────────────────────
       env {
+        key   = "METRICS_SCRAPE_SECRET"
+        value = var.metrics_scrape_secret
+        scope = "RUN_TIME"
+        type  = "SECRET"
+      }
+
+      env {
         key   = "DATABASE_URL"
         value = var.database_url
         scope = "RUN_TIME"

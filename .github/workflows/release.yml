@@ -187,6 +187,7 @@ env:
   TF_VAR_upstash_redis_rest_url: ${{ secrets.UPSTASH_REDIS_REST_URL || '' }}
   TF_VAR_upstash_redis_rest_token: ${{ secrets.UPSTASH_REDIS_REST_TOKEN || '' }}
   TF_VAR_langgraph_service_url: ${{ secrets.LANGGRAPH_SERVICE_URL || '' }}
+  TF_VAR_metrics_scrape_secret: ${{ secrets.METRICS_SCRAPE_SECRET || '' }}
   AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_ACCESS_KEY }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET_KEY }}
   AWS_DEFAULT_REGION: us-east-1
@@ -733,13 +734,6 @@ jobs:
           provenance: true
           sbom: true
 
-      - name: Re-tag and push existing image to DOCR
-        id: retag
-        if: github.event.inputs.image_tag != ''
-        run: |
-          echo "ℹ️ Using existing DOCR tag '${{ github.event.inputs.image_tag }}' — skipping re-tag/push"
-          echo "  App Platform spec will be updated to use this tag directly."
-
       - name: Trivy — verify pushed registry image
         if: github.event.inputs.image_tag == '' && github.event.inputs.skip_trivy != 'true'
         uses: aquasecurity/trivy-action@master
@@ -757,7 +751,6 @@ jobs:
         if: github.event.inputs.image_tag == ''
         run: |
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          MODE=$([ -n "${{ github.event.inputs.image_tag }}" ] && echo "Deployed existing tag \`${{ github.event.inputs.image_tag }}\` (no re-tag)" || echo "Built from source")
           {
             echo "## 🐳 Docker — ✅ Pushed to DOCR"
             echo ""

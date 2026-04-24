@@ -23,6 +23,7 @@ import { prisma } from "@/lib/prisma";
 import { assembleContext } from "@/lib/ai/context";
 import { updateMemory, buildMemoryContext } from "@/memory/memory";
 import { sanitizeUserInput, validateLLMOutput } from "@/security/safety";
+import { plannerChatMessagesTotal } from "@/lib/monitoring/businessMetrics";
 
 export const runtime = "nodejs";
 
@@ -344,6 +345,12 @@ async function persistChat(
             : []),
         prisma.chatMessage.create({ data: { tripId, role: "assistant", content: assistantMessage } }),
     ]);
+    
+    // Prometheus metrics
+    if (latestUserMessage) {
+        plannerChatMessagesTotal.inc({ direction: "incoming" });
+    }
+    plannerChatMessagesTotal.inc({ direction: "outgoing" });
 }
 
 // ─── Non-streaming fallback (Gemini env or OpenAI error) ─────────────────────

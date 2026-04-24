@@ -1,10 +1,10 @@
 global:
   resolve_timeout: 5m
-  smtp_from:       "alerts@voyageai.app"
-  smtp_smarthost:  "smtp.sendgrid.net:587"
+  smtp_from:         "alerts@voyageai.app"
+  smtp_smarthost:    "smtp.sendgrid.net:587"
   smtp_auth_username: "apikey"
   smtp_auth_password: "${SENDGRID_API_KEY}"
-  smtp_require_tls: true
+  smtp_require_tls:  true
 
 # ── Routing tree ──────────────────────────────────────────────────────────────
 route:
@@ -15,24 +15,25 @@ route:
   repeat_interval: 4h
 
   routes:
-    # Critical alerts → immediate email + webhook
     - match:
         severity: critical
       receiver: critical-alerts
-      group_wait: 10s
+      group_wait:      10s
       repeat_interval: 1h
 
-    # AI-specific alerts → AI team
     - match:
         team: ai
       receiver: ai-team-email
 
-    # Platform/infrastructure → platform team
     - match:
         team: platform
       receiver: platform-team-email
 
 # ── Receivers ─────────────────────────────────────────────────────────────────
+# Slack webhook is OPTIONAL. Add SLACK_WEBHOOK_URL to your .env file to enable it.
+# When the env var is empty the webhook block must be absent — alertmanager
+# rejects an empty URL with "unsupported scheme". The deploy script injects the
+# block below only when SLACK_WEBHOOK_URL is non-empty (see deploy-monitoring.yml).
 receivers:
 
   - name: default-email
@@ -53,12 +54,9 @@ receivers:
       - to: "oncall@voyageai.app"
         send_resolved: true
         headers:
-          Subject: "🚨 CRITICAL [VoyageAI] {{ .GroupLabels.alertname }}"
-    webhook_configs:
-      - url: "${SLACK_WEBHOOK_URL}"
-        send_resolved: true
-        http_config:
-          bearer_token: "${SLACK_BOT_TOKEN}"
+          Subject: "CRITICAL [VoyageAI] {{ .GroupLabels.alertname }}"
+    # Slack webhook injected here by deploy script when SLACK_WEBHOOK_URL is set:
+    # SLACK_WEBHOOK_PLACEHOLDER
 
   - name: ai-team-email
     email_configs:
@@ -76,7 +74,6 @@ receivers:
 
 # ── Inhibition rules ──────────────────────────────────────────────────────────
 inhibit_rules:
-  # Suppress warning-severity alerts when the same service is already critical
   - source_match:
       severity: critical
     target_match:

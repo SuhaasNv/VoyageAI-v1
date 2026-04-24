@@ -30,6 +30,7 @@ import {
 import { getClientIp } from "@/lib/api/request";
 import { logError } from "@/infrastructure/logger";
 import { runWithRequestContext } from "@/lib/requestContext";
+import { plannerAuthTotal } from "@/lib/monitoring/businessMetrics";
 
 export async function POST(req: NextRequest) {
     return runWithRequestContext(req, async () => {
@@ -142,6 +143,9 @@ export async function POST(req: NextRequest) {
             response.headers.append("Set-Cookie", serializeAccessTokenCookie(accessToken));
             response.headers.append("Set-Cookie", serializeRefreshTokenCookie(rawToken));
             response.headers.append("Set-Cookie", serializeCsrfCookie(csrfToken));
+
+            // Prometheus metrics
+            plannerAuthTotal.inc({ event: "register_success", method: "password" });
 
             return response;
         } catch (err: unknown) {

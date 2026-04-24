@@ -23,6 +23,8 @@ services:
       - --web.console.libraries=/etc/prometheus/console_libraries
       - --web.console.templates=/etc/prometheus/consoles
     volumes:
+      # Production config — prometheus.yml has real hostnames injected by CI/CD.
+      # For local dev, override with: docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
       - prometheus_data:/prometheus
@@ -53,10 +55,12 @@ services:
     image: grafana/grafana:10.4.2
     container_name: voyageai-grafana
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_SERVER_HTTP_PORT=3001
       - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/dashboards/3-system-health.json
+      # Suppress "no such directory" warnings for optional provisioning dirs
+      - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/etc/grafana/dashboards:ro

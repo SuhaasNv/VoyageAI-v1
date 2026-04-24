@@ -20,17 +20,20 @@ name: Deploy — Monitoring Stack (Prometheus + Grafana)
 #    MONITORING_SSH_PRIVATE_KEY  RSA/ED25519 private key matching the Droplet's authorized_keys
 #    MONITORING_SSH_FINGERPRINT  SSH host fingerprint of the Droplet (set after first provision)
 #    GRAFANA_ADMIN_PASSWORD      Grafana admin password
-#    METRICS_SCRAPE_SECRET       Shared secret (must match Next.js env var)
+#    METRICS_SCRAPE_SECRET       Shared secret (must match METRICS_SCRAPE_SECRET in Next.js App Platform)
 #    SENDGRID_API_KEY            For Alertmanager email delivery
-#    NEXTJS_PROD_URL             Next.js App Platform hostname (no https://)
-#    LANGGRAPH_PROD_URL          LangGraph App Platform hostname (no https://)
 #
-#  Optional GitHub Secrets:
+#  Optional GitHub Secrets (used as fallback if doctl can't resolve live App URLs):
+#    NEXTJS_PROD_URL             Next.js App Platform hostname (no https://) — auto-resolved via doctl
+#    LANGGRAPH_PROD_URL          LangGraph App Platform hostname (no https://) — auto-resolved via doctl
 #    SLACK_WEBHOOK_URL           Slack webhook for critical alerts
 #    MONITORING_DOMAIN           Custom subdomain (e.g. monitoring.voyageai.app)
 #    MONITORING_EMAIL            Let's Encrypt contact email (default: admin@voyageai.app)
 #    MONITORING_DROPLET_SIZE     DO slug (default: s-1vcpu-1gb)
 #    MONITORING_DROPLET_REGION   DO region (default: nyc3)
+#
+#  Optional GitHub Variables:
+#    MONITORING_ENV              App Platform environment to scrape (default: production)
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -262,6 +265,53 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install doctl (resolve App Platform URLs)
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      # Dynamically resolve the live App Platform hostnames so we never depend on
+      # manually-maintained NEXTJS_PROD_URL / LANGGRAPH_PROD_URL secrets.
+      # Falls back to the static secrets when doctl returns nothing (first deploy).
+      - name: Resolve App Platform hostnames
+        id: resolve-app-urls
+        shell: bash
+        run: |
+          set -euo pipefail
+          ENV="${{ vars.MONITORING_ENV || 'production' }}"
+
+          APPS_JSON=$(doctl apps list --output json 2>/dev/null || echo '[]')
+
+          LINE=$(echo "$APPS_JSON" | jq -r --arg nxs "voyageai-nextjs-${ENV}" --arg nlg "voyageai-langgraph-${ENV}" '
+            def applist:
+              if type == "object" and (.apps | type == "array") then .apps
+              elif type == "array" then . else [] end;
+            def appname:
+              ((.spec // {}) | .name // "") as $sn
+              | if $sn != "" then $sn
+                else (((.active_deployment // {}) | .spec // {}) | .name // "") end;
+            def hostname($w):
+              ((applist | map(select(appname == $w)) | .[0]) // null)
+              | if . == null then ""
+                else ((.live_url // .default_ingress // "") | ltrimstr("https://") | rtrimstr("/"))
+                end;
+            [hostname($nxs), hostname($nlg)] | @tsv
+          ')
+          IFS=$'\t' read -r NEXTJS_HOST LG_HOST <<< "$LINE"
+
+          # Fall back to static secrets when doctl returns no match
+          [ -z "$NEXTJS_HOST" ] && NEXTJS_HOST="${{ secrets.NEXTJS_PROD_URL }}"
+          [ -z "$LG_HOST" ]     && LG_HOST="${{ secrets.LANGGRAPH_PROD_URL }}"
+
+          # Strip any accidental https:// prefix from the static secret values
+          NEXTJS_HOST="${NEXTJS_HOST#https://}"
+          LG_HOST="${LG_HOST#https://}"
+
+          echo "nextjs_host=${NEXTJS_HOST}"   >> "$GITHUB_OUTPUT"
+          echo "langgraph_host=${LG_HOST}"    >> "$GITHUB_OUTPUT"
+          echo "✅ Next.js target:   ${NEXTJS_HOST}"
+          echo "✅ LangGraph target: ${LG_HOST}"
+
       - name: Write .env file
         shell: bash
         run: |
@@ -270,8 +320,8 @@ jobs:
           METRICS_SCRAPE_SECRET=${{ secrets.METRICS_SCRAPE_SECRET }}
           SENDGRID_API_KEY=${{ secrets.SENDGRID_API_KEY || '' }}
           SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL || '' }}
-          NEXTJS_PROD_URL=${{ secrets.NEXTJS_PROD_URL }}
-          LANGGRAPH_PROD_URL=${{ secrets.LANGGRAPH_PROD_URL }}
+          NEXTJS_PROD_URL=${{ steps.resolve-app-urls.outputs.nextjs_host }}
+          LANGGRAPH_PROD_URL=${{ steps.resolve-app-urls.outputs.langgraph_host }}
           EOF
           # Trim leading whitespace added by heredoc indentation
           sed -i 's/^[[:space:]]*//' monitoring/.env
@@ -279,9 +329,12 @@ jobs:
       - name: Inject secrets into config files
         shell: bash
         run: |
-          # Prometheus — substitute production hostnames
-          sed -i "s|NEXTJS_PROD_HOST|${{ secrets.NEXTJS_PROD_URL }}|g"     monitoring/prometheus.yml
-          sed -i "s|LANGGRAPH_PROD_HOST|${{ secrets.LANGGRAPH_PROD_URL }}|g" monitoring/prometheus.yml
+          NEXTJS_HOST="${{ steps.resolve-app-urls.outputs.nextjs_host }}"
+          LG_HOST="${{ steps.resolve-app-urls.outputs.langgraph_host }}"
+
+          # Prometheus — substitute production hostnames (resolved dynamically above)
+          sed -i "s|NEXTJS_PROD_HOST|${NEXTJS_HOST}|g"     monitoring/prometheus.yml
+          sed -i "s|LANGGRAPH_PROD_HOST|${LG_HOST}|g"       monitoring/prometheus.yml
 
           # Prometheus — substitute scrape bearer token
           sed -i "s|\${METRICS_SCRAPE_SECRET}|${{ secrets.METRICS_SCRAPE_SECRET }}|g" \

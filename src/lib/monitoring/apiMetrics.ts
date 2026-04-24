@@ -2,55 +2,46 @@
  * API-level Prometheus metrics.
  *
  * Tracks per-endpoint request counts, latency distributions, and error rates.
- * Instruments are registered lazily on first import; safe for Next.js HMR.
  */
 
-import { Counter, Histogram } from "prom-client";
-import { registry } from "./registry";
+import { getOrCreateCounter, getOrCreateHistogram, getOrCreateGauge } from "./registry";
 
 // ── Request count ─────────────────────────────────────────────────────────────
 
-export const httpRequestsTotal = new Counter({
+export const httpRequestsTotal = getOrCreateCounter({
     name: "http_requests_total",
     help: "Total number of HTTP requests",
     labelNames: ["method", "route", "status_code"] as const,
-    registers: [registry],
 });
 
 // ── Latency histogram (p50 / p95 / p99) ──────────────────────────────────────
 
-export const httpRequestDurationSeconds = new Histogram({
+export const httpRequestDurationSeconds = getOrCreateHistogram({
     name: "http_request_duration_seconds",
     help: "HTTP request latency in seconds",
     labelNames: ["method", "route", "status_code"] as const,
     buckets: [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10],
-    registers: [registry],
 });
 
 // ── Error rate ────────────────────────────────────────────────────────────────
 
-export const httpErrorsTotal = new Counter({
+export const httpErrorsTotal = getOrCreateCounter({
     name: "http_errors_total",
     help: "Total number of HTTP 4xx/5xx responses",
     labelNames: ["method", "route", "status_code", "error_class"] as const,
-    registers: [registry],
 });
 
 // ── Active requests gauge ─────────────────────────────────────────────────────
 
-import { Gauge } from "prom-client";
-
-export const httpActiveRequests = new Gauge({
+export const httpActiveRequests = getOrCreateGauge({
     name: "http_active_requests",
     help: "Number of requests currently being processed",
     labelNames: ["method", "route"] as const,
-    registers: [registry],
 });
 
 // ── Helper: normalise a Next.js pathname to a metric label ───────────────────
-//
-// Collapses dynamic segments ([id], [token], etc.) so high-cardinality paths
-// like /api/trips/clxxx do not explode the label set.
+// Collapses dynamic segments so high-cardinality paths like /api/trips/clxxx
+// do not explode the label set.
 
 const DYNAMIC_SEGMENT_RE = /\/[0-9a-f-]{8,}|\/\[[^\]]+\]/gi;
 
