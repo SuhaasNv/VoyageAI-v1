@@ -53,7 +53,7 @@ WORKDIR /app
 COPY --from=builder /install /usr/local
 
 # Copy application source
-COPY main.py graph.py client.py contracts.py ./
+COPY main.py graph.py client.py contracts.py metrics.py ./
 
 # ── Security: run as a non-root user ─────────────────────────────────────────
 RUN addgroup --system --gid 1001 langgraph && \
