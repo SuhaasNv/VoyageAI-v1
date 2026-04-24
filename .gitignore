@@ -53,6 +53,11 @@ sbom.json
 # JMeter output (keep folder via jmeter/results/.gitkeep)
 /jmeter/results/*
 !/jmeter/results/.gitkeep
+/report-clean/
+/report/
+/performance/report/
+/playwright-report/
+/test-results/
 
 # Terraform — local state and secrets (never commit)
 infra/.terraform/
