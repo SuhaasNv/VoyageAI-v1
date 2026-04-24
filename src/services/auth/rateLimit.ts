@@ -158,15 +158,10 @@ function memoryRateLimit(key: string, opts: RateLimitOptions): RateLimitResult {
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API
 //
-// Failure policy (intentional, security-first):
-//   PRODUCTION  – fail-closed: any infrastructure error propagates as an
-//                 exception so the calling route returns 500 rather than
-//                 silently bypassing rate limiting. This prevents brute-force
-//                 attacks from succeeding during a Redis or DB outage.
-//                 Alert on the thrown error via your observability platform.
-//   DEVELOPMENT – fail-open with fallback: Redis error → DB, DB error → memory.
-//                 The in-memory tier is not suitable for production because it
-//                 is per-process and does not survive restarts.
+// Failure policy:
+//   Redis error → fall back to PostgreSQL (rate limits still enforced).
+//   DEVELOPMENT: DB error → in-memory (not used in production multi-instance).
+//   PRODUCTION: if DB rate-limiting also fails, throw (fail-closed on total DB loss).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const isProduction = process.env.NODE_ENV === "production";
@@ -181,11 +176,10 @@ export async function rateLimit(
         try {
             return await redisRateLimit(key, opts);
         } catch (err) {
-            if (isProduction) {
-                logError("[rateLimit] Redis unavailable in production — failing closed", err);
-                throw err;
-            }
-            logError("[rateLimit] Redis error, falling back to DB", err);
+            logError(
+                "[rateLimit] Redis error, falling back to DB (rate limits still enforced)",
+                err,
+            );
         }
     }
 

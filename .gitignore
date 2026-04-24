@@ -50,6 +50,10 @@ next-env.d.ts
 npm-audit.json
 sbom.json
 
+# JMeter output (keep folder via jmeter/results/.gitkeep)
+/jmeter/results/*
+!/jmeter/results/.gitkeep
+
 # Terraform — local state and secrets (never commit)
 infra/.terraform/
 infra/.terraform.lock.hcl
