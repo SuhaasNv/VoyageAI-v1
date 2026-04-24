@@ -448,12 +448,14 @@ describe("selectHotel — hotel selection", () => {
 
     it("returns PLACEHOLDER hotel when hotels array is empty", () => {
         const ctx    = makeContext([]);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = selectHotel(ctx as any);
         expect(result.name).toContain("Accommodation");
     });
 
     it("returns the single hotel when only one option exists", () => {
         const hotel  = makeTestHotel({ name: "Solo Hotel" });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = selectHotel(makeContext([hotel]) as any);
         expect(result.name).toBe("Solo Hotel");
     });
@@ -461,6 +463,7 @@ describe("selectHotel — hotel selection", () => {
     it("prefers a hotel in Central/Downtown area (bonus score)", () => {
         const central    = makeTestHotel({ name: "City Centre Hotel", area: "Downtown" });
         const peripheral = makeTestHotel({ name: "Suburb Hotel",      area: "Outskirts" });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result     = selectHotel(makeContext([peripheral, central]) as any);
         expect(result.name).toBe("City Centre Hotel");
     });
@@ -470,6 +473,7 @@ describe("selectHotel — hotel selection", () => {
         const midRange= makeTestHotel({ name: "Mid Hotel",      priceRange: "$$" as const });
 
         const ctx = { ...makeContext([luxury, midRange]), preferences: { budget: 1000 } };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = selectHotel(ctx as any);
         expect(result.name).toBe("Mid Hotel");
     });
@@ -482,6 +486,7 @@ describe("selectHotel — hotel selection", () => {
             ...makeContext([plainHotel, styleHotel]),
             preferences: { style: "cultural" },
         };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = selectHotel(ctx as any);
         expect(result.name).toBe("Boutique Hotel");
     });
@@ -490,6 +495,7 @@ describe("selectHotel — hotel selection", () => {
         // Two identical hotels — lexicographically first name wins
         const hotelA = makeTestHotel({ name: "Alpha Hotel" });
         const hotelB = makeTestHotel({ name: "Zeta Hotel" });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = selectHotel(makeContext([hotelB, hotelA]) as any);
         expect(result.name).toBe("Alpha Hotel");
     });

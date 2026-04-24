@@ -127,6 +127,7 @@ describe("validateItineraryStructure — STRUCTURE_INVALID (0 activities)", () =
             days: [
                 {
                     day: 1, date: "2026-07-01", theme: "Empty",
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     activities: [] as any,
                     totalCost: { amount: 0, currency: "USD" },
                     dailyFatigueScore: 0, tips: [],
@@ -142,6 +143,7 @@ describe("validateItineraryStructure — STRUCTURE_INVALID (0 activities)", () =
         const itinerary = makeItinerary({
             days: [{
                 day: 1, date: "2026-07-01", theme: "Empty",
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 activities: [] as any,
                 totalCost: { amount: 0, currency: "USD" },
                 dailyFatigueScore: 0, tips: [],
@@ -172,6 +174,7 @@ describe("validateItineraryStructure — EMPTY_DAY", () => {
                 },
                 {
                     day: 2, date: "2026-07-02", theme: "Rest",
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     activities: [] as any, // empty
                     totalCost: { amount: 0, currency: "USD" },
                     dailyFatigueScore: 0, tips: [],

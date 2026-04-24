@@ -536,6 +536,7 @@ describe("BudgetAgent.run() — over-budget path", () => {
             model: "gemini-2.5-flash",
             provider: "gemini",
             tokens: { prompt: 200, completion: 40, total: 240 },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any);
         vi.mocked(parseJSONResponse).mockReturnValue({
             suggestions: ["Switch to a cheaper hotel", "Skip the museum"],
@@ -615,6 +616,7 @@ describe("BudgetAgent.run() — LLM failure graceful degradation", () => {
         vi.mocked(executeWithRetry).mockResolvedValue({
             content: "not-json",
             latencyMs: 50,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any);
         vi.mocked(parseJSONResponse).mockReturnValue(null);
 
@@ -636,6 +638,7 @@ describe("BudgetAgent.run() — Rule 1: hotel share adjustment", () => {
         vi.mocked(executeWithRetry).mockResolvedValue({
             content: '{"suggestions":[]}',
             latencyMs: 50,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any);
         vi.mocked(parseJSONResponse).mockReturnValue({ suggestions: [] });
     });

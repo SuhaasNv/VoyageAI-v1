@@ -11,7 +11,7 @@
  *                            preference normalization, duplicate theme de-dup
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 
 // ── Mock infrastructure BEFORE any agent import ───────────────────────────────
 
@@ -48,7 +48,6 @@ import {
     safeDateParsing,
     PlannerAgent,
 } from "@/agents/planner/plannerAgent";
-import { AIServiceError } from "@/lib/ai/llm";
 import type { LLMClient } from "@/lib/ai/types";
 
 // ─────────────────────────────────────────────────────────────────────────────

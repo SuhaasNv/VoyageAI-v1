@@ -119,6 +119,7 @@ describe("LogisticsAgent.run() — happy path", () => {
 
     it("returns an OptimizedTripContext with selectedHotel", async () => {
         const agent  = new LogisticsAgent();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await agent.run(makeContext() as any);
 
         expect(result.selectedHotel.name).toBe("Park Hyatt Tokyo");
@@ -126,6 +127,7 @@ describe("LogisticsAgent.run() — happy path", () => {
 
     it("schedules activities with startTime and endTime on each day", async () => {
         const agent  = new LogisticsAgent();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await agent.run(makeContext() as any);
 
         const day1 = result.days[0]!;
@@ -138,6 +140,7 @@ describe("LogisticsAgent.run() — happy path", () => {
 
     it("result contains foodCostSummary", async () => {
         const agent  = new LogisticsAgent();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await agent.run(makeContext() as any);
 
         expect(result.foodCostSummary).toBeDefined();
@@ -146,6 +149,7 @@ describe("LogisticsAgent.run() — happy path", () => {
 
     it("result has warnings array (may be empty)", async () => {
         const agent  = new LogisticsAgent();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await agent.run(makeContext() as any);
 
         expect(Array.isArray(result.warnings)).toBe(true);
@@ -153,6 +157,7 @@ describe("LogisticsAgent.run() — happy path", () => {
 
     it("getTravelTimeMatrix called once per day", async () => {
         const agent = new LogisticsAgent();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await agent.run(makeContext() as any);
 
         // Context has 2 days → 2 matrix calls
@@ -178,6 +183,7 @@ describe("LogisticsAgent.run() — invalid hotel coordinates", () => {
         });
 
         const agent  = new LogisticsAgent();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await agent.run(ctx as any);
 
         // geocodeCentroid should be called as hotel had no valid coords
@@ -197,6 +203,7 @@ describe("LogisticsAgent.run() — Mapbox matrix failure", () => {
         mockGetTravelTimeMatrix.mockRejectedValue(new Error("Mapbox timeout"));
 
         const agent  = new LogisticsAgent();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await agent.run(makeContext() as any);
 
         // Should still return a valid result with activities
@@ -219,6 +226,7 @@ describe("LogisticsAgent.run() — no hotels", () => {
 
         const ctx    = makeContext({ hotels: [] });
         const agent  = new LogisticsAgent();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await agent.run(ctx as any);
 
         expect(result.selectedHotel.name).toContain("Accommodation");
@@ -248,6 +256,7 @@ describe("LogisticsAgent.run() — invalid activity coordinates", () => {
         });
 
         const agent  = new LogisticsAgent();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await agent.run(ctx as any);
 
         // Both activities should be included (invalid coord replaced by hotel coord)

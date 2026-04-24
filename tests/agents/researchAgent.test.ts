@@ -176,6 +176,7 @@ describe("ResearchAgent.run() — cache hit", () => {
         mockGetResearchCached.mockResolvedValue(makeCachedResult());
 
         const agent  = new ResearchAgent();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await agent.run(makeContext() as any);
 
         expect(mockExecuteWithRetry).not.toHaveBeenCalled();
@@ -189,6 +190,7 @@ describe("ResearchAgent.run() — cache hit", () => {
         });
 
         const agent  = new ResearchAgent();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await agent.run(makeContext() as any);
 
         expect(result._dataSource).toBe("brightdata");
@@ -201,6 +203,7 @@ describe("ResearchAgent.run() — cache hit", () => {
         });
 
         const agent  = new ResearchAgent();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await agent.run(makeContext() as any);
 
         expect(result._dataSource).toBe("unverified");
@@ -250,6 +253,7 @@ describe("ResearchAgent.run() — cache miss → LLM happy path", () => {
 
     it("returns enriched result with destination and days", async () => {
         const agent  = new ResearchAgent();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await agent.run(makeContext() as any);
 
         expect(result.destination).toBe("Tokyo, Japan");
@@ -258,6 +262,7 @@ describe("ResearchAgent.run() — cache miss → LLM happy path", () => {
 
     it("stores result in cache after successful LLM call", async () => {
         const agent = new ResearchAgent();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await agent.run(makeContext() as any);
 
         expect(mockSetResearchCached).toHaveBeenCalledWith(
@@ -268,6 +273,7 @@ describe("ResearchAgent.run() — cache miss → LLM happy path", () => {
 
     it("attaches geoConfidence to activities from batchGeocode", async () => {
         const agent  = new ResearchAgent();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await agent.run(makeContext() as any);
 
         const act = result.days[0]!.activities[0];
@@ -278,6 +284,7 @@ describe("ResearchAgent.run() — cache miss → LLM happy path", () => {
         mockIsBrightDataDisabled.mockReturnValue(false);
 
         const agent  = new ResearchAgent();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await agent.run(makeContext() as any);
 
         expect(result._dataSource).toBe("brightdata");
@@ -287,6 +294,7 @@ describe("ResearchAgent.run() — cache miss → LLM happy path", () => {
         mockIsBrightDataDisabled.mockReturnValue(true);
 
         const agent  = new ResearchAgent();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await agent.run(makeContext() as any);
 
         expect(result._dataSource).toBe("unverified");
@@ -322,6 +330,7 @@ describe("ResearchAgent.run() — geocoding unavailable", () => {
 
     it("still returns result when centroid geocoding fails (graceful degradation)", async () => {
         const agent  = new ResearchAgent();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await agent.run(makeContext() as any);
 
         expect(result.destination).toBe("Tokyo, Japan");
@@ -347,6 +356,7 @@ describe("ResearchAgent.run() — LLM failure", () => {
         mockExecuteWithRetry.mockRejectedValue(new Error("LLM timeout"));
 
         const agent = new ResearchAgent();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await expect(agent.run(makeContext() as any)).rejects.toThrow();
     });
 });

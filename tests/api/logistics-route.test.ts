@@ -130,6 +130,7 @@ describe("POST /api/ai/itinerary-flow/logistics — success", () => {
 
     beforeEach(() => {
         vi.mocked(getAuthContext).mockReturnValue(mockAuthContext());
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         vi.mocked(validateBody).mockResolvedValue({ ok: true, data: makeValidBody() as any });
         mockLogisticsAgentRun.mockResolvedValue(MOCK_LOGISTICS_RESULT);
     });
@@ -160,6 +161,7 @@ describe("POST /api/ai/itinerary-flow/logistics — errors", () => {
 
     beforeEach(() => {
         vi.mocked(getAuthContext).mockReturnValue(mockAuthContext());
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         vi.mocked(validateBody).mockResolvedValue({ ok: true, data: makeValidBody() as any });
     });
 

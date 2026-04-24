@@ -204,6 +204,7 @@ describe("POST /api/ai/itinerary-flow/safety — success (clean)", () => {
         vi.mocked(getAuthContext).mockReturnValue(mockAuthContext());
         vi.mocked(validateBody).mockResolvedValue({
             ok:   true,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             data: makeValidSafetyBody() as any,
         });
         mockSafetyAgentRun.mockResolvedValue(MOCK_SAFETY_RESULT_CLEAN);
@@ -246,6 +247,7 @@ describe("POST /api/ai/itinerary-flow/safety — success (with warnings)", () =>
         vi.mocked(getAuthContext).mockReturnValue(mockAuthContext());
         vi.mocked(validateBody).mockResolvedValue({
             ok:   true,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             data: makeValidSafetyBody() as any,
         });
         mockSafetyAgentRun.mockResolvedValue(MOCK_SAFETY_RESULT_WARNINGS);
@@ -285,6 +287,7 @@ describe("POST /api/ai/itinerary-flow/safety — agent errors", () => {
         vi.mocked(getAuthContext).mockReturnValue(mockAuthContext());
         vi.mocked(validateBody).mockResolvedValue({
             ok:   true,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             data: makeValidSafetyBody() as any,
         });
     });

@@ -52,7 +52,6 @@ import {
     makeBudgetedContext,
 } from "../fixtures/tripFixtures";
 import type { BudgetedTripContext } from "@/agents/budget/budgetAgent";
-import type { ScheduledActivity } from "@/agents/shared/tripPipelineTypes";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -60,6 +59,7 @@ import type { ScheduledActivity } from "@/agents/shared/tripPipelineTypes";
 
 /** Wraps an OptimizedTripContext with a minimal budget to satisfy SafetyAgent input type. */
 function withBudget(ctx: ReturnType<typeof makeOptimizedContext>): BudgetedTripContext {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return makeBudgetedContext(ctx as any);
 }
 
@@ -79,6 +79,7 @@ describe("SafetyAgent — Rule 1: activity fatigue", () => {
             days: [makeDayWithActivities(1, 4)],
         }));
         // No tips call expected; silence LLM just in case
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         vi.mocked(executeWithRetry).mockResolvedValue({ content: '{"tips":[]}', latencyMs: 10 } as any);
         vi.mocked(parseJSONResponse).mockReturnValue({ tips: [] });
 
@@ -88,6 +89,7 @@ describe("SafetyAgent — Rule 1: activity fatigue", () => {
     });
 
     it("emits medium fatigue warning for exactly 5 non-meal activities", async () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         vi.mocked(executeWithRetry).mockResolvedValue({ content: '{"tips":["Take a rest"]}', latencyMs: 10 } as any);
         vi.mocked(parseJSONResponse).mockReturnValue({ tips: ["Take a rest"] });
 
@@ -104,6 +106,7 @@ describe("SafetyAgent — Rule 1: activity fatigue", () => {
     });
 
     it("emits high fatigue warning for 6 or more non-meal activities", async () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         vi.mocked(executeWithRetry).mockResolvedValue({ content: '{"tips":["Pace yourself"]}', latencyMs: 10 } as any);
         vi.mocked(parseJSONResponse).mockReturnValue({ tips: ["Pace yourself"] });
 
@@ -120,6 +123,7 @@ describe("SafetyAgent — Rule 1: activity fatigue", () => {
     });
 
     it("counts only non-meal activities for fatigue", async () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         vi.mocked(executeWithRetry).mockResolvedValue({ content: '{"tips":[]}', latencyMs: 10 } as any);
         vi.mocked(parseJSONResponse).mockReturnValue({ tips: [] });
 
@@ -165,6 +169,7 @@ describe("SafetyAgent — Rule 2: long travel gaps", () => {
     });
 
     it("emits medium travel warning for 90-minute travel time", async () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         vi.mocked(executeWithRetry).mockResolvedValue({ content: '{"tips":["Allow extra time"]}', latencyMs: 10 } as any);
         vi.mocked(parseJSONResponse).mockReturnValue({ tips: ["Allow extra time"] });
 
@@ -184,6 +189,7 @@ describe("SafetyAgent — Rule 2: long travel gaps", () => {
     });
 
     it("emits high travel warning for 2-hour+ travel time", async () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         vi.mocked(executeWithRetry).mockResolvedValue({ content: '{"tips":["Very long transfer"]}', latencyMs: 10 } as any);
         vi.mocked(parseJSONResponse).mockReturnValue({ tips: ["Very long transfer"] });
 
@@ -202,6 +208,7 @@ describe("SafetyAgent — Rule 2: long travel gaps", () => {
     });
 
     it("formats travel time correctly: 1h 30m for 90 minutes", async () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         vi.mocked(executeWithRetry).mockResolvedValue({ content: '{"tips":[]}', latencyMs: 10 } as any);
         vi.mocked(parseJSONResponse).mockReturnValue({ tips: [] });
 
@@ -219,6 +226,7 @@ describe("SafetyAgent — Rule 2: long travel gaps", () => {
     });
 
     it("emits one travel warning per long-transit activity", async () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         vi.mocked(executeWithRetry).mockResolvedValue({ content: '{"tips":[]}', latencyMs: 10 } as any);
         vi.mocked(parseJSONResponse).mockReturnValue({ tips: [] });
 
@@ -257,6 +265,7 @@ describe("SafetyAgent — Rule 3: late-night schedule", () => {
     });
 
     it("emits medium schedule warning when activity ends at 22:00 or later", async () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         vi.mocked(executeWithRetry).mockResolvedValue({ content: '{"tips":["Sleep early"]}', latencyMs: 10 } as any);
         vi.mocked(parseJSONResponse).mockReturnValue({ tips: ["Sleep early"] });
 
@@ -276,6 +285,7 @@ describe("SafetyAgent — Rule 3: late-night schedule", () => {
     });
 
     it("only flags the latest-ending activity per day (no duplicate warnings)", async () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         vi.mocked(executeWithRetry).mockResolvedValue({ content: '{"tips":[]}', latencyMs: 10 } as any);
         vi.mocked(parseJSONResponse).mockReturnValue({ tips: [] });
 
@@ -324,6 +334,7 @@ describe("SafetyAgent — Rule 4: missing meals", () => {
     });
 
     it("emits medium meal warning when no isMeal activity exists", async () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         vi.mocked(executeWithRetry).mockResolvedValue({ content: '{"tips":["Add a meal"]}', latencyMs: 10 } as any);
         vi.mocked(parseJSONResponse).mockReturnValue({ tips: ["Add a meal"] });
 
@@ -362,6 +373,7 @@ describe("SafetyAgent — risk level derivation", () => {
     });
 
     it("riskLevel is 'medium' when only medium-severity warnings exist", async () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         vi.mocked(executeWithRetry).mockResolvedValue({ content: '{"tips":["Tip A"]}', latencyMs: 10 } as any);
         vi.mocked(parseJSONResponse).mockReturnValue({ tips: ["Tip A"] });
 
@@ -375,6 +387,7 @@ describe("SafetyAgent — risk level derivation", () => {
     });
 
     it("riskLevel is 'high' when any high-severity warning is present", async () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         vi.mocked(executeWithRetry).mockResolvedValue({ content: '{"tips":["Serious warning"]}', latencyMs: 10 } as any);
         vi.mocked(parseJSONResponse).mockReturnValue({ tips: ["Serious warning"] });
 
@@ -388,6 +401,7 @@ describe("SafetyAgent — risk level derivation", () => {
     });
 
     it("multi-day trip: one high-severity day overrides all medium days", async () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         vi.mocked(executeWithRetry).mockResolvedValue({ content: '{"tips":["Watch out"]}', latencyMs: 10 } as any);
         vi.mocked(parseJSONResponse).mockReturnValue({ tips: ["Watch out"] });
 
@@ -430,6 +444,7 @@ describe("SafetyAgent — LLM tips", () => {
         vi.mocked(executeWithRetry).mockResolvedValue({
             content: '{"tips":["Drink water","Wear sunscreen"]}',
             latencyMs: 80,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any);
         vi.mocked(parseJSONResponse).mockReturnValue({ tips: ["Drink water", "Wear sunscreen"] });
 
@@ -462,6 +477,7 @@ describe("SafetyAgent — LLM tips", () => {
         vi.mocked(executeWithRetry).mockResolvedValue({
             content: '{"tips":["A","B","C","D","E"]}',
             latencyMs: 10,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any);
         vi.mocked(parseJSONResponse).mockReturnValue({ tips: ["A", "B", "C", "D", "E"] });
 
@@ -478,6 +494,7 @@ describe("SafetyAgent — LLM tips", () => {
         vi.mocked(executeWithRetry).mockResolvedValue({
             content: '{"tips":["Good tip",null,42,"Another tip"]}',
             latencyMs: 10,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any);
         vi.mocked(parseJSONResponse).mockReturnValue({ tips: ["Good tip", null, 42, "Another tip"] });
 
@@ -500,6 +517,7 @@ describe("SafetyAgent — combined rules", () => {
     afterEach(() => vi.restoreAllMocks());
 
     it("collects warnings from all four rules simultaneously", async () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         vi.mocked(executeWithRetry).mockResolvedValue({ content: '{"tips":["Multi-rule tip"]}', latencyMs: 10 } as any);
         vi.mocked(parseJSONResponse).mockReturnValue({ tips: ["Multi-rule tip"] });
 
@@ -533,6 +551,7 @@ describe("SafetyAgent — combined rules", () => {
     });
 
     it("preserves all original context fields in output", async () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         vi.mocked(executeWithRetry).mockResolvedValue({ content: '{"tips":[]}', latencyMs: 10 } as any);
         vi.mocked(parseJSONResponse).mockReturnValue({ tips: [] });
 

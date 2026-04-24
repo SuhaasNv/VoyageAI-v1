@@ -161,6 +161,7 @@ describe("POST /api/ai/itinerary-flow/planner — success", () => {
         vi.mocked(getAuthContext).mockReturnValue(mockAuthContext());
         vi.mocked(validateBody).mockResolvedValue({
             ok:   true,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             data: { input: "5 days in Tokyo" } as any,
         });
         mockPlannerRun.mockResolvedValue(MOCK_PLANNER_RESULT);
@@ -220,6 +221,7 @@ describe("POST /api/ai/itinerary-flow/planner — agent errors", () => {
         vi.mocked(getAuthContext).mockReturnValue(mockAuthContext());
         vi.mocked(validateBody).mockResolvedValue({
             ok:   true,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             data: { input: "5 days in Tokyo" } as any,
         });
     });

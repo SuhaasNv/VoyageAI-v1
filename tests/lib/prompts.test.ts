@@ -132,6 +132,7 @@ describe("buildTravelDNAContext", () => {
             avoidanceList:         [],
             languages:             ["English"],
             previousDestinations:  [],
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any);
         expect(typeof result).toBe("string");
         expect(result.length).toBeGreaterThan(0);

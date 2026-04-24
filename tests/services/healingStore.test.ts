@@ -162,9 +162,8 @@ describe("getHealingStatus — auto-expiry", () => {
     it("auto-clears overrides when expiresAt is in the past", () => {
         setHealingOverrides(["reduce_tokens_25pct"], "LOW", [], "test", 30);
 
-        // Manually back-date expiresAt to force expiry
-        const status = getHealingStatus();
-        (status.overrides as any); // type reference only
+        // Manually back-date expiresAt to force expiry — confirm overrides are active before advancing time
+        expect(getHealingStatus().active).toBe(true);
 
         // Use vi.setSystemTime to simulate time having passed
         vi.useFakeTimers();

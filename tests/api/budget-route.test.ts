@@ -182,6 +182,7 @@ describe("POST /api/ai/itinerary-flow/budget — success", () => {
         vi.mocked(getAuthContext).mockReturnValue(mockAuthContext());
         vi.mocked(validateBody).mockResolvedValue({
             ok:   true,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             data: makeValidBudgetBody() as any,
         });
         mockBudgetAgentRun.mockResolvedValue(MOCK_BUDGET_RESULT);
@@ -228,6 +229,7 @@ describe("POST /api/ai/itinerary-flow/budget — agent errors", () => {
         vi.mocked(getAuthContext).mockReturnValue(mockAuthContext());
         vi.mocked(validateBody).mockResolvedValue({
             ok:   true,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             data: makeValidBudgetBody() as any,
         });
     });

@@ -10,11 +10,8 @@ import type {
     ScheduledActivity,
     OptimizedDay,
     HotelOption,
-    EnrichedTripContext,
-    Activity,
-    EnrichedDay,
 } from "@/agents/shared/tripPipelineTypes";
-import type { BudgetedTripContext, BudgetResult, CostLineItem, CostBreakdown } from "@/agents/budget/budgetAgent";
+import type { BudgetedTripContext, BudgetResult, CostBreakdown } from "@/agents/budget/budgetAgent";
 
 // ─── Activity factories ───────────────────────────────────────────────────────
 
