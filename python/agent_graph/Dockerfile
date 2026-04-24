@@ -55,27 +55,34 @@ COPY --from=builder /install /usr/local
 # Copy application source
 COPY main.py graph.py client.py contracts.py metrics.py ./
 
+# ── Build-time import validation ──────────────────────────────────────────────
+# Catches ModuleNotFoundError, ImportError, and any exception raised at module
+# level (e.g. compiled_graph = build_graph() failing due to a langgraph /
+# langchain-core version mismatch) before the image is pushed to DOCR.
+# A broken image must never reach the registry — this line is the gate.
+RUN python -c "from main import app; print('Import validation: OK')"
+
 # ── Security: run as a non-root user ─────────────────────────────────────────
 RUN addgroup --system --gid 1001 langgraph && \
     adduser  --system --uid 1001 --ingroup langgraph langgraph
 USER langgraph
 
 # ── Runtime configuration ─────────────────────────────────────────────────────
-# All values below are safe defaults. Override at runtime via env vars or
-# docker-compose. Never bake real secrets into the image.
+# All values below are safe defaults. Override at runtime via env vars.
+# Never bake real secrets into the image.
 
 # URL of the Next.js app that this service calls back into for agent execution
 ENV NEXT_INTERNAL_URL="http://app:3000"
-# Port this service listens on (also overridable via docker-compose / ECS / Fly)
+# Port this service listens on — must match http_port in infra/app.tf
 ENV LANGGRAPH_PORT="8000"
-# Workers: 1 is correct for async FastAPI; increase only with a process manager
-ENV WORKERS="1"
 
 EXPOSE 8000
 
-# Healthcheck — used by Docker Compose, ECS, and Kubernetes liveness probes
+# Healthcheck — used by Docker Compose and Kubernetes liveness probes
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
 
-# Start uvicorn directly (no shell wrapper — SIGTERM propagates cleanly)
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${LANGGRAPH_PORT} --workers ${WORKERS} --no-access-log"]
+# Use exec so uvicorn receives SIGTERM directly (no sh wrapper → clean shutdown).
+# LANGGRAPH_PORT defaults to 8000 above; DigitalOcean App Platform also injects
+# it explicitly via the Terraform env block in infra/app.tf.
+CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port \"${LANGGRAPH_PORT:-8000}\" --no-access-log"]
