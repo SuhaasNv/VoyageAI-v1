@@ -58,6 +58,8 @@ sbom.json
 /performance/report/
 /playwright-report/
 /test-results/
+/results-clean.jtl
+/tests/e2e/storageState.json
 
 # Terraform — local state and secrets (never commit)
 infra/.terraform/
