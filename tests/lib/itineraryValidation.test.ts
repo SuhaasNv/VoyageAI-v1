@@ -19,7 +19,7 @@ function makeActivity(name: string, lat?: number, lng?: number) {
     return {
         id:               `act-${name}`,
         name,
-        type:             "attraction" as const,
+        type:             "sightseeing" as const,
         description:      "Description",
         startTime:        "09:00",
         endTime:          "11:00",

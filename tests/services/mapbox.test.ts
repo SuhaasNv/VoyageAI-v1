@@ -261,7 +261,8 @@ describe("getTravelTimeMatrix — Mapbox fetch succeeds", () => {
     it("returns cached matrix on Redis hit (new format)", async () => {
         const cachedPayload = JSON.stringify({ matrix: [[0, 5], [5, 0]], usedFallback: false });
         const mockRedis = { get: vi.fn().mockResolvedValue(cachedPayload) };
-        mockGetRedisClient.mockReturnValue(mockRedis);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        mockGetRedisClient.mockReturnValue(mockRedis as any);
 
         const result = await getTravelTimeMatrix([PARIS, LOUVRE]);
         expect(result.matrix).toEqual([[0, 5], [5, 0]]);
@@ -273,7 +274,8 @@ describe("getTravelTimeMatrix — Mapbox fetch succeeds", () => {
     it("returns cached matrix on Redis hit (legacy array format)", async () => {
         const legacyMatrix = [[0, 5], [5, 0]];
         const mockRedis = { get: vi.fn().mockResolvedValue(JSON.stringify(legacyMatrix)) };
-        mockGetRedisClient.mockReturnValue(mockRedis);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        mockGetRedisClient.mockReturnValue(mockRedis as any);
 
         const result = await getTravelTimeMatrix([PARIS, LOUVRE]);
         expect(result.matrix).toEqual(legacyMatrix);

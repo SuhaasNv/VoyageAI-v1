@@ -14,8 +14,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // Tests in the "no Redis" group use hasRedisConfig = false.
 // Tests exercising the Redis path use a spy getRedisClient.
 const { mockHasRedisConfig, mockGetRedisClient } = vi.hoisted(() => ({
-    mockHasRedisConfig:  vi.fn<[], boolean>(() => false),
-    mockGetRedisClient:  vi.fn(() => null),
+    mockHasRedisConfig:  vi.fn(() => false as boolean),
+    mockGetRedisClient:  vi.fn(() => null as unknown),
 }));
 
 vi.mock("@/lib/redis", () => ({
@@ -355,12 +355,15 @@ describe("Async cache functions — Redis available", () => {
     };
 
     beforeEach(() => {
-        mockHasRedisConfig.mockReturnValue(true);
-        mockGetRedisClient.mockReturnValue(mockRedisClient);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        mockHasRedisConfig.mockReturnValue(true as any);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        mockGetRedisClient.mockReturnValue(mockRedisClient as any);
     });
 
     afterEach(() => {
-        mockHasRedisConfig.mockReturnValue(false);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        mockHasRedisConfig.mockReturnValue(false as any);
         mockGetRedisClient.mockReturnValue(null);
         vi.clearAllMocks();
     });

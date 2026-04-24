@@ -8,7 +8,7 @@
  *   - resolveProvider error → falls back to "openai"
  */
 
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
 const { mockResolveRealLlmProvider, mockApplyHealingOverrides } = vi.hoisted(() => ({

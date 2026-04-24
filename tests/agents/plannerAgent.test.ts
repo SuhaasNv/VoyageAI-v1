@@ -304,7 +304,8 @@ describe("PlannerAgent.run() — JSON repair", () => {
         // First call to parseJSONResponse throws; second succeeds.
         const validOutput = makePlannerOutput();
         let parseCallCount = 0;
-        parseMock.mockImplementation((text: string) => {
+        parseMock.mockImplementation((...args: unknown[]) => {
+            const text = args[0] as string;
             parseCallCount++;
             if (parseCallCount === 1) throw new SyntaxError("Unexpected token");
             return JSON.parse(text);
@@ -381,7 +382,7 @@ describe("PlannerAgent.run() — LLM call error propagation", () => {
 describe("PlannerAgent.run() — date fallback", () => {
     it("uses a start date ~7 days in the future when LLM provides no dates", async () => {
         const { parseJSONResponse: mockParse } = await import("@/lib/ai/llm");
-        vi.mocked(mockParse as (...args: unknown[]) => unknown).mockImplementation((text: string) => JSON.parse(text));
+        vi.mocked(mockParse as (...args: unknown[]) => unknown).mockImplementation((...args: unknown[]) => JSON.parse(args[0] as string));
 
         const outputWithoutDates = {
             destination: "Barcelona, Spain",

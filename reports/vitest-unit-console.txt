@@ -1,0 +1,3495 @@
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+
+ RUN  v4.1.0 /Users/suhaasnv/Documents/Desktop ALT/portfolioprojects/voyageai_1
+      Coverage enabled with v8
+
+ ✓ tests/lib/resolveRealLlmProvider.test.ts (10 tests) 4ms
+ ✓ tests/security/safety.test.ts (43 tests) 9ms
+ ✓ tests/security/rateLimiter.test.ts (13 tests) 39ms
+stdout | src/tools/__tests__/brightDataTool.test.ts > brightDataTool — no API key > searchAttractions returns empty string without an API key
+brightdata.cache_miss { destination: 'Tokyo', type: 'attraction' }
+
+stdout | src/tools/__tests__/brightDataTool.test.ts > brightDataTool — no API key > searchAttractions returns empty string without an API key
+brightdata.fetch_complete {
+  destination: 'Tokyo',
+  type: 'attraction',
+  durationMs: 1,
+  status: 'failed'
+}
+
+stdout | src/tools/__tests__/brightDataTool.test.ts > brightDataTool — successful responses > returns concatenated title+snippet from organic array
+brightdata.cache_miss { destination: 'Tokyo', type: 'attraction' }
+
+stdout | src/tools/__tests__/brightDataTool.test.ts > brightDataTool — successful responses > returns concatenated title+snippet from organic array
+brightdata.partial_success { destination: 'Tokyo', type: 'attraction', successCount: 1 }
+brightdata.fetch_complete {
+  destination: 'Tokyo',
+  type: 'attraction',
+  durationMs: 2,
+  status: 'success'
+}
+
+stdout | src/tools/__tests__/brightDataTool.test.ts > brightDataTool — successful responses > falls back to results array when organic is absent
+brightdata.cache_miss { destination: 'Tokyo', type: 'attraction' }
+
+stdout | src/tools/__tests__/brightDataTool.test.ts > brightDataTool — successful responses > falls back to results array when organic is absent
+brightdata.partial_success { destination: 'Tokyo', type: 'attraction', successCount: 1 }
+brightdata.fetch_complete {
+  destination: 'Tokyo',
+  type: 'attraction',
+  durationMs: 1,
+  status: 'success'
+}
+
+stdout | src/tools/__tests__/brightDataTool.test.ts > brightDataTool — successful responses > returns empty string when organic and results are both absent
+brightdata.cache_miss { destination: 'Tokyo', type: 'attraction' }
+
+stdout | src/tools/__tests__/brightDataTool.test.ts > brightDataTool — successful responses > returns empty string when organic and results are both absent
+brightdata.empty_result { destination: 'Tokyo', type: 'attraction' }
+brightdata.fetch_complete {
+  destination: 'Tokyo',
+  type: 'attraction',
+  durationMs: 0,
+  status: 'empty'
+}
+
+stdout | src/tools/__tests__/brightDataTool.test.ts > brightDataTool — successful responses > omits items where both title and body text are empty
+brightdata.cache_miss { destination: 'Tokyo', type: 'attraction' }
+
+stdout | src/tools/__tests__/brightDataTool.test.ts > brightDataTool — successful responses > omits items where both title and body text are empty
+brightdata.partial_success { destination: 'Tokyo', type: 'attraction', successCount: 1 }
+brightdata.fetch_complete {
+  destination: 'Tokyo',
+  type: 'attraction',
+  durationMs: 0,
+  status: 'success'
+}
+
+stdout | src/tools/__tests__/brightDataTool.test.ts > brightDataTool — successful responses > truncates output to 2000 characters
+brightdata.cache_miss { destination: 'Tokyo', type: 'attraction' }
+
+stdout | src/tools/__tests__/brightDataTool.test.ts > brightDataTool — successful responses > truncates output to 2000 characters
+brightdata.partial_success { destination: 'Tokyo', type: 'attraction', successCount: 1 }
+brightdata.fetch_complete {
+  destination: 'Tokyo',
+  type: 'attraction',
+  durationMs: 0,
+  status: 'success'
+}
+
+stdout | src/tools/__tests__/brightDataTool.test.ts > brightDataTool — successful responses > sends the API key as a Bearer token in the Authorization header
+brightdata.cache_miss { destination: 'Paris', type: 'attraction' }
+
+stdout | src/tools/__tests__/brightDataTool.test.ts > brightDataTool — successful responses > sends the API key as a Bearer token in the Authorization header
+brightdata.partial_success { destination: 'Paris', type: 'attraction', successCount: 1 }
+brightdata.fetch_complete {
+  destination: 'Paris',
+  type: 'attraction',
+  durationMs: 1,
+  status: 'success'
+}
+
+stdout | src/tools/__tests__/brightDataTool.test.ts > brightDataTool — error handling > returns failed payload on non-OK HTTP response
+brightdata.cache_miss { destination: 'Tokyo', type: 'attraction' }
+
+stderr | src/tools/__tests__/brightDataTool.test.ts > brightDataTool — error handling > returns failed payload on non-OK HTTP response
+[BrightData] API error {
+  status: 429,
+  query: 'top rated things to do in Tokyo for 1 days   travel'
+}
+
+stdout | src/tools/__tests__/brightDataTool.test.ts > brightDataTool — error handling > returns failed payload on non-OK HTTP response
+brightdata.fetch_complete {
+  destination: 'Tokyo',
+  type: 'attraction',
+  durationMs: 0,
+  status: 'failed'
+}
+
+stdout | src/tools/__tests__/brightDataTool.test.ts > brightDataTool — error handling > returns failed payload when fetch throws a network error
+brightdata.cache_miss { destination: 'Tokyo', type: 'attraction' }
+
+stdout | src/tools/__tests__/brightDataTool.test.ts > brightDataTool — error handling > returns failed payload when fetch throws a network error
+brightdata.fetch_error { destination: 'Tokyo', type: 'attraction', durationMs: 0 }
+
+stdout | src/tools/__tests__/brightDataTool.test.ts > brightDataTool — empty result caching > logs brightdata.empty_result when Bright Data returns no items
+brightdata.cache_miss { destination: 'Nowhere City', type: 'attraction' }
+
+stdout | src/tools/__tests__/brightDataTool.test.ts > brightDataTool — empty result caching > logs brightdata.empty_result when Bright Data returns no items
+brightdata.empty_result { destination: 'Nowhere City', type: 'attraction' }
+brightdata.fetch_complete {
+  destination: 'Nowhere City',
+  type: 'attraction',
+  durationMs: 0,
+  status: 'empty'
+}
+
+stdout | src/tools/__tests__/brightDataTool.test.ts > brightDataTool — timeout retry > retries exactly once on timeout and returns success from second attempt
+brightdata.cache_miss { destination: 'Slow City', type: 'attraction' }
+
+stdout | src/tools/__tests__/brightDataTool.test.ts > brightDataTool — timeout retry > retries exactly once on timeout and returns success from second attempt
+brightdata.timeout_retry { destination: 'Slow City', type: 'attraction', attempt: 1 }
+
+stdout | src/tools/__tests__/brightDataTool.test.ts > brightDataTool — timeout retry > retries exactly once on timeout and returns success from second attempt
+brightdata.partial_success { destination: 'Slow City', type: 'attraction', successCount: 1 }
+brightdata.fetch_complete {
+  destination: 'Slow City',
+  type: 'attraction',
+  durationMs: 10000,
+  status: 'success'
+}
+
+stdout | src/tools/__tests__/brightDataTool.test.ts > brightDataTool — stale cache background refresh > returns stale cached data immediately and triggers non-blocking background refresh
+brightdata.cache_hit { destination: 'Paris', type: 'attraction' }
+brightdata.stale_refresh_triggered { destination: 'Paris', type: 'attraction' }
+
+ ✓ tests/lib/response.test.ts (35 tests) 23ms
+ ✓ src/tools/__tests__/brightDataTool.test.ts (12 tests) 154ms
+ ✓ tests/lib/llm.test.ts (32 tests) 12ms
+ ✓ src/lib/__tests__/admin.test.ts (20 tests) 60ms
+ ✓ tests/lib/cache.test.ts (89 tests) 13ms
+ ✓ tests/lib/apiRequest.test.ts (22 tests) 12ms
+ ✓ tests/services/mapbox.test.ts (33 tests) 408ms
+     ✓ falls back to Haversine on network fetch error  401ms
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > returns ok=true with requiresHuman=false
+[orchestrator] start { requestId: '10e80eb0-2eeb-48d2-b7a4-bdd26322e438', inputLength: 75 }
+[orchestrator] input {
+  requestId: '10e80eb0-2eeb-48d2-b7a4-bdd26322e438',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > returns ok=true with requiresHuman=false
+[orchestrator] output {
+  requestId: '10e80eb0-2eeb-48d2-b7a4-bdd26322e438',
+  agent: 'planner',
+  destination: 'Bali, Indonesia',
+  durationDays: 3
+}
+[orchestrator] input {
+  requestId: '10e80eb0-2eeb-48d2-b7a4-bdd26322e438',
+  calling: 'research',
+  destination: 'Bali, Indonesia'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > returns ok=true with requiresHuman=false
+[orchestrator] output {
+  requestId: '10e80eb0-2eeb-48d2-b7a4-bdd26322e438',
+  agent: 'research',
+  days: 3,
+  hotels: 2
+}
+[orchestrator] input {
+  requestId: '10e80eb0-2eeb-48d2-b7a4-bdd26322e438',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > returns ok=true with requiresHuman=false
+[orchestrator] output {
+  requestId: '10e80eb0-2eeb-48d2-b7a4-bdd26322e438',
+  agent: 'logistics',
+  selectedHotel: 'Villa Bali Resort'
+}
+[orchestrator] input {
+  requestId: '10e80eb0-2eeb-48d2-b7a4-bdd26322e438',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > returns ok=true with requiresHuman=false
+[orchestrator] output {
+  requestId: '10e80eb0-2eeb-48d2-b7a4-bdd26322e438',
+  agent: 'budget',
+  totalCost: 623,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '10e80eb0-2eeb-48d2-b7a4-bdd26322e438',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > returns ok=true with requiresHuman=false
+[orchestrator] output {
+  requestId: '10e80eb0-2eeb-48d2-b7a4-bdd26322e438',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > returns ok=true with requiresHuman=false
+[orchestrator] end {
+  requestId: '10e80eb0-2eeb-48d2-b7a4-bdd26322e438',
+  outcome: 'ok',
+  rounds: 0
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > calls every agent exactly once
+[orchestrator] start { requestId: 'b2e24bf8-5e78-46a6-af10-47ea53996ed0', inputLength: 75 }
+[orchestrator] input {
+  requestId: 'b2e24bf8-5e78-46a6-af10-47ea53996ed0',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > calls every agent exactly once
+[orchestrator] output {
+  requestId: 'b2e24bf8-5e78-46a6-af10-47ea53996ed0',
+  agent: 'planner',
+  destination: 'Bali, Indonesia',
+  durationDays: 3
+}
+[orchestrator] input {
+  requestId: 'b2e24bf8-5e78-46a6-af10-47ea53996ed0',
+  calling: 'research',
+  destination: 'Bali, Indonesia'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > calls every agent exactly once
+[orchestrator] output {
+  requestId: 'b2e24bf8-5e78-46a6-af10-47ea53996ed0',
+  agent: 'research',
+  days: 3,
+  hotels: 2
+}
+[orchestrator] input {
+  requestId: 'b2e24bf8-5e78-46a6-af10-47ea53996ed0',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > calls every agent exactly once
+[orchestrator] output {
+  requestId: 'b2e24bf8-5e78-46a6-af10-47ea53996ed0',
+  agent: 'logistics',
+  selectedHotel: 'Villa Bali Resort'
+}
+[orchestrator] input {
+  requestId: 'b2e24bf8-5e78-46a6-af10-47ea53996ed0',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > calls every agent exactly once
+[orchestrator] output {
+  requestId: 'b2e24bf8-5e78-46a6-af10-47ea53996ed0',
+  agent: 'budget',
+  totalCost: 623,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: 'b2e24bf8-5e78-46a6-af10-47ea53996ed0',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > AgentOrchestrator — result shape > happy path returns ok:true with context and executionLog
+[orchestrator] start { requestId: '2b007011-3913-4251-b7e5-0af83c831154', inputLength: 24 }
+[orchestrator] input {
+  requestId: '2b007011-3913-4251-b7e5-0af83c831154',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > calls every agent exactly once
+[orchestrator] output {
+  requestId: 'b2e24bf8-5e78-46a6-af10-47ea53996ed0',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > calls every agent exactly once
+[orchestrator] end {
+  requestId: 'b2e24bf8-5e78-46a6-af10-47ea53996ed0',
+  outcome: 'ok',
+  rounds: 0
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > AgentOrchestrator — result shape > happy path returns ok:true with context and executionLog
+[orchestrator] output {
+  requestId: '2b007011-3913-4251-b7e5-0af83c831154',
+  agent: 'planner',
+  destination: 'Tokyo',
+  durationDays: 5
+}
+[orchestrator] input {
+  requestId: '2b007011-3913-4251-b7e5-0af83c831154',
+  calling: 'research',
+  destination: 'Tokyo'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > AgentOrchestrator — result shape > happy path returns ok:true with context and executionLog
+[orchestrator] output {
+  requestId: '2b007011-3913-4251-b7e5-0af83c831154',
+  agent: 'research',
+  days: 2,
+  hotels: 1
+}
+[orchestrator] input {
+  requestId: '2b007011-3913-4251-b7e5-0af83c831154',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes user input to planner
+[orchestrator] start { requestId: '9a87649b-053a-4b40-98bf-0cfa8286f6b2', inputLength: 75 }
+[orchestrator] input {
+  requestId: '9a87649b-053a-4b40-98bf-0cfa8286f6b2',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes user input to planner
+[orchestrator] output {
+  requestId: '9a87649b-053a-4b40-98bf-0cfa8286f6b2',
+  agent: 'planner',
+  destination: 'Bali, Indonesia',
+  durationDays: 3
+}
+[orchestrator] input {
+  requestId: '9a87649b-053a-4b40-98bf-0cfa8286f6b2',
+  calling: 'research',
+  destination: 'Bali, Indonesia'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes user input to planner
+[orchestrator] output {
+  requestId: '9a87649b-053a-4b40-98bf-0cfa8286f6b2',
+  agent: 'research',
+  days: 3,
+  hotels: 2
+}
+[orchestrator] input {
+  requestId: '9a87649b-053a-4b40-98bf-0cfa8286f6b2',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes user input to planner
+[orchestrator] output {
+  requestId: '9a87649b-053a-4b40-98bf-0cfa8286f6b2',
+  agent: 'logistics',
+  selectedHotel: 'Villa Bali Resort'
+}
+[orchestrator] input {
+  requestId: '9a87649b-053a-4b40-98bf-0cfa8286f6b2',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes user input to planner
+[orchestrator] output {
+  requestId: '9a87649b-053a-4b40-98bf-0cfa8286f6b2',
+  agent: 'budget',
+  totalCost: 623,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '9a87649b-053a-4b40-98bf-0cfa8286f6b2',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes user input to planner
+[orchestrator] output {
+  requestId: '9a87649b-053a-4b40-98bf-0cfa8286f6b2',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes user input to planner
+[orchestrator] end {
+  requestId: '9a87649b-053a-4b40-98bf-0cfa8286f6b2',
+  outcome: 'ok',
+  rounds: 0
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > AgentOrchestrator — result shape > happy path returns ok:true with context and executionLog
+[orchestrator] output {
+  requestId: '2b007011-3913-4251-b7e5-0af83c831154',
+  agent: 'logistics',
+  selectedHotel: 'Hotel A'
+}
+[orchestrator] input {
+  requestId: '2b007011-3913-4251-b7e5-0af83c831154',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > AgentOrchestrator — result shape > happy path returns ok:true with context and executionLog
+[orchestrator] output {
+  requestId: '2b007011-3913-4251-b7e5-0af83c831154',
+  agent: 'budget',
+  totalCost: 400,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '2b007011-3913-4251-b7e5-0af83c831154',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > AgentOrchestrator — result shape > happy path returns ok:true with context and executionLog
+[orchestrator] output {
+  requestId: '2b007011-3913-4251-b7e5-0af83c831154',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > AgentOrchestrator — result shape > happy path returns ok:true with context and executionLog
+[orchestrator] end {
+  requestId: '2b007011-3913-4251-b7e5-0af83c831154',
+  outcome: 'ok',
+  rounds: 0
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes planner output to research unchanged
+[orchestrator] start { requestId: '77eebcfc-45f1-42c9-aaf4-458e395597f0', inputLength: 75 }
+[orchestrator] input {
+  requestId: '77eebcfc-45f1-42c9-aaf4-458e395597f0',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes planner output to research unchanged
+[orchestrator] output {
+  requestId: '77eebcfc-45f1-42c9-aaf4-458e395597f0',
+  agent: 'planner',
+  destination: 'Bali, Indonesia',
+  durationDays: 3
+}
+[orchestrator] input {
+  requestId: '77eebcfc-45f1-42c9-aaf4-458e395597f0',
+  calling: 'research',
+  destination: 'Bali, Indonesia'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes planner output to research unchanged
+[orchestrator] output {
+  requestId: '77eebcfc-45f1-42c9-aaf4-458e395597f0',
+  agent: 'research',
+  days: 3,
+  hotels: 2
+}
+[orchestrator] input {
+  requestId: '77eebcfc-45f1-42c9-aaf4-458e395597f0',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes planner output to research unchanged
+[orchestrator] output {
+  requestId: '77eebcfc-45f1-42c9-aaf4-458e395597f0',
+  agent: 'logistics',
+  selectedHotel: 'Villa Bali Resort'
+}
+[orchestrator] input {
+  requestId: '77eebcfc-45f1-42c9-aaf4-458e395597f0',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes planner output to research unchanged
+[orchestrator] output {
+  requestId: '77eebcfc-45f1-42c9-aaf4-458e395597f0',
+  agent: 'budget',
+  totalCost: 623,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '77eebcfc-45f1-42c9-aaf4-458e395597f0',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes planner output to research unchanged
+[orchestrator] output {
+  requestId: '77eebcfc-45f1-42c9-aaf4-458e395597f0',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes planner output to research unchanged
+[orchestrator] end {
+  requestId: '77eebcfc-45f1-42c9-aaf4-458e395597f0',
+  outcome: 'ok',
+  rounds: 0
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes research output to logistics (hotels present)
+[orchestrator] start { requestId: '592e4c50-5e09-4524-acf8-56d8c30ed6d9', inputLength: 75 }
+[orchestrator] input {
+  requestId: '592e4c50-5e09-4524-acf8-56d8c30ed6d9',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes research output to logistics (hotels present)
+[orchestrator] output {
+  requestId: '592e4c50-5e09-4524-acf8-56d8c30ed6d9',
+  agent: 'planner',
+  destination: 'Bali, Indonesia',
+  durationDays: 3
+}
+[orchestrator] input {
+  requestId: '592e4c50-5e09-4524-acf8-56d8c30ed6d9',
+  calling: 'research',
+  destination: 'Bali, Indonesia'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes research output to logistics (hotels present)
+[orchestrator] output {
+  requestId: '592e4c50-5e09-4524-acf8-56d8c30ed6d9',
+  agent: 'research',
+  days: 3,
+  hotels: 2
+}
+[orchestrator] input {
+  requestId: '592e4c50-5e09-4524-acf8-56d8c30ed6d9',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes research output to logistics (hotels present)
+[orchestrator] output {
+  requestId: '592e4c50-5e09-4524-acf8-56d8c30ed6d9',
+  agent: 'logistics',
+  selectedHotel: 'Villa Bali Resort'
+}
+[orchestrator] input {
+  requestId: '592e4c50-5e09-4524-acf8-56d8c30ed6d9',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes research output to logistics (hotels present)
+[orchestrator] output {
+  requestId: '592e4c50-5e09-4524-acf8-56d8c30ed6d9',
+  agent: 'budget',
+  totalCost: 623,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '592e4c50-5e09-4524-acf8-56d8c30ed6d9',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes research output to logistics (hotels present)
+[orchestrator] output {
+  requestId: '592e4c50-5e09-4524-acf8-56d8c30ed6d9',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes research output to logistics (hotels present)
+[orchestrator] end {
+  requestId: '592e4c50-5e09-4524-acf8-56d8c30ed6d9',
+  outcome: 'ok',
+  rounds: 0
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes logistics output to budget (selectedHotel set)
+[orchestrator] start { requestId: 'f043b7c2-8562-410b-8332-b44fa60cf752', inputLength: 75 }
+[orchestrator] input {
+  requestId: 'f043b7c2-8562-410b-8332-b44fa60cf752',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes logistics output to budget (selectedHotel set)
+[orchestrator] output {
+  requestId: 'f043b7c2-8562-410b-8332-b44fa60cf752',
+  agent: 'planner',
+  destination: 'Bali, Indonesia',
+  durationDays: 3
+}
+[orchestrator] input {
+  requestId: 'f043b7c2-8562-410b-8332-b44fa60cf752',
+  calling: 'research',
+  destination: 'Bali, Indonesia'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes logistics output to budget (selectedHotel set)
+[orchestrator] output {
+  requestId: 'f043b7c2-8562-410b-8332-b44fa60cf752',
+  agent: 'research',
+  days: 3,
+  hotels: 2
+}
+[orchestrator] input {
+  requestId: 'f043b7c2-8562-410b-8332-b44fa60cf752',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes logistics output to budget (selectedHotel set)
+[orchestrator] output {
+  requestId: 'f043b7c2-8562-410b-8332-b44fa60cf752',
+  agent: 'logistics',
+  selectedHotel: 'Villa Bali Resort'
+}
+[orchestrator] input {
+  requestId: 'f043b7c2-8562-410b-8332-b44fa60cf752',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > returns the LangGraph service response when service is reachable
+[orchestrator] start {
+  requestId: '238f302c-9233-45df-bfde-5cf36b00fef5',
+  source: 'langgraph-bridge',
+  inputLength: 24
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes logistics output to budget (selectedHotel set)
+[orchestrator] output {
+  requestId: 'f043b7c2-8562-410b-8332-b44fa60cf752',
+  agent: 'budget',
+  totalCost: 623,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: 'f043b7c2-8562-410b-8332-b44fa60cf752',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes logistics output to budget (selectedHotel set)
+[orchestrator] output {
+  requestId: 'f043b7c2-8562-410b-8332-b44fa60cf752',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes logistics output to budget (selectedHotel set)
+[orchestrator] end {
+  requestId: 'f043b7c2-8562-410b-8332-b44fa60cf752',
+  outcome: 'ok',
+  rounds: 0
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes budget output to safety (budget object present)
+[orchestrator] start { requestId: 'ae0db46e-bc02-4ce8-b65b-8cf2cc0e115f', inputLength: 75 }
+[orchestrator] input {
+  requestId: 'ae0db46e-bc02-4ce8-b65b-8cf2cc0e115f',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes budget output to safety (budget object present)
+[orchestrator] output {
+  requestId: 'ae0db46e-bc02-4ce8-b65b-8cf2cc0e115f',
+  agent: 'planner',
+  destination: 'Bali, Indonesia',
+  durationDays: 3
+}
+[orchestrator] input {
+  requestId: 'ae0db46e-bc02-4ce8-b65b-8cf2cc0e115f',
+  calling: 'research',
+  destination: 'Bali, Indonesia'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes budget output to safety (budget object present)
+[orchestrator] output {
+  requestId: 'ae0db46e-bc02-4ce8-b65b-8cf2cc0e115f',
+  agent: 'research',
+  days: 3,
+  hotels: 2
+}
+[orchestrator] input {
+  requestId: 'ae0db46e-bc02-4ce8-b65b-8cf2cc0e115f',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes budget output to safety (budget object present)
+[orchestrator] output {
+  requestId: 'ae0db46e-bc02-4ce8-b65b-8cf2cc0e115f',
+  agent: 'logistics',
+  selectedHotel: 'Villa Bali Resort'
+}
+[orchestrator] input {
+  requestId: 'ae0db46e-bc02-4ce8-b65b-8cf2cc0e115f',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes budget output to safety (budget object present)
+[orchestrator] output {
+  requestId: 'ae0db46e-bc02-4ce8-b65b-8cf2cc0e115f',
+  agent: 'budget',
+  totalCost: 623,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: 'ae0db46e-bc02-4ce8-b65b-8cf2cc0e115f',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes budget output to safety (budget object present)
+[orchestrator] output {
+  requestId: 'ae0db46e-bc02-4ce8-b65b-8cf2cc0e115f',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > passes budget output to safety (budget object present)
+[orchestrator] end {
+  requestId: 'ae0db46e-bc02-4ce8-b65b-8cf2cc0e115f',
+  outcome: 'ok',
+  rounds: 0
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > planner output: required fields are defined and valid
+[orchestrator] start { requestId: '5a11e13a-f9b1-4056-8576-fb530f1cfac2', inputLength: 75 }
+[orchestrator] input {
+  requestId: '5a11e13a-f9b1-4056-8576-fb530f1cfac2',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > planner output: required fields are defined and valid
+[orchestrator] output {
+  requestId: '5a11e13a-f9b1-4056-8576-fb530f1cfac2',
+  agent: 'planner',
+  destination: 'Bali, Indonesia',
+  durationDays: 3
+}
+[orchestrator] input {
+  requestId: '5a11e13a-f9b1-4056-8576-fb530f1cfac2',
+  calling: 'research',
+  destination: 'Bali, Indonesia'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > planner output: required fields are defined and valid
+[orchestrator] output {
+  requestId: '5a11e13a-f9b1-4056-8576-fb530f1cfac2',
+  agent: 'research',
+  days: 3,
+  hotels: 2
+}
+[orchestrator] input {
+  requestId: '5a11e13a-f9b1-4056-8576-fb530f1cfac2',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > planner output: required fields are defined and valid
+[orchestrator] output {
+  requestId: '5a11e13a-f9b1-4056-8576-fb530f1cfac2',
+  agent: 'logistics',
+  selectedHotel: 'Villa Bali Resort'
+}
+[orchestrator] input {
+  requestId: '5a11e13a-f9b1-4056-8576-fb530f1cfac2',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > planner output: required fields are defined and valid
+[orchestrator] output {
+  requestId: '5a11e13a-f9b1-4056-8576-fb530f1cfac2',
+  agent: 'budget',
+  totalCost: 623,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '5a11e13a-f9b1-4056-8576-fb530f1cfac2',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > planner output: required fields are defined and valid
+[orchestrator] output {
+  requestId: '5a11e13a-f9b1-4056-8576-fb530f1cfac2',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > planner output: required fields are defined and valid
+[orchestrator] end {
+  requestId: '5a11e13a-f9b1-4056-8576-fb530f1cfac2',
+  outcome: 'ok',
+  rounds: 0
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > research output: each day has ≥1 activity and hotels array is non-empty
+[orchestrator] start { requestId: 'fda538d2-9077-4420-9fd5-96c86cff15be', inputLength: 75 }
+[orchestrator] input {
+  requestId: 'fda538d2-9077-4420-9fd5-96c86cff15be',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > research output: each day has ≥1 activity and hotels array is non-empty
+[orchestrator] output {
+  requestId: 'fda538d2-9077-4420-9fd5-96c86cff15be',
+  agent: 'planner',
+  destination: 'Bali, Indonesia',
+  durationDays: 3
+}
+[orchestrator] input {
+  requestId: 'fda538d2-9077-4420-9fd5-96c86cff15be',
+  calling: 'research',
+  destination: 'Bali, Indonesia'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > research output: each day has ≥1 activity and hotels array is non-empty
+[orchestrator] output {
+  requestId: 'fda538d2-9077-4420-9fd5-96c86cff15be',
+  agent: 'research',
+  days: 3,
+  hotels: 2
+}
+[orchestrator] input {
+  requestId: 'fda538d2-9077-4420-9fd5-96c86cff15be',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > research output: each day has ≥1 activity and hotels array is non-empty
+[orchestrator] output {
+  requestId: 'fda538d2-9077-4420-9fd5-96c86cff15be',
+  agent: 'logistics',
+  selectedHotel: 'Villa Bali Resort'
+}
+[orchestrator] input {
+  requestId: 'fda538d2-9077-4420-9fd5-96c86cff15be',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > research output: each day has ≥1 activity and hotels array is non-empty
+[orchestrator] output {
+  requestId: 'fda538d2-9077-4420-9fd5-96c86cff15be',
+  agent: 'budget',
+  totalCost: 623,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: 'fda538d2-9077-4420-9fd5-96c86cff15be',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > research output: each day has ≥1 activity and hotels array is non-empty
+[orchestrator] output {
+  requestId: 'fda538d2-9077-4420-9fd5-96c86cff15be',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > research output: each day has ≥1 activity and hotels array is non-empty
+[orchestrator] end {
+  requestId: 'fda538d2-9077-4420-9fd5-96c86cff15be',
+  outcome: 'ok',
+  rounds: 0
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > returns the LangGraph service response when service is reachable
+[orchestrator] end {
+  requestId: '238f302c-9233-45df-bfde-5cf36b00fef5',
+  source: 'langgraph-bridge',
+  ok: true
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > falls back to TS orchestrator when Python service is unreachable
+[orchestrator] start {
+  requestId: 'a68630bb-696a-47a1-9f5a-c9d5dfa7008f',
+  source: 'langgraph-bridge',
+  inputLength: 24
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > falls back to TS orchestrator when Python service is unreachable
+[orchestrator] start { requestId: 'e812563a-3247-4775-bdc5-027271a4ba21', inputLength: 24 }
+[orchestrator] input {
+  requestId: 'e812563a-3247-4775-bdc5-027271a4ba21',
+  calling: 'planner'
+}
+
+stderr | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > falls back to TS orchestrator when Python service is unreachable
+LangGraph service unreachable — falling back to TS orchestrator {
+  error: 'ECONNREFUSED',
+  requestId: 'a68630bb-696a-47a1-9f5a-c9d5dfa7008f'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > falls back to TS orchestrator when Python service is unreachable
+[orchestrator] output {
+  requestId: 'e812563a-3247-4775-bdc5-027271a4ba21',
+  agent: 'planner',
+  destination: 'Tokyo',
+  durationDays: 5
+}
+[orchestrator] input {
+  requestId: 'e812563a-3247-4775-bdc5-027271a4ba21',
+  calling: 'research',
+  destination: 'Tokyo'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > falls back to TS orchestrator when Python service is unreachable
+[orchestrator] output {
+  requestId: 'e812563a-3247-4775-bdc5-027271a4ba21',
+  agent: 'research',
+  days: 2,
+  hotels: 1
+}
+[orchestrator] input {
+  requestId: 'e812563a-3247-4775-bdc5-027271a4ba21',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > falls back to TS orchestrator when Python service is unreachable
+[orchestrator] output {
+  requestId: 'e812563a-3247-4775-bdc5-027271a4ba21',
+  agent: 'logistics',
+  selectedHotel: 'Hotel A'
+}
+[orchestrator] input {
+  requestId: 'e812563a-3247-4775-bdc5-027271a4ba21',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > falls back to TS orchestrator when Python service is unreachable
+[orchestrator] output {
+  requestId: 'e812563a-3247-4775-bdc5-027271a4ba21',
+  agent: 'budget',
+  totalCost: 400,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: 'e812563a-3247-4775-bdc5-027271a4ba21',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > falls back to TS orchestrator when Python service is unreachable
+[orchestrator] output {
+  requestId: 'e812563a-3247-4775-bdc5-027271a4ba21',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > falls back to TS orchestrator when Python service is unreachable
+[orchestrator] end {
+  requestId: 'e812563a-3247-4775-bdc5-027271a4ba21',
+  outcome: 'ok',
+  rounds: 0
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > falls back to TS orchestrator when Python service returns non-OK status
+[orchestrator] start {
+  requestId: '4e202be8-9e74-4324-9c42-c09f9cea1260',
+  source: 'langgraph-bridge',
+  inputLength: 24
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > falls back to TS orchestrator when Python service returns non-OK status
+[orchestrator] start { requestId: '7a72fce2-6463-4eb7-b37b-ae5fe1d2da71', inputLength: 24 }
+[orchestrator] input {
+  requestId: '7a72fce2-6463-4eb7-b37b-ae5fe1d2da71',
+  calling: 'planner'
+}
+
+stderr | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > falls back to TS orchestrator when Python service returns non-OK status
+LangGraph service unreachable — falling back to TS orchestrator {
+  error: 'LangGraph service returned HTTP 500: Internal Server Error',
+  requestId: '4e202be8-9e74-4324-9c42-c09f9cea1260'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > falls back to TS orchestrator when Python service returns non-OK status
+[orchestrator] output {
+  requestId: '7a72fce2-6463-4eb7-b37b-ae5fe1d2da71',
+  agent: 'planner',
+  destination: 'Tokyo',
+  durationDays: 5
+}
+[orchestrator] input {
+  requestId: '7a72fce2-6463-4eb7-b37b-ae5fe1d2da71',
+  calling: 'research',
+  destination: 'Tokyo'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > falls back to TS orchestrator when Python service returns non-OK status
+[orchestrator] output {
+  requestId: '7a72fce2-6463-4eb7-b37b-ae5fe1d2da71',
+  agent: 'research',
+  days: 2,
+  hotels: 1
+}
+[orchestrator] input {
+  requestId: '7a72fce2-6463-4eb7-b37b-ae5fe1d2da71',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > falls back to TS orchestrator when Python service returns non-OK status
+[orchestrator] output {
+  requestId: '7a72fce2-6463-4eb7-b37b-ae5fe1d2da71',
+  agent: 'logistics',
+  selectedHotel: 'Hotel A'
+}
+[orchestrator] input {
+  requestId: '7a72fce2-6463-4eb7-b37b-ae5fe1d2da71',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > falls back to TS orchestrator when Python service returns non-OK status
+[orchestrator] output {
+  requestId: '7a72fce2-6463-4eb7-b37b-ae5fe1d2da71',
+  agent: 'budget',
+  totalCost: 400,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '7a72fce2-6463-4eb7-b37b-ae5fe1d2da71',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > falls back to TS orchestrator when Python service returns non-OK status
+[orchestrator] output {
+  requestId: '7a72fce2-6463-4eb7-b37b-ae5fe1d2da71',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > falls back to TS orchestrator when Python service returns non-OK status
+[orchestrator] end {
+  requestId: '7a72fce2-6463-4eb7-b37b-ae5fe1d2da71',
+  outcome: 'ok',
+  rounds: 0
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > logistics output: selectedHotel defined, every activity has a valid timeSlot
+[orchestrator] start { requestId: 'b7e3afcf-b8fd-4cce-bc70-89fbe90fa224', inputLength: 75 }
+[orchestrator] input {
+  requestId: 'b7e3afcf-b8fd-4cce-bc70-89fbe90fa224',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > logistics output: selectedHotel defined, every activity has a valid timeSlot
+[orchestrator] output {
+  requestId: 'b7e3afcf-b8fd-4cce-bc70-89fbe90fa224',
+  agent: 'planner',
+  destination: 'Bali, Indonesia',
+  durationDays: 3
+}
+[orchestrator] input {
+  requestId: 'b7e3afcf-b8fd-4cce-bc70-89fbe90fa224',
+  calling: 'research',
+  destination: 'Bali, Indonesia'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > logistics output: selectedHotel defined, every activity has a valid timeSlot
+[orchestrator] output {
+  requestId: 'b7e3afcf-b8fd-4cce-bc70-89fbe90fa224',
+  agent: 'research',
+  days: 3,
+  hotels: 2
+}
+[orchestrator] input {
+  requestId: 'b7e3afcf-b8fd-4cce-bc70-89fbe90fa224',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > logistics output: selectedHotel defined, every activity has a valid timeSlot
+[orchestrator] output {
+  requestId: 'b7e3afcf-b8fd-4cce-bc70-89fbe90fa224',
+  agent: 'logistics',
+  selectedHotel: 'Villa Bali Resort'
+}
+[orchestrator] input {
+  requestId: 'b7e3afcf-b8fd-4cce-bc70-89fbe90fa224',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > logistics output: selectedHotel defined, every activity has a valid timeSlot
+[orchestrator] output {
+  requestId: 'b7e3afcf-b8fd-4cce-bc70-89fbe90fa224',
+  agent: 'budget',
+  totalCost: 623,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: 'b7e3afcf-b8fd-4cce-bc70-89fbe90fa224',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > logistics output: selectedHotel defined, every activity has a valid timeSlot
+[orchestrator] output {
+  requestId: 'b7e3afcf-b8fd-4cce-bc70-89fbe90fa224',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > logistics output: selectedHotel defined, every activity has a valid timeSlot
+[orchestrator] end {
+  requestId: 'b7e3afcf-b8fd-4cce-bc70-89fbe90fa224',
+  outcome: 'ok',
+  rounds: 0
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > falls back to TS orchestrator when response JSON fails OrchestratorResult validation
+[orchestrator] start {
+  requestId: '64fbb2a8-7492-440e-9775-f26503c6bb4e',
+  source: 'langgraph-bridge',
+  inputLength: 24
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > falls back to TS orchestrator when response JSON fails OrchestratorResult validation
+[orchestrator] start { requestId: '46156171-43d8-45df-aef7-97291039ce29', inputLength: 24 }
+[orchestrator] input {
+  requestId: '46156171-43d8-45df-aef7-97291039ce29',
+  calling: 'planner'
+}
+
+stderr | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > falls back to TS orchestrator when response JSON fails OrchestratorResult validation
+LangGraph response failed OrchestratorResult validation — falling back to TS orchestrator {
+  requestId: '64fbb2a8-7492-440e-9775-f26503c6bb4e',
+  zodIssues: [
+    {
+      expected: 'boolean',
+      code: 'invalid_type',
+      path: [Array],
+      message: 'Invalid input: expected boolean, received string'
+    }
+  ]
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > falls back to TS orchestrator when response JSON fails OrchestratorResult validation
+[orchestrator] output {
+  requestId: '46156171-43d8-45df-aef7-97291039ce29',
+  agent: 'planner',
+  destination: 'Tokyo',
+  durationDays: 5
+}
+[orchestrator] input {
+  requestId: '46156171-43d8-45df-aef7-97291039ce29',
+  calling: 'research',
+  destination: 'Tokyo'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > budget output: ledger is non-empty, total equals breakdown total
+[orchestrator] start { requestId: '698c135e-79a0-4b99-9a37-3a951cc4b977', inputLength: 75 }
+[orchestrator] input {
+  requestId: '698c135e-79a0-4b99-9a37-3a951cc4b977',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > budget output: ledger is non-empty, total equals breakdown total
+[orchestrator] output {
+  requestId: '698c135e-79a0-4b99-9a37-3a951cc4b977',
+  agent: 'planner',
+  destination: 'Bali, Indonesia',
+  durationDays: 3
+}
+[orchestrator] input {
+  requestId: '698c135e-79a0-4b99-9a37-3a951cc4b977',
+  calling: 'research',
+  destination: 'Bali, Indonesia'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > budget output: ledger is non-empty, total equals breakdown total
+[orchestrator] output {
+  requestId: '698c135e-79a0-4b99-9a37-3a951cc4b977',
+  agent: 'research',
+  days: 3,
+  hotels: 2
+}
+[orchestrator] input {
+  requestId: '698c135e-79a0-4b99-9a37-3a951cc4b977',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > budget output: ledger is non-empty, total equals breakdown total
+[orchestrator] output {
+  requestId: '698c135e-79a0-4b99-9a37-3a951cc4b977',
+  agent: 'logistics',
+  selectedHotel: 'Villa Bali Resort'
+}
+[orchestrator] input {
+  requestId: '698c135e-79a0-4b99-9a37-3a951cc4b977',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > budget output: ledger is non-empty, total equals breakdown total
+[orchestrator] output {
+  requestId: '698c135e-79a0-4b99-9a37-3a951cc4b977',
+  agent: 'budget',
+  totalCost: 623,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '698c135e-79a0-4b99-9a37-3a951cc4b977',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > falls back to TS orchestrator when response JSON fails OrchestratorResult validation
+[orchestrator] output {
+  requestId: '46156171-43d8-45df-aef7-97291039ce29',
+  agent: 'research',
+  days: 2,
+  hotels: 1
+}
+[orchestrator] input {
+  requestId: '46156171-43d8-45df-aef7-97291039ce29',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > falls back to TS orchestrator when response JSON fails OrchestratorResult validation
+[orchestrator] output {
+  requestId: '46156171-43d8-45df-aef7-97291039ce29',
+  agent: 'logistics',
+  selectedHotel: 'Hotel A'
+}
+[orchestrator] input {
+  requestId: '46156171-43d8-45df-aef7-97291039ce29',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > falls back to TS orchestrator when response JSON fails OrchestratorResult validation
+[orchestrator] output {
+  requestId: '46156171-43d8-45df-aef7-97291039ce29',
+  agent: 'budget',
+  totalCost: 400,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '46156171-43d8-45df-aef7-97291039ce29',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > falls back to TS orchestrator when response JSON fails OrchestratorResult validation
+[orchestrator] output {
+  requestId: '46156171-43d8-45df-aef7-97291039ce29',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > falls back to TS orchestrator when response JSON fails OrchestratorResult validation
+[orchestrator] end {
+  requestId: '46156171-43d8-45df-aef7-97291039ce29',
+  outcome: 'ok',
+  rounds: 0
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > budget output: ledger is non-empty, total equals breakdown total
+[orchestrator] output {
+  requestId: '698c135e-79a0-4b99-9a37-3a951cc4b977',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > budget output: ledger is non-empty, total equals breakdown total
+[orchestrator] end {
+  requestId: '698c135e-79a0-4b99-9a37-3a951cc4b977',
+  outcome: 'ok',
+  rounds: 0
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: destination, dates, and days are intact
+[orchestrator] start { requestId: 'c349f246-9f0b-47e3-bb2e-7a0a4d78c756', inputLength: 75 }
+[orchestrator] input {
+  requestId: 'c349f246-9f0b-47e3-bb2e-7a0a4d78c756',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > passes request_id in the body
+[orchestrator] start {
+  requestId: 'e1d1bd77-5abd-486f-b5e2-ce8a873c4125',
+  source: 'langgraph-bridge',
+  inputLength: 24
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > runViaLangGraph — mocked Python service > passes request_id in the body
+[orchestrator] end {
+  requestId: 'e1d1bd77-5abd-486f-b5e2-ce8a873c4125',
+  source: 'langgraph-bridge',
+  ok: true
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: destination, dates, and days are intact
+[orchestrator] output {
+  requestId: 'c349f246-9f0b-47e3-bb2e-7a0a4d78c756',
+  agent: 'planner',
+  destination: 'Bali, Indonesia',
+  durationDays: 3
+}
+[orchestrator] input {
+  requestId: 'c349f246-9f0b-47e3-bb2e-7a0a4d78c756',
+  calling: 'research',
+  destination: 'Bali, Indonesia'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: destination, dates, and days are intact
+[orchestrator] output {
+  requestId: 'c349f246-9f0b-47e3-bb2e-7a0a4d78c756',
+  agent: 'research',
+  days: 3,
+  hotels: 2
+}
+[orchestrator] input {
+  requestId: 'c349f246-9f0b-47e3-bb2e-7a0a4d78c756',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: destination, dates, and days are intact
+[orchestrator] output {
+  requestId: 'c349f246-9f0b-47e3-bb2e-7a0a4d78c756',
+  agent: 'logistics',
+  selectedHotel: 'Villa Bali Resort'
+}
+[orchestrator] input {
+  requestId: 'c349f246-9f0b-47e3-bb2e-7a0a4d78c756',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > OrchestratorResult structural parity > TS orchestrator ok:true response has all fields expected by LangGraph caller
+[orchestrator] start { requestId: '9bdc2ba6-e7f4-4c19-9921-376431b5daa4', inputLength: 13 }
+[orchestrator] input {
+  requestId: '9bdc2ba6-e7f4-4c19-9921-376431b5daa4',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > OrchestratorResult structural parity > TS orchestrator ok:true response has all fields expected by LangGraph caller
+[orchestrator] output {
+  requestId: '9bdc2ba6-e7f4-4c19-9921-376431b5daa4',
+  agent: 'planner',
+  destination: 'Tokyo',
+  durationDays: 5
+}
+[orchestrator] input {
+  requestId: '9bdc2ba6-e7f4-4c19-9921-376431b5daa4',
+  calling: 'research',
+  destination: 'Tokyo'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > OrchestratorResult structural parity > TS orchestrator ok:true response has all fields expected by LangGraph caller
+[orchestrator] output {
+  requestId: '9bdc2ba6-e7f4-4c19-9921-376431b5daa4',
+  agent: 'research',
+  days: 2,
+  hotels: 1
+}
+[orchestrator] input {
+  requestId: '9bdc2ba6-e7f4-4c19-9921-376431b5daa4',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: destination, dates, and days are intact
+[orchestrator] output {
+  requestId: 'c349f246-9f0b-47e3-bb2e-7a0a4d78c756',
+  agent: 'budget',
+  totalCost: 623,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: 'c349f246-9f0b-47e3-bb2e-7a0a4d78c756',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: destination, dates, and days are intact
+[orchestrator] output {
+  requestId: 'c349f246-9f0b-47e3-bb2e-7a0a4d78c756',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: destination, dates, and days are intact
+[orchestrator] end {
+  requestId: 'c349f246-9f0b-47e3-bb2e-7a0a4d78c756',
+  outcome: 'ok',
+  rounds: 0
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > OrchestratorResult structural parity > TS orchestrator ok:true response has all fields expected by LangGraph caller
+[orchestrator] output {
+  requestId: '9bdc2ba6-e7f4-4c19-9921-376431b5daa4',
+  agent: 'logistics',
+  selectedHotel: 'Hotel A'
+}
+[orchestrator] input {
+  requestId: '9bdc2ba6-e7f4-4c19-9921-376431b5daa4',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > OrchestratorResult structural parity > TS orchestrator ok:true response has all fields expected by LangGraph caller
+[orchestrator] output {
+  requestId: '9bdc2ba6-e7f4-4c19-9921-376431b5daa4',
+  agent: 'budget',
+  totalCost: 400,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '9bdc2ba6-e7f4-4c19-9921-376431b5daa4',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > OrchestratorResult structural parity > TS orchestrator ok:true response has all fields expected by LangGraph caller
+[orchestrator] output {
+  requestId: '9bdc2ba6-e7f4-4c19-9921-376431b5daa4',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > OrchestratorResult structural parity > TS orchestrator ok:true response has all fields expected by LangGraph caller
+[orchestrator] end {
+  requestId: '9bdc2ba6-e7f4-4c19-9921-376431b5daa4',
+  outcome: 'ok',
+  rounds: 0
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: every day has theme, activities, and no null fields
+[orchestrator] start { requestId: '567e3230-2d5d-44f7-bde3-dbb6f943294e', inputLength: 75 }
+[orchestrator] input {
+  requestId: '567e3230-2d5d-44f7-bde3-dbb6f943294e',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: every day has theme, activities, and no null fields
+[orchestrator] output {
+  requestId: '567e3230-2d5d-44f7-bde3-dbb6f943294e',
+  agent: 'planner',
+  destination: 'Bali, Indonesia',
+  durationDays: 3
+}
+[orchestrator] input {
+  requestId: '567e3230-2d5d-44f7-bde3-dbb6f943294e',
+  calling: 'research',
+  destination: 'Bali, Indonesia'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: every day has theme, activities, and no null fields
+[orchestrator] output {
+  requestId: '567e3230-2d5d-44f7-bde3-dbb6f943294e',
+  agent: 'research',
+  days: 3,
+  hotels: 2
+}
+[orchestrator] input {
+  requestId: '567e3230-2d5d-44f7-bde3-dbb6f943294e',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: every day has theme, activities, and no null fields
+[orchestrator] output {
+  requestId: '567e3230-2d5d-44f7-bde3-dbb6f943294e',
+  agent: 'logistics',
+  selectedHotel: 'Villa Bali Resort'
+}
+[orchestrator] input {
+  requestId: '567e3230-2d5d-44f7-bde3-dbb6f943294e',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: every day has theme, activities, and no null fields
+[orchestrator] output {
+  requestId: '567e3230-2d5d-44f7-bde3-dbb6f943294e',
+  agent: 'budget',
+  totalCost: 623,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '567e3230-2d5d-44f7-bde3-dbb6f943294e',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/langGraphParity.test.ts > OrchestratorResult structural parity > TS orchestrator planner-failure response has stage + error fields
+[orchestrator] start { requestId: 'd30ce854-cd16-495d-8189-91e8e50b1bfa', inputLength: 13 }
+[orchestrator] input {
+  requestId: 'd30ce854-cd16-495d-8189-91e8e50b1bfa',
+  calling: 'planner'
+}
+
+stderr | src/orchestrator/__tests__/langGraphParity.test.ts > OrchestratorResult structural parity > TS orchestrator planner-failure response has stage + error fields
+[orchestrator] error {
+  requestId: 'd30ce854-cd16-495d-8189-91e8e50b1bfa',
+  agent: 'planner',
+  error: 'LLM timeout'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: every day has theme, activities, and no null fields
+[orchestrator] output {
+  requestId: '567e3230-2d5d-44f7-bde3-dbb6f943294e',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: every day has theme, activities, and no null fields
+[orchestrator] end {
+  requestId: '567e3230-2d5d-44f7-bde3-dbb6f943294e',
+  outcome: 'ok',
+  rounds: 0
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: selectedHotel is complete
+[orchestrator] start { requestId: '8bebdca6-3582-4e34-a1ce-ae5f13cf8cd9', inputLength: 75 }
+[orchestrator] input {
+  requestId: '8bebdca6-3582-4e34-a1ce-ae5f13cf8cd9',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: selectedHotel is complete
+[orchestrator] output {
+  requestId: '8bebdca6-3582-4e34-a1ce-ae5f13cf8cd9',
+  agent: 'planner',
+  destination: 'Bali, Indonesia',
+  durationDays: 3
+}
+[orchestrator] input {
+  requestId: '8bebdca6-3582-4e34-a1ce-ae5f13cf8cd9',
+  calling: 'research',
+  destination: 'Bali, Indonesia'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: selectedHotel is complete
+[orchestrator] output {
+  requestId: '8bebdca6-3582-4e34-a1ce-ae5f13cf8cd9',
+  agent: 'research',
+  days: 3,
+  hotels: 2
+}
+[orchestrator] input {
+  requestId: '8bebdca6-3582-4e34-a1ce-ae5f13cf8cd9',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: selectedHotel is complete
+[orchestrator] output {
+  requestId: '8bebdca6-3582-4e34-a1ce-ae5f13cf8cd9',
+  agent: 'logistics',
+  selectedHotel: 'Villa Bali Resort'
+}
+[orchestrator] input {
+  requestId: '8bebdca6-3582-4e34-a1ce-ae5f13cf8cd9',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: selectedHotel is complete
+[orchestrator] output {
+  requestId: '8bebdca6-3582-4e34-a1ce-ae5f13cf8cd9',
+  agent: 'budget',
+  totalCost: 623,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '8bebdca6-3582-4e34-a1ce-ae5f13cf8cd9',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: selectedHotel is complete
+[orchestrator] output {
+  requestId: '8bebdca6-3582-4e34-a1ce-ae5f13cf8cd9',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: selectedHotel is complete
+[orchestrator] end {
+  requestId: '8bebdca6-3582-4e34-a1ce-ae5f13cf8cd9',
+  outcome: 'ok',
+  rounds: 0
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: budget is within user budget and ledger is balanced
+[orchestrator] start { requestId: '115b9168-2a23-4bc6-b43c-d31275881679', inputLength: 75 }
+[orchestrator] input {
+  requestId: '115b9168-2a23-4bc6-b43c-d31275881679',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: budget is within user budget and ledger is balanced
+[orchestrator] output {
+  requestId: '115b9168-2a23-4bc6-b43c-d31275881679',
+  agent: 'planner',
+  destination: 'Bali, Indonesia',
+  durationDays: 3
+}
+[orchestrator] input {
+  requestId: '115b9168-2a23-4bc6-b43c-d31275881679',
+  calling: 'research',
+  destination: 'Bali, Indonesia'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: budget is within user budget and ledger is balanced
+[orchestrator] output {
+  requestId: '115b9168-2a23-4bc6-b43c-d31275881679',
+  agent: 'research',
+  days: 3,
+  hotels: 2
+}
+[orchestrator] input {
+  requestId: '115b9168-2a23-4bc6-b43c-d31275881679',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: budget is within user budget and ledger is balanced
+[orchestrator] output {
+  requestId: '115b9168-2a23-4bc6-b43c-d31275881679',
+  agent: 'logistics',
+  selectedHotel: 'Villa Bali Resort'
+}
+[orchestrator] input {
+  requestId: '115b9168-2a23-4bc6-b43c-d31275881679',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: budget is within user budget and ledger is balanced
+[orchestrator] output {
+  requestId: '115b9168-2a23-4bc6-b43c-d31275881679',
+  agent: 'budget',
+  totalCost: 623,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '115b9168-2a23-4bc6-b43c-d31275881679',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: budget is within user budget and ledger is balanced
+[orchestrator] output {
+  requestId: '115b9168-2a23-4bc6-b43c-d31275881679',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: budget is within user budget and ledger is balanced
+[orchestrator] end {
+  requestId: '115b9168-2a23-4bc6-b43c-d31275881679',
+  outcome: 'ok',
+  rounds: 0
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: safety result has riskLevel and arrays defined
+[orchestrator] start { requestId: 'a2687216-219f-4e87-8a9d-7e8a873e6837', inputLength: 75 }
+[orchestrator] input {
+  requestId: 'a2687216-219f-4e87-8a9d-7e8a873e6837',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: safety result has riskLevel and arrays defined
+[orchestrator] output {
+  requestId: 'a2687216-219f-4e87-8a9d-7e8a873e6837',
+  agent: 'planner',
+  destination: 'Bali, Indonesia',
+  durationDays: 3
+}
+[orchestrator] input {
+  requestId: 'a2687216-219f-4e87-8a9d-7e8a873e6837',
+  calling: 'research',
+  destination: 'Bali, Indonesia'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: safety result has riskLevel and arrays defined
+[orchestrator] output {
+  requestId: 'a2687216-219f-4e87-8a9d-7e8a873e6837',
+  agent: 'research',
+  days: 3,
+  hotels: 2
+}
+[orchestrator] input {
+  requestId: 'a2687216-219f-4e87-8a9d-7e8a873e6837',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: safety result has riskLevel and arrays defined
+[orchestrator] output {
+  requestId: 'a2687216-219f-4e87-8a9d-7e8a873e6837',
+  agent: 'logistics',
+  selectedHotel: 'Villa Bali Resort'
+}
+[orchestrator] input {
+  requestId: 'a2687216-219f-4e87-8a9d-7e8a873e6837',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: safety result has riskLevel and arrays defined
+[orchestrator] output {
+  requestId: 'a2687216-219f-4e87-8a9d-7e8a873e6837',
+  agent: 'budget',
+  totalCost: 623,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: 'a2687216-219f-4e87-8a9d-7e8a873e6837',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: safety result has riskLevel and arrays defined
+[orchestrator] output {
+  requestId: 'a2687216-219f-4e87-8a9d-7e8a873e6837',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > final context: safety result has riskLevel and arrays defined
+[orchestrator] end {
+  requestId: 'a2687216-219f-4e87-8a9d-7e8a873e6837',
+  outcome: 'ok',
+  rounds: 0
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > execution log records all 5 agents with status=success in pipeline order
+[orchestrator] start { requestId: '23784893-384e-4615-8d01-a4ff5310670e', inputLength: 75 }
+[orchestrator] input {
+  requestId: '23784893-384e-4615-8d01-a4ff5310670e',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > execution log records all 5 agents with status=success in pipeline order
+[orchestrator] output {
+  requestId: '23784893-384e-4615-8d01-a4ff5310670e',
+  agent: 'planner',
+  destination: 'Bali, Indonesia',
+  durationDays: 3
+}
+[orchestrator] input {
+  requestId: '23784893-384e-4615-8d01-a4ff5310670e',
+  calling: 'research',
+  destination: 'Bali, Indonesia'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > execution log records all 5 agents with status=success in pipeline order
+[orchestrator] output {
+  requestId: '23784893-384e-4615-8d01-a4ff5310670e',
+  agent: 'research',
+  days: 3,
+  hotels: 2
+}
+[orchestrator] input {
+  requestId: '23784893-384e-4615-8d01-a4ff5310670e',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > execution log records all 5 agents with status=success in pipeline order
+[orchestrator] output {
+  requestId: '23784893-384e-4615-8d01-a4ff5310670e',
+  agent: 'logistics',
+  selectedHotel: 'Villa Bali Resort'
+}
+[orchestrator] input {
+  requestId: '23784893-384e-4615-8d01-a4ff5310670e',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > execution log records all 5 agents with status=success in pipeline order
+[orchestrator] output {
+  requestId: '23784893-384e-4615-8d01-a4ff5310670e',
+  agent: 'budget',
+  totalCost: 623,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '23784893-384e-4615-8d01-a4ff5310670e',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > execution log records all 5 agents with status=success in pipeline order
+[orchestrator] output {
+  requestId: '23784893-384e-4615-8d01-a4ff5310670e',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > execution log records all 5 agents with status=success in pipeline order
+[orchestrator] end {
+  requestId: '23784893-384e-4615-8d01-a4ff5310670e',
+  outcome: 'ok',
+  rounds: 0
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > no LLM-decision entries in the execution log (clean single pass)
+[orchestrator] start { requestId: '44644cba-2456-4506-bd2d-a9a8420975e1', inputLength: 75 }
+[orchestrator] input {
+  requestId: '44644cba-2456-4506-bd2d-a9a8420975e1',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > no LLM-decision entries in the execution log (clean single pass)
+[orchestrator] output {
+  requestId: '44644cba-2456-4506-bd2d-a9a8420975e1',
+  agent: 'planner',
+  destination: 'Bali, Indonesia',
+  durationDays: 3
+}
+[orchestrator] input {
+  requestId: '44644cba-2456-4506-bd2d-a9a8420975e1',
+  calling: 'research',
+  destination: 'Bali, Indonesia'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > no LLM-decision entries in the execution log (clean single pass)
+[orchestrator] output {
+  requestId: '44644cba-2456-4506-bd2d-a9a8420975e1',
+  agent: 'research',
+  days: 3,
+  hotels: 2
+}
+[orchestrator] input {
+  requestId: '44644cba-2456-4506-bd2d-a9a8420975e1',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > no LLM-decision entries in the execution log (clean single pass)
+[orchestrator] output {
+  requestId: '44644cba-2456-4506-bd2d-a9a8420975e1',
+  agent: 'logistics',
+  selectedHotel: 'Villa Bali Resort'
+}
+[orchestrator] input {
+  requestId: '44644cba-2456-4506-bd2d-a9a8420975e1',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > no LLM-decision entries in the execution log (clean single pass)
+[orchestrator] output {
+  requestId: '44644cba-2456-4506-bd2d-a9a8420975e1',
+  agent: 'budget',
+  totalCost: 623,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '44644cba-2456-4506-bd2d-a9a8420975e1',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > no LLM-decision entries in the execution log (clean single pass)
+[orchestrator] output {
+  requestId: '44644cba-2456-4506-bd2d-a9a8420975e1',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > no LLM-decision entries in the execution log (clean single pass)
+[orchestrator] end {
+  requestId: '44644cba-2456-4506-bd2d-a9a8420975e1',
+  outcome: 'ok',
+  rounds: 0
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > no undefined values on critical context fields (null safety check)
+[orchestrator] start { requestId: '76aba155-4b05-4f0e-9ed1-878856c70ee7', inputLength: 75 }
+[orchestrator] input {
+  requestId: '76aba155-4b05-4f0e-9ed1-878856c70ee7',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > no undefined values on critical context fields (null safety check)
+[orchestrator] output {
+  requestId: '76aba155-4b05-4f0e-9ed1-878856c70ee7',
+  agent: 'planner',
+  destination: 'Bali, Indonesia',
+  durationDays: 3
+}
+[orchestrator] input {
+  requestId: '76aba155-4b05-4f0e-9ed1-878856c70ee7',
+  calling: 'research',
+  destination: 'Bali, Indonesia'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > no undefined values on critical context fields (null safety check)
+[orchestrator] output {
+  requestId: '76aba155-4b05-4f0e-9ed1-878856c70ee7',
+  agent: 'research',
+  days: 3,
+  hotels: 2
+}
+[orchestrator] input {
+  requestId: '76aba155-4b05-4f0e-9ed1-878856c70ee7',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > no undefined values on critical context fields (null safety check)
+[orchestrator] output {
+  requestId: '76aba155-4b05-4f0e-9ed1-878856c70ee7',
+  agent: 'logistics',
+  selectedHotel: 'Villa Bali Resort'
+}
+[orchestrator] input {
+  requestId: '76aba155-4b05-4f0e-9ed1-878856c70ee7',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > no undefined values on critical context fields (null safety check)
+[orchestrator] output {
+  requestId: '76aba155-4b05-4f0e-9ed1-878856c70ee7',
+  agent: 'budget',
+  totalCost: 623,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '76aba155-4b05-4f0e-9ed1-878856c70ee7',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > no undefined values on critical context fields (null safety check)
+[orchestrator] output {
+  requestId: '76aba155-4b05-4f0e-9ed1-878856c70ee7',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/pipeline.e2e.test.ts > Full itinerary pipeline — end-to-end > no undefined values on critical context fields (null safety check)
+[orchestrator] end {
+  requestId: '76aba155-4b05-4f0e-9ed1-878856c70ee7',
+  outcome: 'ok',
+  rounds: 0
+}
+
+ ✓ src/orchestrator/__tests__/langGraphParity.test.ts (9 tests | 1 skipped) 8ms
+ ✓ src/orchestrator/__tests__/pipeline.e2e.test.ts (19 tests) 17ms
+ ✓ tests/api/research-route.test.ts (6 tests) 14ms
+ ✓ tests/api/logistics-route.test.ts (6 tests) 14ms
+ ✓ tests/api/planner-route.test.ts (10 tests) 22ms
+ ✓ tests/api/budget-route.test.ts (7 tests) 13ms
+ ✓ tests/agents/budgetAgent.test.ts (35 tests) 20ms
+ ✓ tests/api/safety-route.test.ts (10 tests) 16ms
+ ✓ tests/agents/researchAgent.test.ts (10 tests) 6ms
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > happy path: returns ok=true when no issues arise
+[orchestrator] start { requestId: 'fb1a82a4-a071-49ee-b246-ab4fa2bb6600', inputLength: 24 }
+[orchestrator] input {
+  requestId: 'fb1a82a4-a071-49ee-b246-ab4fa2bb6600',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > happy path: returns ok=true when no issues arise
+[orchestrator] output {
+  requestId: 'fb1a82a4-a071-49ee-b246-ab4fa2bb6600',
+  agent: 'planner',
+  destination: 'Tokyo',
+  durationDays: 5
+}
+[orchestrator] input {
+  requestId: 'fb1a82a4-a071-49ee-b246-ab4fa2bb6600',
+  calling: 'research',
+  destination: 'Tokyo'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > happy path: returns ok=true when no issues arise
+[orchestrator] output {
+  requestId: 'fb1a82a4-a071-49ee-b246-ab4fa2bb6600',
+  agent: 'research',
+  days: 2,
+  hotels: 1
+}
+[orchestrator] input {
+  requestId: 'fb1a82a4-a071-49ee-b246-ab4fa2bb6600',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > happy path: returns ok=true when no issues arise
+[orchestrator] output {
+  requestId: 'fb1a82a4-a071-49ee-b246-ab4fa2bb6600',
+  agent: 'logistics',
+  selectedHotel: 'Hotel A'
+}
+[orchestrator] input {
+  requestId: 'fb1a82a4-a071-49ee-b246-ab4fa2bb6600',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > happy path: returns ok=true when no issues arise
+[orchestrator] output {
+  requestId: 'fb1a82a4-a071-49ee-b246-ab4fa2bb6600',
+  agent: 'budget',
+  totalCost: 400,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: 'fb1a82a4-a071-49ee-b246-ab4fa2bb6600',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > happy path: returns ok=true when no issues arise
+[orchestrator] output {
+  requestId: 'fb1a82a4-a071-49ee-b246-ab4fa2bb6600',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > happy path: returns ok=true when no issues arise
+[orchestrator] end {
+  requestId: 'fb1a82a4-a071-49ee-b246-ab4fa2bb6600',
+  outcome: 'ok',
+  rounds: 0
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executes deterministic pipeline in order
+[orchestrator] start { requestId: '1802e819-4e7d-441d-87af-8e6527f21de3', inputLength: 4 }
+[orchestrator] input {
+  requestId: '1802e819-4e7d-441d-87af-8e6527f21de3',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executes deterministic pipeline in order
+[orchestrator] output {
+  requestId: '1802e819-4e7d-441d-87af-8e6527f21de3',
+  agent: 'planner',
+  destination: 'Tokyo',
+  durationDays: 5
+}
+[orchestrator] input {
+  requestId: '1802e819-4e7d-441d-87af-8e6527f21de3',
+  calling: 'research',
+  destination: 'Tokyo'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executes deterministic pipeline in order
+[orchestrator] output {
+  requestId: '1802e819-4e7d-441d-87af-8e6527f21de3',
+  agent: 'research',
+  days: 2,
+  hotels: 1
+}
+[orchestrator] input {
+  requestId: '1802e819-4e7d-441d-87af-8e6527f21de3',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executes deterministic pipeline in order
+[orchestrator] output {
+  requestId: '1802e819-4e7d-441d-87af-8e6527f21de3',
+  agent: 'logistics',
+  selectedHotel: 'Hotel A'
+}
+[orchestrator] input {
+  requestId: '1802e819-4e7d-441d-87af-8e6527f21de3',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executes deterministic pipeline in order
+[orchestrator] output {
+  requestId: '1802e819-4e7d-441d-87af-8e6527f21de3',
+  agent: 'budget',
+  totalCost: 400,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '1802e819-4e7d-441d-87af-8e6527f21de3',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executes deterministic pipeline in order
+[orchestrator] output {
+  requestId: '1802e819-4e7d-441d-87af-8e6527f21de3',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executes deterministic pipeline in order
+[orchestrator] end {
+  requestId: '1802e819-4e7d-441d-87af-8e6527f21de3',
+  outcome: 'ok',
+  rounds: 0
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > over_budget: LLM chooses reoptimize_budget, loop resolves on second pass
+[orchestrator] start { requestId: '01b10c1d-e270-4b26-aa30-6af23ff8b878', inputLength: 4 }
+[orchestrator] input {
+  requestId: '01b10c1d-e270-4b26-aa30-6af23ff8b878',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > over_budget: LLM chooses reoptimize_budget, loop resolves on second pass
+[orchestrator] output {
+  requestId: '01b10c1d-e270-4b26-aa30-6af23ff8b878',
+  agent: 'planner',
+  destination: 'Tokyo',
+  durationDays: 5
+}
+[orchestrator] input {
+  requestId: '01b10c1d-e270-4b26-aa30-6af23ff8b878',
+  calling: 'research',
+  destination: 'Tokyo'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > over_budget: LLM chooses reoptimize_budget, loop resolves on second pass
+[orchestrator] output {
+  requestId: '01b10c1d-e270-4b26-aa30-6af23ff8b878',
+  agent: 'research',
+  days: 2,
+  hotels: 1
+}
+[orchestrator] input {
+  requestId: '01b10c1d-e270-4b26-aa30-6af23ff8b878',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > over_budget: LLM chooses reoptimize_budget, loop resolves on second pass
+[orchestrator] output {
+  requestId: '01b10c1d-e270-4b26-aa30-6af23ff8b878',
+  agent: 'logistics',
+  selectedHotel: 'Hotel A'
+}
+[orchestrator] input {
+  requestId: '01b10c1d-e270-4b26-aa30-6af23ff8b878',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > over_budget: LLM chooses reoptimize_budget, loop resolves on second pass
+[orchestrator] output {
+  requestId: '01b10c1d-e270-4b26-aa30-6af23ff8b878',
+  agent: 'budget',
+  totalCost: 400,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '01b10c1d-e270-4b26-aa30-6af23ff8b878',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > over_budget: LLM chooses reoptimize_budget, loop resolves on second pass
+[orchestrator] output {
+  requestId: '01b10c1d-e270-4b26-aa30-6af23ff8b878',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > over_budget: LLM chooses reoptimize_budget, loop resolves on second pass
+[orchestrator] input {
+  requestId: '01b10c1d-e270-4b26-aa30-6af23ff8b878',
+  step: 'validation-loop',
+  round: 1,
+  issue: 'over_budget',
+  overBudget: true,
+  dense: false
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > over_budget: LLM chooses reoptimize_budget, loop resolves on second pass
+[orchestrator] output {
+  requestId: '01b10c1d-e270-4b26-aa30-6af23ff8b878',
+  step: 'llm-decision',
+  action: 'reoptimize_budget',
+  round: 1
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > over_budget: LLM chooses reoptimize_budget, loop resolves on second pass
+[orchestrator] input {
+  requestId: '01b10c1d-e270-4b26-aa30-6af23ff8b878',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > over_budget: LLM chooses reoptimize_budget, loop resolves on second pass
+[orchestrator] output {
+  requestId: '01b10c1d-e270-4b26-aa30-6af23ff8b878',
+  agent: 'budget',
+  totalCost: 400,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '01b10c1d-e270-4b26-aa30-6af23ff8b878',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > over_budget: LLM chooses reoptimize_budget, loop resolves on second pass
+[orchestrator] output {
+  requestId: '01b10c1d-e270-4b26-aa30-6af23ff8b878',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > over_budget: LLM chooses reoptimize_budget, loop resolves on second pass
+[orchestrator] end {
+  requestId: '01b10c1d-e270-4b26-aa30-6af23ff8b878',
+  outcome: 'ok',
+  rounds: 1
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > too_dense: LLM chooses rerun_logistics, loop resolves on second pass
+[orchestrator] start { requestId: 'f2b46449-6787-4b9f-bb2b-f50c5a0cfb9a', inputLength: 4 }
+[orchestrator] input {
+  requestId: 'f2b46449-6787-4b9f-bb2b-f50c5a0cfb9a',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > too_dense: LLM chooses rerun_logistics, loop resolves on second pass
+[orchestrator] output {
+  requestId: 'f2b46449-6787-4b9f-bb2b-f50c5a0cfb9a',
+  agent: 'planner',
+  destination: 'Tokyo',
+  durationDays: 5
+}
+[orchestrator] input {
+  requestId: 'f2b46449-6787-4b9f-bb2b-f50c5a0cfb9a',
+  calling: 'research',
+  destination: 'Tokyo'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > too_dense: LLM chooses rerun_logistics, loop resolves on second pass
+[orchestrator] output {
+  requestId: 'f2b46449-6787-4b9f-bb2b-f50c5a0cfb9a',
+  agent: 'research',
+  days: 2,
+  hotels: 1
+}
+[orchestrator] input {
+  requestId: 'f2b46449-6787-4b9f-bb2b-f50c5a0cfb9a',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > too_dense: LLM chooses rerun_logistics, loop resolves on second pass
+[orchestrator] output {
+  requestId: 'f2b46449-6787-4b9f-bb2b-f50c5a0cfb9a',
+  agent: 'logistics',
+  selectedHotel: 'Hotel A'
+}
+[orchestrator] input {
+  requestId: 'f2b46449-6787-4b9f-bb2b-f50c5a0cfb9a',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > too_dense: LLM chooses rerun_logistics, loop resolves on second pass
+[orchestrator] output {
+  requestId: 'f2b46449-6787-4b9f-bb2b-f50c5a0cfb9a',
+  agent: 'budget',
+  totalCost: 400,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: 'f2b46449-6787-4b9f-bb2b-f50c5a0cfb9a',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > too_dense: LLM chooses rerun_logistics, loop resolves on second pass
+[orchestrator] output {
+  requestId: 'f2b46449-6787-4b9f-bb2b-f50c5a0cfb9a',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > too_dense: LLM chooses rerun_logistics, loop resolves on second pass
+[orchestrator] input {
+  requestId: 'f2b46449-6787-4b9f-bb2b-f50c5a0cfb9a',
+  step: 'validation-loop',
+  round: 1,
+  issue: 'too_dense',
+  overBudget: false,
+  dense: true
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > too_dense: LLM chooses rerun_logistics, loop resolves on second pass
+[orchestrator] output {
+  requestId: 'f2b46449-6787-4b9f-bb2b-f50c5a0cfb9a',
+  step: 'llm-decision',
+  action: 'rerun_logistics',
+  round: 1
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > too_dense: LLM chooses rerun_logistics, loop resolves on second pass
+[orchestrator] input {
+  requestId: 'f2b46449-6787-4b9f-bb2b-f50c5a0cfb9a',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > too_dense: LLM chooses rerun_logistics, loop resolves on second pass
+[orchestrator] output {
+  requestId: 'f2b46449-6787-4b9f-bb2b-f50c5a0cfb9a',
+  agent: 'budget',
+  totalCost: 400,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: 'f2b46449-6787-4b9f-bb2b-f50c5a0cfb9a',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > too_dense: LLM chooses rerun_logistics, loop resolves on second pass
+[orchestrator] output {
+  requestId: 'f2b46449-6787-4b9f-bb2b-f50c5a0cfb9a',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > too_dense: LLM chooses rerun_logistics, loop resolves on second pass
+[orchestrator] end {
+  requestId: 'f2b46449-6787-4b9f-bb2b-f50c5a0cfb9a',
+  outcome: 'ok',
+  rounds: 1
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > ask_user: LLM decision triggers immediate human-in-the-loop return
+[orchestrator] start { requestId: 'b7140268-31fb-4d05-8ffd-f7a7d18f0b3b', inputLength: 4 }
+[orchestrator] input {
+  requestId: 'b7140268-31fb-4d05-8ffd-f7a7d18f0b3b',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > ask_user: LLM decision triggers immediate human-in-the-loop return
+[orchestrator] output {
+  requestId: 'b7140268-31fb-4d05-8ffd-f7a7d18f0b3b',
+  agent: 'planner',
+  destination: 'Tokyo',
+  durationDays: 5
+}
+[orchestrator] input {
+  requestId: 'b7140268-31fb-4d05-8ffd-f7a7d18f0b3b',
+  calling: 'research',
+  destination: 'Tokyo'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > ask_user: LLM decision triggers immediate human-in-the-loop return
+[orchestrator] output {
+  requestId: 'b7140268-31fb-4d05-8ffd-f7a7d18f0b3b',
+  agent: 'research',
+  days: 2,
+  hotels: 1
+}
+[orchestrator] input {
+  requestId: 'b7140268-31fb-4d05-8ffd-f7a7d18f0b3b',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > ask_user: LLM decision triggers immediate human-in-the-loop return
+[orchestrator] output {
+  requestId: 'b7140268-31fb-4d05-8ffd-f7a7d18f0b3b',
+  agent: 'logistics',
+  selectedHotel: 'Hotel A'
+}
+[orchestrator] input {
+  requestId: 'b7140268-31fb-4d05-8ffd-f7a7d18f0b3b',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > ask_user: LLM decision triggers immediate human-in-the-loop return
+[orchestrator] output {
+  requestId: 'b7140268-31fb-4d05-8ffd-f7a7d18f0b3b',
+  agent: 'budget',
+  totalCost: 400,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: 'b7140268-31fb-4d05-8ffd-f7a7d18f0b3b',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > ask_user: LLM decision triggers immediate human-in-the-loop return
+[orchestrator] output {
+  requestId: 'b7140268-31fb-4d05-8ffd-f7a7d18f0b3b',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > ask_user: LLM decision triggers immediate human-in-the-loop return
+[orchestrator] input {
+  requestId: 'b7140268-31fb-4d05-8ffd-f7a7d18f0b3b',
+  step: 'validation-loop',
+  round: 1,
+  issue: 'over_budget',
+  overBudget: true,
+  dense: false
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > ask_user: LLM decision triggers immediate human-in-the-loop return
+[orchestrator] output {
+  requestId: 'b7140268-31fb-4d05-8ffd-f7a7d18f0b3b',
+  step: 'llm-decision',
+  action: 'ask_user',
+  round: 1
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > proceed: LLM decides to proceed even with budget issue, returns ok=true
+[orchestrator] start { requestId: 'b460b81f-ade9-4ab0-a847-b546ecae7b9e', inputLength: 4 }
+[orchestrator] input {
+  requestId: 'b460b81f-ade9-4ab0-a847-b546ecae7b9e',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > proceed: LLM decides to proceed even with budget issue, returns ok=true
+[orchestrator] output {
+  requestId: 'b460b81f-ade9-4ab0-a847-b546ecae7b9e',
+  agent: 'planner',
+  destination: 'Tokyo',
+  durationDays: 5
+}
+[orchestrator] input {
+  requestId: 'b460b81f-ade9-4ab0-a847-b546ecae7b9e',
+  calling: 'research',
+  destination: 'Tokyo'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > proceed: LLM decides to proceed even with budget issue, returns ok=true
+[orchestrator] output {
+  requestId: 'b460b81f-ade9-4ab0-a847-b546ecae7b9e',
+  agent: 'research',
+  days: 2,
+  hotels: 1
+}
+[orchestrator] input {
+  requestId: 'b460b81f-ade9-4ab0-a847-b546ecae7b9e',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > proceed: LLM decides to proceed even with budget issue, returns ok=true
+[orchestrator] output {
+  requestId: 'b460b81f-ade9-4ab0-a847-b546ecae7b9e',
+  agent: 'logistics',
+  selectedHotel: 'Hotel A'
+}
+[orchestrator] input {
+  requestId: 'b460b81f-ade9-4ab0-a847-b546ecae7b9e',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > proceed: LLM decides to proceed even with budget issue, returns ok=true
+[orchestrator] output {
+  requestId: 'b460b81f-ade9-4ab0-a847-b546ecae7b9e',
+  agent: 'budget',
+  totalCost: 400,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: 'b460b81f-ade9-4ab0-a847-b546ecae7b9e',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > proceed: LLM decides to proceed even with budget issue, returns ok=true
+[orchestrator] output {
+  requestId: 'b460b81f-ade9-4ab0-a847-b546ecae7b9e',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > proceed: LLM decides to proceed even with budget issue, returns ok=true
+[orchestrator] input {
+  requestId: 'b460b81f-ade9-4ab0-a847-b546ecae7b9e',
+  step: 'validation-loop',
+  round: 1,
+  issue: 'over_budget',
+  overBudget: true,
+  dense: false
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > proceed: LLM decides to proceed even with budget issue, returns ok=true
+[orchestrator] output {
+  requestId: 'b460b81f-ade9-4ab0-a847-b546ecae7b9e',
+  step: 'llm-decision',
+  action: 'proceed',
+  round: 1
+}
+[orchestrator] end {
+  requestId: 'b460b81f-ade9-4ab0-a847-b546ecae7b9e',
+  outcome: 'ok',
+  rounds: 1
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: returns requiresHuman after MAX_ITERATIONS (3) unresolved decisions
+[orchestrator] start { requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550', inputLength: 4 }
+[orchestrator] input {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: returns requiresHuman after MAX_ITERATIONS (3) unresolved decisions
+[orchestrator] output {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  agent: 'planner',
+  destination: 'Tokyo',
+  durationDays: 5
+}
+[orchestrator] input {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  calling: 'research',
+  destination: 'Tokyo'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: returns requiresHuman after MAX_ITERATIONS (3) unresolved decisions
+[orchestrator] output {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  agent: 'research',
+  days: 2,
+  hotels: 1
+}
+[orchestrator] input {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: returns requiresHuman after MAX_ITERATIONS (3) unresolved decisions
+[orchestrator] output {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  agent: 'logistics',
+  selectedHotel: 'Hotel A'
+}
+[orchestrator] input {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: returns requiresHuman after MAX_ITERATIONS (3) unresolved decisions
+[orchestrator] output {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  agent: 'budget',
+  totalCost: 400,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: returns requiresHuman after MAX_ITERATIONS (3) unresolved decisions
+[orchestrator] output {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: returns requiresHuman after MAX_ITERATIONS (3) unresolved decisions
+[orchestrator] input {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  step: 'validation-loop',
+  round: 1,
+  issue: 'over_budget',
+  overBudget: true,
+  dense: false
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: returns requiresHuman after MAX_ITERATIONS (3) unresolved decisions
+[orchestrator] output {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  step: 'llm-decision',
+  action: 'reoptimize_budget',
+  round: 1
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: returns requiresHuman after MAX_ITERATIONS (3) unresolved decisions
+[orchestrator] input {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: returns requiresHuman after MAX_ITERATIONS (3) unresolved decisions
+[orchestrator] output {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  agent: 'budget',
+  totalCost: 400,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: returns requiresHuman after MAX_ITERATIONS (3) unresolved decisions
+[orchestrator] output {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: returns requiresHuman after MAX_ITERATIONS (3) unresolved decisions
+[orchestrator] input {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  step: 'validation-loop',
+  round: 2,
+  issue: 'over_budget',
+  overBudget: true,
+  dense: false
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: returns requiresHuman after MAX_ITERATIONS (3) unresolved decisions
+[orchestrator] output {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  step: 'llm-decision',
+  action: 'reoptimize_budget',
+  round: 2
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: returns requiresHuman after MAX_ITERATIONS (3) unresolved decisions
+[orchestrator] input {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: returns requiresHuman after MAX_ITERATIONS (3) unresolved decisions
+[orchestrator] output {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  agent: 'budget',
+  totalCost: 400,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: returns requiresHuman after MAX_ITERATIONS (3) unresolved decisions
+[orchestrator] output {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: returns requiresHuman after MAX_ITERATIONS (3) unresolved decisions
+[orchestrator] input {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  step: 'validation-loop',
+  round: 3,
+  issue: 'over_budget',
+  overBudget: true,
+  dense: false
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: returns requiresHuman after MAX_ITERATIONS (3) unresolved decisions
+[orchestrator] output {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  step: 'llm-decision',
+  action: 'reoptimize_budget',
+  round: 3
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: returns requiresHuman after MAX_ITERATIONS (3) unresolved decisions
+[orchestrator] input {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: returns requiresHuman after MAX_ITERATIONS (3) unresolved decisions
+[orchestrator] output {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  agent: 'budget',
+  totalCost: 400,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: returns requiresHuman after MAX_ITERATIONS (3) unresolved decisions
+[orchestrator] output {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: returns requiresHuman after MAX_ITERATIONS (3) unresolved decisions
+[orchestrator] end {
+  requestId: 'e174ed73-d20f-4dd6-aeb6-46974fd01550',
+  outcome: 'requires-human',
+  message: 'Trip exceeds budget. Optimize or proceed?'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: contextual message when both budget and dense
+[orchestrator] start { requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b', inputLength: 4 }
+[orchestrator] input {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: contextual message when both budget and dense
+[orchestrator] output {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  agent: 'planner',
+  destination: 'Tokyo',
+  durationDays: 5
+}
+[orchestrator] input {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  calling: 'research',
+  destination: 'Tokyo'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: contextual message when both budget and dense
+[orchestrator] output {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  agent: 'research',
+  days: 2,
+  hotels: 1
+}
+[orchestrator] input {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: contextual message when both budget and dense
+[orchestrator] output {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  agent: 'logistics',
+  selectedHotel: 'Hotel A'
+}
+[orchestrator] input {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: contextual message when both budget and dense
+[orchestrator] output {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  agent: 'budget',
+  totalCost: 400,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: contextual message when both budget and dense
+[orchestrator] output {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: contextual message when both budget and dense
+[orchestrator] input {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  step: 'validation-loop',
+  round: 1,
+  issue: 'unknown',
+  overBudget: true,
+  dense: true
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: contextual message when both budget and dense
+[orchestrator] output {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  step: 'llm-decision',
+  action: 'reoptimize_budget',
+  round: 1
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: contextual message when both budget and dense
+[orchestrator] input {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: contextual message when both budget and dense
+[orchestrator] output {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  agent: 'budget',
+  totalCost: 400,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: contextual message when both budget and dense
+[orchestrator] output {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: contextual message when both budget and dense
+[orchestrator] input {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  step: 'validation-loop',
+  round: 2,
+  issue: 'unknown',
+  overBudget: true,
+  dense: true
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: contextual message when both budget and dense
+[orchestrator] output {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  step: 'llm-decision',
+  action: 'reoptimize_budget',
+  round: 2
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: contextual message when both budget and dense
+[orchestrator] input {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: contextual message when both budget and dense
+[orchestrator] output {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  agent: 'budget',
+  totalCost: 400,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: contextual message when both budget and dense
+[orchestrator] output {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: contextual message when both budget and dense
+[orchestrator] input {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  step: 'validation-loop',
+  round: 3,
+  issue: 'unknown',
+  overBudget: true,
+  dense: true
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: contextual message when both budget and dense
+[orchestrator] output {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  step: 'llm-decision',
+  action: 'reoptimize_budget',
+  round: 3
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: contextual message when both budget and dense
+[orchestrator] input {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: contextual message when both budget and dense
+[orchestrator] output {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  agent: 'budget',
+  totalCost: 400,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: contextual message when both budget and dense
+[orchestrator] output {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > exhausted loop: contextual message when both budget and dense
+[orchestrator] end {
+  requestId: '1cc0dd99-63c0-4f0f-991b-4d034da6552b',
+  outcome: 'requires-human',
+  message: 'Trip exceeds budget and the schedule is very packed. Optimize or proceed?'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > LLM failure fallback: decision layer throws → defaults to reoptimize_budget
+[orchestrator] start { requestId: '1e2301d6-aa47-4792-8f07-0a5db2f19fe5', inputLength: 4 }
+[orchestrator] input {
+  requestId: '1e2301d6-aa47-4792-8f07-0a5db2f19fe5',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > LLM failure fallback: decision layer throws → defaults to reoptimize_budget
+[orchestrator] output {
+  requestId: '1e2301d6-aa47-4792-8f07-0a5db2f19fe5',
+  agent: 'planner',
+  destination: 'Tokyo',
+  durationDays: 5
+}
+[orchestrator] input {
+  requestId: '1e2301d6-aa47-4792-8f07-0a5db2f19fe5',
+  calling: 'research',
+  destination: 'Tokyo'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > LLM failure fallback: decision layer throws → defaults to reoptimize_budget
+[orchestrator] output {
+  requestId: '1e2301d6-aa47-4792-8f07-0a5db2f19fe5',
+  agent: 'research',
+  days: 2,
+  hotels: 1
+}
+[orchestrator] input {
+  requestId: '1e2301d6-aa47-4792-8f07-0a5db2f19fe5',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > LLM failure fallback: decision layer throws → defaults to reoptimize_budget
+[orchestrator] output {
+  requestId: '1e2301d6-aa47-4792-8f07-0a5db2f19fe5',
+  agent: 'logistics',
+  selectedHotel: 'Hotel A'
+}
+[orchestrator] input {
+  requestId: '1e2301d6-aa47-4792-8f07-0a5db2f19fe5',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > LLM failure fallback: decision layer throws → defaults to reoptimize_budget
+[orchestrator] output {
+  requestId: '1e2301d6-aa47-4792-8f07-0a5db2f19fe5',
+  agent: 'budget',
+  totalCost: 400,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '1e2301d6-aa47-4792-8f07-0a5db2f19fe5',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > LLM failure fallback: decision layer throws → defaults to reoptimize_budget
+[orchestrator] output {
+  requestId: '1e2301d6-aa47-4792-8f07-0a5db2f19fe5',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > LLM failure fallback: decision layer throws → defaults to reoptimize_budget
+[orchestrator] input {
+  requestId: '1e2301d6-aa47-4792-8f07-0a5db2f19fe5',
+  step: 'validation-loop',
+  round: 1,
+  issue: 'over_budget',
+  overBudget: true,
+  dense: false
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > LLM failure fallback: decision layer throws → defaults to reoptimize_budget
+[orchestrator] output {
+  requestId: '1e2301d6-aa47-4792-8f07-0a5db2f19fe5',
+  step: 'llm-decision',
+  action: 'reoptimize_budget',
+  round: 1
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > LLM failure fallback: decision layer throws → defaults to reoptimize_budget
+[orchestrator] input {
+  requestId: '1e2301d6-aa47-4792-8f07-0a5db2f19fe5',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > LLM failure fallback: decision layer throws → defaults to reoptimize_budget
+[orchestrator] output {
+  requestId: '1e2301d6-aa47-4792-8f07-0a5db2f19fe5',
+  agent: 'budget',
+  totalCost: 400,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '1e2301d6-aa47-4792-8f07-0a5db2f19fe5',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > LLM failure fallback: decision layer throws → defaults to reoptimize_budget
+[orchestrator] output {
+  requestId: '1e2301d6-aa47-4792-8f07-0a5db2f19fe5',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > LLM failure fallback: decision layer throws → defaults to reoptimize_budget
+[orchestrator] end {
+  requestId: '1e2301d6-aa47-4792-8f07-0a5db2f19fe5',
+  outcome: 'ok',
+  rounds: 1
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > planner failure: returns ok=false with stage=planner
+[orchestrator] start { requestId: '0e9c2874-dcbc-4140-af53-af6c34b25a8a', inputLength: 4 }
+[orchestrator] input {
+  requestId: '0e9c2874-dcbc-4140-af53-af6c34b25a8a',
+  calling: 'planner'
+}
+
+stderr | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > planner failure: returns ok=false with stage=planner
+[orchestrator] error {
+  requestId: '0e9c2874-dcbc-4140-af53-af6c34b25a8a',
+  agent: 'planner',
+  error: 'planner error'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > research failure: returns ok=false with stage=research
+[orchestrator] start { requestId: 'd5d8e67e-7201-423a-aa86-7ddff2ef0b7c', inputLength: 4 }
+[orchestrator] input {
+  requestId: 'd5d8e67e-7201-423a-aa86-7ddff2ef0b7c',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > research failure: returns ok=false with stage=research
+[orchestrator] output {
+  requestId: 'd5d8e67e-7201-423a-aa86-7ddff2ef0b7c',
+  agent: 'planner',
+  destination: 'Tokyo',
+  durationDays: 5
+}
+[orchestrator] input {
+  requestId: 'd5d8e67e-7201-423a-aa86-7ddff2ef0b7c',
+  calling: 'research',
+  destination: 'Tokyo'
+}
+
+stderr | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > research failure: returns ok=false with stage=research
+[orchestrator] error {
+  requestId: 'd5d8e67e-7201-423a-aa86-7ddff2ef0b7c',
+  agent: 'research',
+  error: 'research error'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > logistics failure: returns ok=false with stage=logistics
+[orchestrator] start { requestId: '5f8f2c8d-bdd3-470c-a339-695f53ddd484', inputLength: 4 }
+[orchestrator] input {
+  requestId: '5f8f2c8d-bdd3-470c-a339-695f53ddd484',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > logistics failure: returns ok=false with stage=logistics
+[orchestrator] output {
+  requestId: '5f8f2c8d-bdd3-470c-a339-695f53ddd484',
+  agent: 'planner',
+  destination: 'Tokyo',
+  durationDays: 5
+}
+[orchestrator] input {
+  requestId: '5f8f2c8d-bdd3-470c-a339-695f53ddd484',
+  calling: 'research',
+  destination: 'Tokyo'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > logistics failure: returns ok=false with stage=logistics
+[orchestrator] output {
+  requestId: '5f8f2c8d-bdd3-470c-a339-695f53ddd484',
+  agent: 'research',
+  days: 2,
+  hotels: 1
+}
+[orchestrator] input {
+  requestId: '5f8f2c8d-bdd3-470c-a339-695f53ddd484',
+  calling: 'logistics'
+}
+
+stderr | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > logistics failure: returns ok=false with stage=logistics
+[orchestrator] error {
+  requestId: '5f8f2c8d-bdd3-470c-a339-695f53ddd484',
+  agent: 'logistics',
+  error: 'logistics error'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > budget failure in first pass: returns ok=false with stage=budget_safety
+[orchestrator] start { requestId: '43cf4dc7-fb36-432f-a748-abd654e77062', inputLength: 4 }
+[orchestrator] input {
+  requestId: '43cf4dc7-fb36-432f-a748-abd654e77062',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > budget failure in first pass: returns ok=false with stage=budget_safety
+[orchestrator] output {
+  requestId: '43cf4dc7-fb36-432f-a748-abd654e77062',
+  agent: 'planner',
+  destination: 'Tokyo',
+  durationDays: 5
+}
+[orchestrator] input {
+  requestId: '43cf4dc7-fb36-432f-a748-abd654e77062',
+  calling: 'research',
+  destination: 'Tokyo'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > budget failure in first pass: returns ok=false with stage=budget_safety
+[orchestrator] output {
+  requestId: '43cf4dc7-fb36-432f-a748-abd654e77062',
+  agent: 'research',
+  days: 2,
+  hotels: 1
+}
+[orchestrator] input {
+  requestId: '43cf4dc7-fb36-432f-a748-abd654e77062',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > budget failure in first pass: returns ok=false with stage=budget_safety
+[orchestrator] output {
+  requestId: '43cf4dc7-fb36-432f-a748-abd654e77062',
+  agent: 'logistics',
+  selectedHotel: 'Hotel A'
+}
+[orchestrator] input {
+  requestId: '43cf4dc7-fb36-432f-a748-abd654e77062',
+  calling: 'budget'
+}
+
+stderr | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > budget failure in first pass: returns ok=false with stage=budget_safety
+[orchestrator] error {
+  requestId: '43cf4dc7-fb36-432f-a748-abd654e77062',
+  agent: 'budget',
+  error: 'budget error'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executionLog records agent and llm-decision entries in order
+[orchestrator] start { requestId: '6f8bbaae-1aa4-4c69-957b-ade4649e1638', inputLength: 4 }
+[orchestrator] input {
+  requestId: '6f8bbaae-1aa4-4c69-957b-ade4649e1638',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executionLog records agent and llm-decision entries in order
+[orchestrator] output {
+  requestId: '6f8bbaae-1aa4-4c69-957b-ade4649e1638',
+  agent: 'planner',
+  destination: 'Tokyo',
+  durationDays: 5
+}
+[orchestrator] input {
+  requestId: '6f8bbaae-1aa4-4c69-957b-ade4649e1638',
+  calling: 'research',
+  destination: 'Tokyo'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executionLog records agent and llm-decision entries in order
+[orchestrator] output {
+  requestId: '6f8bbaae-1aa4-4c69-957b-ade4649e1638',
+  agent: 'research',
+  days: 2,
+  hotels: 1
+}
+[orchestrator] input {
+  requestId: '6f8bbaae-1aa4-4c69-957b-ade4649e1638',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executionLog records agent and llm-decision entries in order
+[orchestrator] output {
+  requestId: '6f8bbaae-1aa4-4c69-957b-ade4649e1638',
+  agent: 'logistics',
+  selectedHotel: 'Hotel A'
+}
+[orchestrator] input {
+  requestId: '6f8bbaae-1aa4-4c69-957b-ade4649e1638',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executionLog records agent and llm-decision entries in order
+[orchestrator] output {
+  requestId: '6f8bbaae-1aa4-4c69-957b-ade4649e1638',
+  agent: 'budget',
+  totalCost: 400,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '6f8bbaae-1aa4-4c69-957b-ade4649e1638',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executionLog records agent and llm-decision entries in order
+[orchestrator] output {
+  requestId: '6f8bbaae-1aa4-4c69-957b-ade4649e1638',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executionLog records agent and llm-decision entries in order
+[orchestrator] input {
+  requestId: '6f8bbaae-1aa4-4c69-957b-ade4649e1638',
+  step: 'validation-loop',
+  round: 1,
+  issue: 'over_budget',
+  overBudget: true,
+  dense: false
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executionLog records agent and llm-decision entries in order
+[orchestrator] output {
+  requestId: '6f8bbaae-1aa4-4c69-957b-ade4649e1638',
+  step: 'llm-decision',
+  action: 'reoptimize_budget',
+  round: 1
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executionLog records agent and llm-decision entries in order
+[orchestrator] input {
+  requestId: '6f8bbaae-1aa4-4c69-957b-ade4649e1638',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executionLog records agent and llm-decision entries in order
+[orchestrator] output {
+  requestId: '6f8bbaae-1aa4-4c69-957b-ade4649e1638',
+  agent: 'budget',
+  totalCost: 400,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '6f8bbaae-1aa4-4c69-957b-ade4649e1638',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executionLog records agent and llm-decision entries in order
+[orchestrator] output {
+  requestId: '6f8bbaae-1aa4-4c69-957b-ade4649e1638',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executionLog records agent and llm-decision entries in order
+[orchestrator] end {
+  requestId: '6f8bbaae-1aa4-4c69-957b-ade4649e1638',
+  outcome: 'ok',
+  rounds: 1
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executionLog is reset on each run() call
+[orchestrator] start { requestId: '14b8c3b4-6f66-4f69-ab2c-b266e901f9f2', inputLength: 4 }
+[orchestrator] input {
+  requestId: '14b8c3b4-6f66-4f69-ab2c-b266e901f9f2',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executionLog is reset on each run() call
+[orchestrator] output {
+  requestId: '14b8c3b4-6f66-4f69-ab2c-b266e901f9f2',
+  agent: 'planner',
+  destination: 'Tokyo',
+  durationDays: 5
+}
+[orchestrator] input {
+  requestId: '14b8c3b4-6f66-4f69-ab2c-b266e901f9f2',
+  calling: 'research',
+  destination: 'Tokyo'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executionLog is reset on each run() call
+[orchestrator] output {
+  requestId: '14b8c3b4-6f66-4f69-ab2c-b266e901f9f2',
+  agent: 'research',
+  days: 2,
+  hotels: 1
+}
+[orchestrator] input {
+  requestId: '14b8c3b4-6f66-4f69-ab2c-b266e901f9f2',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executionLog is reset on each run() call
+[orchestrator] output {
+  requestId: '14b8c3b4-6f66-4f69-ab2c-b266e901f9f2',
+  agent: 'logistics',
+  selectedHotel: 'Hotel A'
+}
+[orchestrator] input {
+  requestId: '14b8c3b4-6f66-4f69-ab2c-b266e901f9f2',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executionLog is reset on each run() call
+[orchestrator] output {
+  requestId: '14b8c3b4-6f66-4f69-ab2c-b266e901f9f2',
+  agent: 'budget',
+  totalCost: 400,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '14b8c3b4-6f66-4f69-ab2c-b266e901f9f2',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executionLog is reset on each run() call
+[orchestrator] output {
+  requestId: '14b8c3b4-6f66-4f69-ab2c-b266e901f9f2',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executionLog is reset on each run() call
+[orchestrator] end {
+  requestId: '14b8c3b4-6f66-4f69-ab2c-b266e901f9f2',
+  outcome: 'ok',
+  rounds: 0
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executionLog is reset on each run() call
+[orchestrator] start { requestId: '65810b95-ed5a-4e1d-bc09-52218a82b717', inputLength: 4 }
+[orchestrator] input {
+  requestId: '65810b95-ed5a-4e1d-bc09-52218a82b717',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executionLog is reset on each run() call
+[orchestrator] output {
+  requestId: '65810b95-ed5a-4e1d-bc09-52218a82b717',
+  agent: 'planner',
+  destination: 'Tokyo',
+  durationDays: 5
+}
+[orchestrator] input {
+  requestId: '65810b95-ed5a-4e1d-bc09-52218a82b717',
+  calling: 'research',
+  destination: 'Tokyo'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executionLog is reset on each run() call
+[orchestrator] output {
+  requestId: '65810b95-ed5a-4e1d-bc09-52218a82b717',
+  agent: 'research',
+  days: 2,
+  hotels: 1
+}
+[orchestrator] input {
+  requestId: '65810b95-ed5a-4e1d-bc09-52218a82b717',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executionLog is reset on each run() call
+[orchestrator] output {
+  requestId: '65810b95-ed5a-4e1d-bc09-52218a82b717',
+  agent: 'logistics',
+  selectedHotel: 'Hotel A'
+}
+[orchestrator] input {
+  requestId: '65810b95-ed5a-4e1d-bc09-52218a82b717',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executionLog is reset on each run() call
+[orchestrator] output {
+  requestId: '65810b95-ed5a-4e1d-bc09-52218a82b717',
+  agent: 'budget',
+  totalCost: 400,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: '65810b95-ed5a-4e1d-bc09-52218a82b717',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executionLog is reset on each run() call
+[orchestrator] output {
+  requestId: '65810b95-ed5a-4e1d-bc09-52218a82b717',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > executionLog is reset on each run() call
+[orchestrator] end {
+  requestId: '65810b95-ed5a-4e1d-bc09-52218a82b717',
+  outcome: 'ok',
+  rounds: 0
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > run() return type is OrchestratorResult (type-level check via assignment)
+[orchestrator] start { requestId: 'a1930a93-597e-4b04-8c8f-7befa2d0f2fe', inputLength: 4 }
+[orchestrator] input {
+  requestId: 'a1930a93-597e-4b04-8c8f-7befa2d0f2fe',
+  calling: 'planner'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > run() return type is OrchestratorResult (type-level check via assignment)
+[orchestrator] output {
+  requestId: 'a1930a93-597e-4b04-8c8f-7befa2d0f2fe',
+  agent: 'planner',
+  destination: 'Tokyo',
+  durationDays: 5
+}
+[orchestrator] input {
+  requestId: 'a1930a93-597e-4b04-8c8f-7befa2d0f2fe',
+  calling: 'research',
+  destination: 'Tokyo'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > run() return type is OrchestratorResult (type-level check via assignment)
+[orchestrator] output {
+  requestId: 'a1930a93-597e-4b04-8c8f-7befa2d0f2fe',
+  agent: 'research',
+  days: 2,
+  hotels: 1
+}
+[orchestrator] input {
+  requestId: 'a1930a93-597e-4b04-8c8f-7befa2d0f2fe',
+  calling: 'logistics'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > run() return type is OrchestratorResult (type-level check via assignment)
+[orchestrator] output {
+  requestId: 'a1930a93-597e-4b04-8c8f-7befa2d0f2fe',
+  agent: 'logistics',
+  selectedHotel: 'Hotel A'
+}
+[orchestrator] input {
+  requestId: 'a1930a93-597e-4b04-8c8f-7befa2d0f2fe',
+  calling: 'budget'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > run() return type is OrchestratorResult (type-level check via assignment)
+[orchestrator] output {
+  requestId: 'a1930a93-597e-4b04-8c8f-7befa2d0f2fe',
+  agent: 'budget',
+  totalCost: 400,
+  isOverBudget: false
+}
+[orchestrator] input {
+  requestId: 'a1930a93-597e-4b04-8c8f-7befa2d0f2fe',
+  calling: 'safety'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > run() return type is OrchestratorResult (type-level check via assignment)
+[orchestrator] output {
+  requestId: 'a1930a93-597e-4b04-8c8f-7befa2d0f2fe',
+  agent: 'safety',
+  riskLevel: 'low'
+}
+
+stdout | src/orchestrator/__tests__/agentOrchestrator.test.ts > AgentOrchestrator > run() return type is OrchestratorResult (type-level check via assignment)
+[orchestrator] end {
+  requestId: 'a1930a93-597e-4b04-8c8f-7befa2d0f2fe',
+  outcome: 'ok',
+  rounds: 0
+}
+
+ ✓ tests/agents/safetyAgent.test.ts (26 tests) 12ms
+ ✓ src/orchestrator/__tests__/agentOrchestrator.test.ts (16 tests) 20ms
+ ✓ tests/agents/plannerAgent.test.ts (30 tests) 16ms
+ ✓ tests/services/auth-tokens.test.ts (19 tests) 10ms
+ ✓ tests/services/auth-cookies.test.ts (21 tests) 15ms
+ ✓ tests/services/healingStore.test.ts (26 tests) 9ms
+ ✓ tests/infrastructure/openaiClient.test.ts (16 tests) 9ms
+ ✓ tests/lib/requestContext.test.ts (22 tests) 24ms
+ ✓ tests/infrastructure/logger.test.ts (17 tests) 6ms
+ ✓ tests/services/geocoding.test.ts (52 tests) 9ms
+ ✓ tests/agents/logisticsAgent.test.ts (9 tests) 15ms
+ ✓ tests/lib/itineraryValidation.test.ts (18 tests) 7ms
+ ✓ tests/lib/confidence.test.ts (28 tests) 4ms
+ ✓ tests/lib/modelRouter.test.ts (16 tests) 4ms
+ ✓ tests/agents/logisticsUtils.test.ts (32 tests) 6ms
+ ✓ tests/lib/prompts.test.ts (17 tests) 3ms
+
+ Test Files  35 passed (35)
+      Tests  785 passed | 1 skipped (786)
+   Start at  17:54:50
+   Duration  1.73s (transform 1.52s, setup 504ms, import 3.70s, tests 1.03s, environment 2ms)
+
+JSON report written to /Users/suhaasnv/Documents/Desktop ALT/portfolioprojects/voyageai_1/reports/vitest-unit-report.json
+JUNIT report written to /Users/suhaasnv/Documents/Desktop ALT/portfolioprojects/voyageai_1/reports/vitest-unit-report.xml
+ % Coverage report from v8
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   72.35 |    60.27 |   79.43 |    73.9 |                   
+ shared/contracts  |     100 |      100 |     100 |     100 |                   
+  ...atorResult.ts |     100 |      100 |     100 |     100 |                   
+ src/agents/budget |   88.83 |    75.51 |   88.46 |   90.25 |                   
+  budgetAgent.ts   |   88.83 |    75.51 |   88.46 |   90.25 | ...32,632,693-695 
+ ...ents/logistics |   84.01 |    75.59 |   90.38 |   87.95 |                   
+  ...sticsAgent.ts |   76.99 |    65.62 |   87.17 |   81.57 | ...49,490,522-527 
+  routingUtils.ts  |   97.45 |    91.35 |     100 |   99.08 | 139               
+ ...agents/planner |   92.37 |    82.43 |     100 |   93.75 |                   
+  plannerAgent.ts  |   92.17 |    82.43 |     100 |   93.57 | ...51-155,283-285 
+  ...nerPrompts.ts |     100 |      100 |     100 |     100 |                   
+ ...gents/research |   71.24 |       50 |   87.09 |   72.56 |                   
+  researchAgent.ts |   71.06 |       50 |   87.09 |   72.36 | ...00,643,750-751 
+  ...rchPrompts.ts |     100 |      100 |     100 |     100 |                   
+ src/agents/safety |   97.59 |    89.74 |     100 |   98.64 |                   
+  safetyAgent.ts   |   97.59 |    89.74 |     100 |   98.64 | 49                
+ ...ry-flow/budget |     100 |    61.11 |     100 |     100 |                   
+  route.ts         |     100 |    61.11 |     100 |     100 | 113-139           
+ ...flow/logistics |     100 |       80 |     100 |     100 |                   
+  route.ts         |     100 |       80 |     100 |     100 | 88-107            
+ ...y-flow/planner |     100 |      100 |     100 |     100 |                   
+  route.ts         |     100 |      100 |     100 |     100 |                   
+ ...-flow/research |     100 |    68.75 |     100 |     100 |                   
+  route.ts         |     100 |    68.75 |     100 |     100 | 57-92             
+ ...ry-flow/safety |     100 |      100 |     100 |     100 |                   
+  route.ts         |     100 |      100 |     100 |     100 |                   
+ ...infrastructure |   54.87 |    44.44 |   81.81 |   52.85 |                   
+  env.ts           |   38.88 |     27.9 |      75 |   39.39 | ...-66,80,120-121 
+  logger.ts        |   67.39 |    59.57 |   85.71 |   64.86 | ...34,107,128-138 
+ ...astructure/llm |   61.84 |    60.37 |    62.5 |   62.16 |                   
+  openaiClient.ts  |   61.84 |    60.37 |    62.5 |   62.16 | 72-99,214-240     
+ src/lib           |   52.38 |    48.71 |      56 |   52.58 |                   
+  admin.ts         |      60 |    66.66 |   85.71 |      60 | 80-93             
+  errors.ts        |     100 |    86.66 |     100 |     100 | 79,83,100-101     
+  prisma.ts        |       0 |        0 |       0 |       0 | 8-125             
+  redis.ts         |      10 |        0 |   33.33 |   11.11 | 10-28             
+  ...estContext.ts |     100 |      100 |     100 |     100 |                   
+ src/lib/ai        |    71.5 |    60.21 |   86.86 |   72.91 |                   
+  cache.ts         |   70.58 |    63.88 |      98 |   75.21 | ...66-369,397-434 
+  confidence.ts    |     100 |      100 |     100 |     100 |                   
+  ...Validation.ts |     100 |    94.73 |     100 |     100 | 53                
+  llm.ts           |   58.92 |    39.41 |      64 |      60 | ...21,440,448-480 
+  modelRouter.ts   |   88.46 |    95.65 |      80 |   88.46 | 84-90,114         
+  ...lmProvider.ts |     100 |      100 |     100 |     100 |                   
+ ...lib/ai/prompts |   92.85 |    57.14 |     100 |    90.9 |                   
+  index.ts         |   92.85 |    57.14 |     100 |    90.9 | 220               
+ ...lib/ai/schemas |     100 |      100 |     100 |     100 |                   
+  index.ts         |     100 |      100 |     100 |     100 |                   
+ src/lib/api       |   94.73 |    94.87 |   88.23 |   96.22 |                   
+  ...onResponse.ts |     100 |    88.88 |     100 |     100 | 18                
+  request.ts       |   96.87 |      100 |    87.5 |   96.55 | 49                
+  response.ts      |   85.71 |    85.71 |    87.5 |    92.3 | 48                
+ src/lib/metrics   |   14.28 |        0 |       0 |      20 |                   
+  aiUsageLog.ts    |   14.28 |        0 |       0 |      20 | 20-32             
+ src/orchestrator  |   86.25 |    74.68 |   86.95 |   86.92 |                   
+  ...chestrator.ts |   86.25 |    74.68 |   86.95 |   86.92 | ...50,349-351,357 
+ src/security      |   82.43 |       80 |    87.5 |   85.71 |                   
+  rateLimiter.ts   |   70.45 |    65.38 |      80 |    75.6 | 56-62,119,130-135 
+  safety.ts        |     100 |      100 |     100 |     100 |                   
+ src/services      |   29.96 |     27.1 |   39.53 |      30 |                   
+  mapbox.ts        |   92.75 |    86.11 |     100 |    91.8 | ...09,139,179-180 
+  ...xGeocoding.ts |   10.09 |    10.76 |   13.33 |   10.05 | ...92-628,653-750 
+ src/services/ai   |   53.77 |     36.7 |   42.85 |   56.98 |                   
+  ...playLogger.ts |    25.8 |     4.16 |   14.28 |   30.18 | ...01-127,139-240 
+  healingStore.ts  |   93.18 |    87.09 |     100 |    92.5 | 170-171,185       
+ src/services/auth |   95.12 |    88.88 |     100 |   95.12 |                   
+  cookieNames.ts   |     100 |      100 |     100 |     100 |                   
+  cookies.ts       |     100 |      100 |     100 |     100 |                   
+  tokens.ts        |   91.66 |    85.71 |     100 |   91.66 | 74,117            
+ ...rvices/logging |    5.88 |        0 |       0 |    5.88 |                   
+  usageLogger.ts   |    5.88 |        0 |       0 |    5.88 | 30-110            
+ src/tools         |   61.53 |    58.53 |   69.56 |   63.41 |                   
+  ...ealthCheck.ts |   15.38 |        0 |       0 |   16.66 | 32-87             
+  ...htDataTool.ts |   73.07 |    66.66 |      80 |   74.74 | ...32-238,298-307 
+ tests/fixtures    |     100 |      100 |     100 |     100 |                   
+  tripFixtures.ts  |     100 |      100 |     100 |     100 |                   
+-------------------|---------|----------|---------|---------|-------------------

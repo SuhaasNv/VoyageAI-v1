@@ -165,10 +165,11 @@ export function makeBudgetedContext(overrides: Partial<BudgetedTripContext> = {}
 export function mockAuthContext() {
     return {
         user: {
-            id: "user-abc-123",
+            sub:   "user-abc-123",
             email: "tester@voyageai.test",
-            iat: Math.floor(Date.now() / 1000) - 60,
-            exp: Math.floor(Date.now() / 1000) + 900,
+            role:  "USER" as const,
+            iat:   Math.floor(Date.now() / 1000) - 60,
+            exp:   Math.floor(Date.now() / 1000) + 900,
         },
     };
 }

@@ -236,13 +236,13 @@ describe("formatErrorResponse — error type routing", () => {
 
     it("returns 429 for RateLimitError", async () => {
         const { RateLimitError } = await import("@/security/rateLimiter");
-        const res = formatErrorResponse(new RateLimitError("rate limited"));
+        const res = formatErrorResponse(new RateLimitError("ai:user:plan", 30, 60));
         expect(res.status).toBe(429);
     });
 
     it("returns 422 for ItineraryValidationError", async () => {
         const { ItineraryValidationError } = await import("@/lib/ai/itineraryValidation");
-        const res = formatErrorResponse(new ItineraryValidationError("bad itinerary"));
+        const res = formatErrorResponse(new ItineraryValidationError("bad itinerary", "STRUCTURE_INVALID"));
         expect(res.status).toBe(422);
     });
 

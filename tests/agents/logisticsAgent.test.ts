@@ -141,7 +141,7 @@ describe("LogisticsAgent.run() — happy path", () => {
         const result = await agent.run(makeContext() as any);
 
         expect(result.foodCostSummary).toBeDefined();
-        expect(result.foodCostSummary.perDay).toHaveLength(result.days.length);
+        expect(result.foodCostSummary!.perDay).toHaveLength(result.days.length);
     });
 
     it("result has warnings array (may be empty)", async () => {
@@ -202,7 +202,7 @@ describe("LogisticsAgent.run() — Mapbox matrix failure", () => {
         // Should still return a valid result with activities
         expect(result.days[0]!.activities.length).toBeGreaterThan(0);
         // Warning about fallback should be present
-        expect(result.warnings.some((w) => w.includes("fallback"))).toBe(true);
+        expect(result.warnings!.some((w) => w.includes("fallback"))).toBe(true);
     });
 });
 
@@ -222,7 +222,7 @@ describe("LogisticsAgent.run() — no hotels", () => {
         const result = await agent.run(ctx as any);
 
         expect(result.selectedHotel.name).toContain("Accommodation");
-        expect(result.warnings.some((w) => w.includes("No hotel data"))).toBe(true);
+        expect(result.warnings!.some((w) => w.includes("No hotel data"))).toBe(true);
     });
 });
 
@@ -252,6 +252,6 @@ describe("LogisticsAgent.run() — invalid activity coordinates", () => {
 
         // Both activities should be included (invalid coord replaced by hotel coord)
         expect(result.days[0]!.activities.length).toBeGreaterThan(0);
-        expect(result.warnings.some((w) => w.includes("invalid coordinates"))).toBe(true);
+        expect(result.warnings!.some((w) => w.includes("invalid coordinates"))).toBe(true);
     });
 });
