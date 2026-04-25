@@ -1,8 +1,12 @@
+# langgraph pulls in a compatible langchain-core automatically.
+# Do NOT pin langchain-core here — its internal APIs change frequently and
+# a mismatched pin is the primary cause of DeployContainerExitNonZero crashes
+# (compiled_graph = build_graph() runs at import time and fails silently).
 langgraph==0.2.74
-langchain-core==0.3.81
 fastapi==0.115.12
 uvicorn[standard]==0.34.0
 httpx==0.28.1
 pydantic==2.11.3
 python-dotenv==1.1.0
 tenacity==9.0.0
+prometheus-client==0.21.1

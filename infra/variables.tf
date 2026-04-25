@@ -263,6 +263,13 @@ variable "langgraph_service_url" {
   default     = ""
 }
 
+variable "metrics_scrape_secret" {
+  description = "Bearer token Prometheus uses to scrape /api/metrics (must match METRICS_SCRAPE_SECRET in the monitoring stack)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 # ── Alerting ──────────────────────────────────────────────────────────────────
 
 variable "alert_email" {

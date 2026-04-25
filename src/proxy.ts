@@ -1,23 +1,27 @@
 /**
- * proxy.ts  (Next.js 16+ request proxy, formerly middleware)
+ * proxy.ts  (Next.js 16+ request proxy, replaces middleware.ts)
  *
- * Runs on every matched request BEFORE it reaches route handlers (Node.js runtime).
+ * Next.js 16 requires the file to be named "proxy.ts" and export a function
+ * named "proxy". This runs on every matched request BEFORE route handlers.
  *
  * Responsibilities:
  *  1. CSRF validation on state-mutating API routes (POST / PUT / PATCH / DELETE)
  *  2. Add security response headers on every response
+ *  3. Record HTTP request metrics (count, latency, errors) for Prometheus
  *
  * Token validation is performed in API routes and page layouts using verifyAccessToken().
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { checkCsrf } from "@/middleware/csrf";
+import { recordRequest, normaliseRoute } from "@/lib/monitoring/apiMetrics";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Proxy
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function proxy(req: NextRequest): Promise<NextResponse> {
+    const proxyStart = performance.now();
     const { pathname } = req.nextUrl;
 
     // ── 1. CSRF validation for state-mutating API routes ──────────────────────
@@ -82,6 +86,19 @@ export async function proxy(req: NextRequest): Promise<NextResponse> {
     ].join("; ");
 
     response.headers.set("Content-Security-Policy", csp);
+
+    // ── Metrics: record this request after headers are set ────────────────────
+    // We hook into the response here; the actual duration is measured from the
+    // start of the proxy function via a timing header injected by Next.js, or
+    // we use the monotonic clock. For middleware, we capture wall-clock delta.
+    const durationMs = Math.round(performance.now() - proxyStart);
+    const statusCode = response.status ?? 200;
+    recordRequest({
+        method: req.method,
+        route:  normaliseRoute(pathname),
+        statusCode,
+        durationMs,
+    });
 
     return response;
 }

@@ -23,6 +23,7 @@ import {
     getDestinationImageCachedOnly,
 } from "@/lib/services/image.service";
 import { getRedisClient, hasRedisConfig } from "@/lib/redis";
+import { plannerTripCreatedTotal } from "@/lib/monitoring/businessMetrics";
 
 const TTL_ACTIVITY_GLOBAL_SEC = 30 * 24 * 60 * 60;  // 30d
 const TTL_ACTIVITY_USER_SEC  = 90 * 24 * 60 * 60;  // 90d
@@ -102,6 +103,10 @@ export async function POST(req: NextRequest) {
             });
 
             recordTripActivity(auth.user.sub, trip.id, destination);
+            
+            // Prometheus metrics
+            plannerTripCreatedTotal.inc();
+            
             return successResponse<TripDTO>(serializeTrip(trip), 201);
         } catch (err) {
             logError("[POST /api/trips] DB error", err);

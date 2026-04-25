@@ -1,0 +1,622 @@
+name: Deploy — Monitoring Stack (Prometheus + Grafana)
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Deploys / updates the Prometheus + Grafana + Alertmanager stack on a
+#  dedicated DigitalOcean Droplet.
+#
+#  Triggered:
+#    - Manually via workflow_dispatch (always safe to re-run — idempotent)
+#    - Automatically when any file in monitoring/ changes on main
+#
+#  What it does:
+#    Stage 1 — Provision:   create the DO Droplet if it doesn't exist yet
+#    Stage 2 — Bootstrap:   install Docker + Nginx on a fresh Droplet (once)
+#    Stage 3 — Upload:      rsync monitoring config files to /opt/voyageai-monitoring
+#    Stage 4 — Deploy:      pull images, run docker compose up, configure HTTPS
+#    Stage 5 — Smoke test:  verify Prometheus and Grafana are reachable
+#
+#  Required GitHub Secrets:
+#    DIGITALOCEAN_ACCESS_TOKEN   DO API token (same one used by release.yml)
+#    MONITORING_SSH_PRIVATE_KEY  RSA/ED25519 private key matching the Droplet's authorized_keys
+#    MONITORING_SSH_FINGERPRINT  SSH host fingerprint of the Droplet (set after first provision)
+#    GRAFANA_ADMIN_PASSWORD      Grafana admin password
+#    METRICS_SCRAPE_SECRET       Shared secret (must match METRICS_SCRAPE_SECRET in Next.js App Platform)
+#    SENDGRID_API_KEY            For Alertmanager email delivery
+#
+#  Optional GitHub Secrets (used as fallback if doctl can't resolve live App URLs):
+#    NEXTJS_PROD_URL             Next.js App Platform hostname (no https://) — auto-resolved via doctl
+#    LANGGRAPH_PROD_URL          LangGraph App Platform hostname (no https://) — auto-resolved via doctl
+#    SLACK_WEBHOOK_URL           Slack webhook for critical alerts
+#    MONITORING_DOMAIN           Custom subdomain (e.g. monitoring.voyageai.app)
+#    MONITORING_EMAIL            Let's Encrypt contact email (default: admin@voyageai.app)
+#    MONITORING_DROPLET_SIZE     DO slug (default: s-1vcpu-1gb)
+#    MONITORING_DROPLET_REGION   DO region (default: nyc3)
+#
+#  Optional GitHub Variables:
+#    MONITORING_ENV              App Platform environment to scrape (default: production)
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+    inputs:
+      force_bootstrap:
+        description: "Re-run bootstrap even if Droplet already exists"
+        required: false
+        default: "false"
+        type: boolean
+      grafana_password:
+        description: "Override Grafana admin password (leave empty to use secret)"
+        required: false
+        default: ""
+
+  push:
+    branches: [main]
+    paths:
+      - "monitoring/**"
+      - ".github/workflows/deploy-monitoring.yml"
+
+concurrency:
+  group: deploy-monitoring
+  cancel-in-progress: false
+
+env:
+  DROPLET_NAME: voyageai-monitoring
+  DROPLET_SIZE: ${{ vars.MONITORING_DROPLET_SIZE || 's-1vcpu-1gb' }}
+  DROPLET_REGION: ${{ vars.MONITORING_DROPLET_REGION || 'sgp1' }}
+  DROPLET_IMAGE: ubuntu-22-04-x64
+  INSTALL_DIR: /opt/voyageai-monitoring
+
+jobs:
+  # ── Stage 1: Provision ──────────────────────────────────────────────────────
+  provision:
+    name: "1 · Provision DO Droplet"
+    runs-on: ubuntu-latest
+    # Job outputs read from the final 'resolve' step so they are correct
+    # whether the Droplet already existed OR was just created this run.
+    outputs:
+      droplet_ip:      ${{ steps.resolve.outputs.ip }}
+      droplet_id:      ${{ steps.resolve.outputs.id }}
+      already_existed: ${{ steps.check.outputs.existed }}
+
+    steps:
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Check if Droplet already exists
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          INFO=$(doctl compute droplet list \
+            --format "ID,Name,PublicIPv4" --no-header 2>/dev/null \
+            | grep -w "${{ env.DROPLET_NAME }}" | head -1 || true)
+
+          if [[ -n "$INFO" ]]; then
+            ID=$(echo "$INFO" | awk '{print $1}')
+            IP=$(echo "$INFO" | awk '{print $3}')
+            echo "id=$ID"        >> "$GITHUB_OUTPUT"
+            echo "ip=$IP"        >> "$GITHUB_OUTPUT"
+            echo "existed=true"  >> "$GITHUB_OUTPUT"
+            echo "✅ Droplet already exists: ${{ env.DROPLET_NAME }} ($IP)"
+          else
+            echo "id="           >> "$GITHUB_OUTPUT"
+            echo "ip="           >> "$GITHUB_OUTPUT"
+            echo "existed=false" >> "$GITHUB_OUTPUT"
+            echo "📦 Droplet not found — will create"
+          fi
+
+      - name: Create Droplet (if new)
+        id: create
+        if: steps.check.outputs.existed == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Resolve the SSH key fingerprint from the account
+          KEY_FP=$(doctl compute ssh-key list --format FingerPrint --no-header | head -1)
+          [[ -z "$KEY_FP" ]] && {
+            echo "❌ No SSH key found in your DO account."
+            echo "   Add one at: https://cloud.digitalocean.com/account/security"
+            exit 1
+          }
+
+          echo "🚀 Creating Droplet ${{ env.DROPLET_NAME }} ..."
+          doctl compute droplet create "${{ env.DROPLET_NAME }}" \
+            --size      "${{ env.DROPLET_SIZE }}" \
+            --image     "${{ env.DROPLET_IMAGE }}" \
+            --region    "${{ env.DROPLET_REGION }}" \
+            --ssh-keys  "$KEY_FP" \
+            --tag-names "monitoring,voyageai" \
+            --wait
+
+          # Fetch IP immediately after creation
+          IP=$(doctl compute droplet list \
+            --format "Name,PublicIPv4" --no-header \
+            | grep -w "${{ env.DROPLET_NAME }}" | awk '{print $2}')
+          ID=$(doctl compute droplet list \
+            --format "ID,Name" --no-header \
+            | grep -w "${{ env.DROPLET_NAME }}" | awk '{print $1}')
+
+          [[ -z "$IP" ]] && { echo "❌ Could not read IP after creation"; exit 1; }
+
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
+          echo "ip=$IP" >> "$GITHUB_OUTPUT"
+          echo "✅ Droplet created: $IP (id=$ID)"
+          echo ""
+          echo "⚠️  IMPORTANT: after this run, save the SSH fingerprint:"
+          echo "   ssh-keyscan -H $IP | grep ed25519"
+          echo "   → set as MONITORING_SSH_FINGERPRINT GitHub secret"
+
+      # Always runs — consolidates IP from whichever step produced it
+      - name: Resolve Droplet IP
+        id: resolve
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Prefer the freshly-created IP; fall back to the pre-existing one
+          IP="${{ steps.create.outputs.ip || steps.check.outputs.ip }}"
+          ID="${{ steps.create.outputs.id || steps.check.outputs.id }}"
+
+          # Fallback: re-query doctl in case the expressions above are both empty
+          if [[ -z "$IP" ]]; then
+            echo "ℹ️  Re-querying doctl for Droplet IP..."
+            INFO=$(doctl compute droplet list \
+              --format "ID,Name,PublicIPv4" --no-header 2>/dev/null \
+              | grep -w "${{ env.DROPLET_NAME }}" | head -1 || true)
+            IP=$(echo "$INFO" | awk '{print $3}')
+            ID=$(echo "$INFO" | awk '{print $1}')
+          fi
+
+          [[ -z "$IP" ]] && { echo "❌ Could not resolve Droplet IP"; exit 1; }
+
+          echo "ip=$IP" >> "$GITHUB_OUTPUT"
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
+          echo "✅ Resolved Droplet IP: $IP (id=$ID)"
+
+  # ── Stage 2: Bootstrap ──────────────────────────────────────────────────────
+  bootstrap:
+    name: "2 · Bootstrap Droplet"
+    needs: provision
+    runs-on: ubuntu-latest
+    # Only bootstrap if: new Droplet OR force_bootstrap=true
+    if: |
+      needs.provision.outputs.already_existed == 'false' ||
+      github.event.inputs.force_bootstrap == 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.MONITORING_SSH_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          mkdir -p ~/.ssh
+          if echo "$SSH_PRIVATE_KEY" | base64 -d 2>/dev/null | grep -q 'PRIVATE KEY'; then
+            echo "$SSH_PRIVATE_KEY" | base64 -d > ~/.ssh/monitor_key
+          else
+            printf '%s' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/monitor_key
+          fi
+          echo "" >> ~/.ssh/monitor_key
+          chmod 600 ~/.ssh/monitor_key
+          ssh-keygen -y -f ~/.ssh/monitor_key > /dev/null \
+            || { echo "❌ SSH key invalid. Re-encode with: cat KEY | base64 -w0"; exit 1; }
+
+      - name: Wait for SSH to become available
+        shell: bash
+        run: |
+          IP="${{ needs.provision.outputs.droplet_ip }}"
+          echo "⏳ Waiting for SSH on $IP ..."
+          for i in $(seq 1 30); do
+            nc -z -w5 "$IP" 22 && echo "✅ SSH is up" && exit 0
+            echo "  [$i/30] not ready yet..."
+            sleep 10
+          done
+          echo "❌ SSH never became available" && exit 1
+
+      - name: Run bootstrap script on Droplet
+        shell: bash
+        run: |
+          IP="${{ needs.provision.outputs.droplet_ip }}"
+          ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts 2>/dev/null
+          SSH="ssh -i ~/.ssh/monitor_key -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 root@$IP"
+
+          $SSH bash -s << 'BOOTSTRAP'
+            set -euo pipefail
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq
+            apt-get install -y -qq curl gnupg ca-certificates lsb-release \
+              nginx certbot python3-certbot-nginx apache2-utils ufw
+
+            # Docker
+            if ! command -v docker &>/dev/null; then
+              curl -fsSL https://get.docker.com | sh
+              systemctl enable --now docker
+            fi
+
+            # Install dir
+            mkdir -p /opt/voyageai-monitoring/grafana/{provisioning/{datasources,dashboards},dashboards}
+
+            # Firewall
+            ufw --force reset
+            ufw default deny incoming
+            ufw default allow outgoing
+            ufw allow ssh
+            ufw allow 80/tcp
+            ufw allow 443/tcp
+            ufw --force enable
+
+            echo "✅ Bootstrap done"
+          BOOTSTRAP
+
+  # ── Stage 3: Upload config files ───────────────────────────────────────────
+  upload:
+    name: "3 · Upload Config Files"
+    needs: [provision, bootstrap]
+    runs-on: ubuntu-latest
+    # Run even if bootstrap was skipped (already-bootstrapped Droplet)
+    if: always() && needs.provision.result == 'success'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install doctl (resolve App Platform URLs)
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      # Dynamically resolve the live App Platform hostnames so we never depend on
+      # manually-maintained NEXTJS_PROD_URL / LANGGRAPH_PROD_URL secrets.
+      # Falls back to the static secrets when doctl returns nothing (first deploy).
+      - name: Resolve App Platform hostnames
+        id: resolve-app-urls
+        shell: bash
+        run: |
+          set -euo pipefail
+          ENV="${{ vars.MONITORING_ENV || 'production' }}"
+
+          APPS_JSON=$(doctl apps list --output json 2>/dev/null || echo '[]')
+
+          LINE=$(echo "$APPS_JSON" | jq -r --arg nxs "voyageai-nextjs-${ENV}" --arg nlg "voyageai-langgraph-${ENV}" '
+            def applist:
+              if type == "object" and (.apps | type == "array") then .apps
+              elif type == "array" then . else [] end;
+            def appname:
+              ((.spec // {}) | .name // "") as $sn
+              | if $sn != "" then $sn
+                else (((.active_deployment // {}) | .spec // {}) | .name // "") end;
+            def hostname($w):
+              ((applist | map(select(appname == $w)) | .[0]) // null)
+              | if . == null then ""
+                else ((.live_url // .default_ingress // "") | ltrimstr("https://") | rtrimstr("/"))
+                end;
+            [hostname($nxs), hostname($nlg)] | @tsv
+          ')
+          IFS=$'\t' read -r NEXTJS_HOST LG_HOST <<< "$LINE"
+
+          # Fall back to static secrets when doctl returns no match
+          [ -z "$NEXTJS_HOST" ] && NEXTJS_HOST="${{ secrets.NEXTJS_PROD_URL }}"
+          [ -z "$LG_HOST" ]     && LG_HOST="${{ secrets.LANGGRAPH_PROD_URL }}"
+
+          # Strip any accidental https:// prefix from the static secret values
+          NEXTJS_HOST="${NEXTJS_HOST#https://}"
+          LG_HOST="${LG_HOST#https://}"
+
+          echo "nextjs_host=${NEXTJS_HOST}"   >> "$GITHUB_OUTPUT"
+          echo "langgraph_host=${LG_HOST}"    >> "$GITHUB_OUTPUT"
+          echo "✅ Next.js target:   ${NEXTJS_HOST}"
+          echo "✅ LangGraph target: ${LG_HOST}"
+
+      - name: Write .env file
+        shell: bash
+        run: |
+          cat > monitoring/.env << EOF
+          GRAFANA_ADMIN_PASSWORD=${{ github.event.inputs.grafana_password || secrets.GRAFANA_ADMIN_PASSWORD }}
+          METRICS_SCRAPE_SECRET=${{ secrets.METRICS_SCRAPE_SECRET }}
+          SENDGRID_API_KEY=${{ secrets.SENDGRID_API_KEY || '' }}
+          SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL || '' }}
+          NEXTJS_PROD_URL=${{ steps.resolve-app-urls.outputs.nextjs_host }}
+          LANGGRAPH_PROD_URL=${{ steps.resolve-app-urls.outputs.langgraph_host }}
+          EOF
+          # Trim leading whitespace added by heredoc indentation
+          sed -i 's/^[[:space:]]*//' monitoring/.env
+
+      - name: Inject secrets into config files
+        shell: bash
+        run: |
+          NEXTJS_HOST="${{ steps.resolve-app-urls.outputs.nextjs_host }}"
+          LG_HOST="${{ steps.resolve-app-urls.outputs.langgraph_host }}"
+
+          # Prometheus — substitute production hostnames (resolved dynamically above)
+          sed -i "s|NEXTJS_PROD_HOST|${NEXTJS_HOST}|g"     monitoring/prometheus.yml
+          sed -i "s|LANGGRAPH_PROD_HOST|${LG_HOST}|g"       monitoring/prometheus.yml
+
+          # Prometheus — substitute scrape bearer token
+          sed -i "s|\${METRICS_SCRAPE_SECRET}|${{ secrets.METRICS_SCRAPE_SECRET }}|g" \
+            monitoring/prometheus.yml
+
+          # Alertmanager — inject Slack webhook only when the secret is set.
+          # An empty URL causes alertmanager to crash with "unsupported scheme".
+          SLACK_URL="${{ secrets.SLACK_WEBHOOK_URL }}"
+          if [[ -n "$SLACK_URL" ]]; then
+            WEBHOOK_BLOCK="    webhook_configs:\n      - url: \"$SLACK_URL\"\n        send_resolved: true"
+            sed -i "s|    # SLACK_WEBHOOK_PLACEHOLDER|$WEBHOOK_BLOCK|g" monitoring/alertmanager.yml
+          else
+            # Remove the placeholder comment so alertmanager config stays valid
+            sed -i '/# SLACK_WEBHOOK_PLACEHOLDER/d' monitoring/alertmanager.yml
+          fi
+
+      - name: Rsync monitoring files to Droplet
+        shell: bash
+        env:
+          # Accept key in either raw PEM or base64-encoded PEM form.
+          # Base64 is preferred — it survives Windows CRLF and copy-paste mangling.
+          SSH_PRIVATE_KEY: ${{ secrets.MONITORING_SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+
+          # ── Write the key ──────────────────────────────────────────────────────
+          # Try base64 decode first; if that fails write the value as raw PEM.
+          if echo "$SSH_PRIVATE_KEY" | base64 -d 2>/dev/null | grep -q 'PRIVATE KEY'; then
+            echo "🔑 Key is base64-encoded — decoding..."
+            echo "$SSH_PRIVATE_KEY" | base64 -d > ~/.ssh/monitor_key
+          else
+            echo "🔑 Key appears to be raw PEM — writing directly..."
+            # Strip Windows carriage returns (\r) that corrupt PEM parsing
+            printf '%s' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/monitor_key
+          fi
+          # Ensure the required trailing newline is present
+          echo "" >> ~/.ssh/monitor_key
+          chmod 600 ~/.ssh/monitor_key
+
+          # Sanity-check
+          ssh-keygen -y -f ~/.ssh/monitor_key > /dev/null \
+            || { echo "❌ SSH key is still invalid after normalisation."; \
+                 echo "   Re-encode it with:  cat YOUR_KEY | base64 -w0  (Linux)"; \
+                 echo "                  or:  cat YOUR_KEY | base64       (macOS)"; \
+                 echo "   Then paste that single line into MONITORING_SSH_PRIVATE_KEY."; \
+                 exit 1; }
+
+          IP="${{ needs.provision.outputs.droplet_ip }}"
+
+          # Trust the Droplet's host key
+          ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts 2>/dev/null
+
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/monitor_key -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15" \
+            monitoring/ \
+            "root@$IP:${{ env.INSTALL_DIR }}/"
+
+          echo "✅ Config files uploaded to $IP:${{ env.INSTALL_DIR }}"
+
+  # ── Stage 4: Deploy ─────────────────────────────────────────────────────────
+  deploy:
+    name: "4 · Deploy Stack + HTTPS"
+    needs: [provision, upload]
+    runs-on: ubuntu-latest
+    if: always() && needs.provision.result == 'success' && needs.upload.result == 'success'
+
+    env:
+      MONITORING_DOMAIN: ${{ vars.MONITORING_DOMAIN || '' }}
+      MONITORING_EMAIL: ${{ vars.MONITORING_EMAIL || 'admin@voyageai.app' }}
+
+    steps:
+      - name: Setup SSH key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.MONITORING_SSH_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          mkdir -p ~/.ssh
+          if echo "$SSH_PRIVATE_KEY" | base64 -d 2>/dev/null | grep -q 'PRIVATE KEY'; then
+            echo "$SSH_PRIVATE_KEY" | base64 -d > ~/.ssh/monitor_key
+          else
+            printf '%s' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/monitor_key
+          fi
+          echo "" >> ~/.ssh/monitor_key
+          chmod 600 ~/.ssh/monitor_key
+          ssh-keygen -y -f ~/.ssh/monitor_key > /dev/null \
+            || { echo "❌ SSH key invalid. Re-encode with: cat KEY | base64 -w0"; exit 1; }
+          IP="${{ needs.provision.outputs.droplet_ip }}"
+          ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Deploy via SSH
+        shell: bash
+        run: |
+          IP="${{ needs.provision.outputs.droplet_ip }}"
+
+          # Pass domain/email as remote env vars — cleaner than positional args
+          # and avoids any quoting issues when the values contain spaces.
+          ssh -i ~/.ssh/monitor_key \
+            -o StrictHostKeyChecking=accept-new \
+            -o ConnectTimeout=60 \
+            "root@$IP" \
+            env \
+              DEPLOY_DOMAIN="${MONITORING_DOMAIN:-}" \
+              DEPLOY_EMAIL="${MONITORING_EMAIL:-admin@voyageai.app}" \
+            bash << 'DEPLOY'
+          set -euo pipefail
+          DOMAIN="${DEPLOY_DOMAIN:-}"
+          EMAIL="${DEPLOY_EMAIL:-admin@voyageai.app}"
+          cd /opt/voyageai-monitoring
+
+          # ── Ensure dependencies are present (self-healing if bootstrap was skipped) ──
+          if ! command -v nginx &>/dev/null || ! command -v docker &>/dev/null; then
+            echo "Missing dependencies — running bootstrap inline..."
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq
+            apt-get install -y -qq curl gnupg ca-certificates lsb-release \
+              nginx certbot python3-certbot-nginx apache2-utils ufw
+            if ! command -v docker &>/dev/null; then
+              curl -fsSL https://get.docker.com | sh
+              systemctl enable --now docker
+            fi
+            mkdir -p /opt/voyageai-monitoring/grafana/{provisioning/{datasources,dashboards},dashboards}
+          fi
+
+          # ── Nginx: resolve server_name ───────────────────────────────────
+          SERVER_IP=$(curl -sf http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/address || echo "")
+          SERVE_HOST="${DOMAIN:-$SERVER_IP}"
+
+          # Write nginx config using printf — avoids nested heredoc over SSH
+          printf 'server {\n\
+              listen 80;\n\
+              server_name %s;\n\
+              location /.well-known/acme-challenge/ { root /var/www/html; }\n\
+              location / {\n\
+                  proxy_pass         http://127.0.0.1:3001;\n\
+                  proxy_http_version 1.1;\n\
+                  proxy_set_header   Host              $host;\n\
+                  proxy_set_header   X-Real-IP         $remote_addr;\n\
+                  proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;\n\
+                  proxy_set_header   X-Forwarded-Proto $scheme;\n\
+                  proxy_set_header   Upgrade           $http_upgrade;\n\
+                  proxy_set_header   Connection        "upgrade";\n\
+              }\n\
+          }\n' "$SERVE_HOST" > /etc/nginx/sites-available/voyageai-monitoring
+
+          ln -sf /etc/nginx/sites-available/voyageai-monitoring \
+                 /etc/nginx/sites-enabled/voyageai-monitoring
+          rm -f /etc/nginx/sites-enabled/default
+          nginx -t && systemctl reload nginx
+
+          # ── TLS cert (only with a real domain) ──────────────────────────
+          if [[ -n "$DOMAIN" ]]; then
+            if [[ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]]; then
+              echo "Obtaining TLS cert for $DOMAIN ..."
+              certbot --nginx -d "$DOMAIN" \
+                --non-interactive --agree-tos -m "$EMAIL" --redirect
+              (crontab -l 2>/dev/null
+               echo "0 3 * * * certbot renew --quiet && systemctl reload nginx"
+              ) | crontab - 2>/dev/null || true
+            else
+              certbot renew --quiet
+            fi
+          fi
+
+          # ── Docker stack ─────────────────────────────────────────────────
+          echo "Pulling images..."
+          docker compose pull --quiet
+
+          echo "Starting stack..."
+          docker compose up -d --remove-orphans
+
+          # ── Health checks ────────────────────────────────────────────────
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:9090/-/ready > /dev/null && break
+            [[ $i -eq 30 ]] && echo "Prometheus did not become ready" && exit 1
+            sleep 2
+          done
+
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:3001/api/health > /dev/null && break
+            [[ $i -eq 30 ]] && echo "Grafana did not become ready" && exit 1
+            sleep 2
+          done
+
+          curl -s -XPOST http://127.0.0.1:9090/-/reload || true
+          echo "Stack is up!"
+          DEPLOY
+
+  # ── Stage 5: Smoke test ─────────────────────────────────────────────────────
+  smoke-test:
+    name: "5 · Smoke Test"
+    needs: [provision, deploy]
+    runs-on: ubuntu-latest
+    if: always() && needs.deploy.result == 'success'
+
+    steps:
+      - name: Setup SSH key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.MONITORING_SSH_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          mkdir -p ~/.ssh
+          if echo "$SSH_PRIVATE_KEY" | base64 -d 2>/dev/null | grep -q 'PRIVATE KEY'; then
+            echo "$SSH_PRIVATE_KEY" | base64 -d > ~/.ssh/monitor_key
+          else
+            printf '%s' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/monitor_key
+          fi
+          echo "" >> ~/.ssh/monitor_key
+          chmod 600 ~/.ssh/monitor_key
+          ssh-keygen -y -f ~/.ssh/monitor_key > /dev/null \
+            || { echo "❌ SSH key invalid"; exit 1; }
+          IP="${{ needs.provision.outputs.droplet_ip }}"
+          ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Verify Prometheus API
+        shell: bash
+        run: |
+          IP="${{ needs.provision.outputs.droplet_ip }}"
+          SSH="ssh -i ~/.ssh/monitor_key -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 root@$IP"
+
+          $SSH bash -s << 'SMOKETEST'
+            set -euo pipefail
+
+            STATUS=$(curl -sf http://127.0.0.1:9090/-/ready || echo "FAIL")
+            [[ "$STATUS" == *"Prometheus"* || "$STATUS" == "" ]] \
+              && echo "✅ Prometheus ready" \
+              || { echo "❌ Prometheus: $STATUS"; exit 1; }
+
+            GRAFANA=$(curl -sf http://127.0.0.1:3001/api/health \
+              | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('database',''))" 2>/dev/null || echo "FAIL")
+            [[ "$GRAFANA" == "ok" ]] \
+              && echo "✅ Grafana healthy" \
+              || { echo "❌ Grafana DB: $GRAFANA"; exit 1; }
+
+            TARGETS=$(curl -sf "http://127.0.0.1:9090/api/v1/targets" \
+              | python3 -c "import sys,json; d=json.load(sys.stdin); active=[t for t in d['data']['activeTargets'] if t['health']=='up']; print(len(active))")
+            echo "✅ Prometheus has $TARGETS healthy target(s)"
+            [[ "$TARGETS" -ge 1 ]] || { echo "❌ No healthy Prometheus targets"; exit 1; }
+
+            SERVER_IP=$(curl -sf http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/address)
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Grafana       → http://$SERVER_IP"
+            echo "  Prometheus    → http://$SERVER_IP:9090  (loopback only)"
+            echo "  Alertmanager  → http://$SERVER_IP:9093  (loopback only)"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          SMOKETEST
+
+  # ── Summary ─────────────────────────────────────────────────────────────────
+  summary:
+    name: "Summary"
+    needs: [provision, deploy, smoke-test]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Write step summary
+        shell: bash
+        run: |
+          IP="${{ needs.provision.outputs.droplet_ip }}"
+          DOMAIN="${{ vars.MONITORING_DOMAIN || '' }}"
+          GRAFANA_URL="${DOMAIN:+https://$DOMAIN}"
+          GRAFANA_URL="${GRAFANA_URL:-http://$IP}"
+
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          ## 📊 Monitoring Stack Deployment
+
+          | | |
+          |---|---|
+          | **Droplet IP** | \`$IP\` |
+          | **Grafana** | [$GRAFANA_URL]($GRAFANA_URL) |
+          | **Deploy result** | ${{ needs.deploy.result }} |
+          | **Smoke test** | ${{ needs.smoke-test.result }} |
+
+          ### Dashboards
+          - 📊 [AI Performance]($GRAFANA_URL/d/voyageai-ai-performance)
+          - 🔄 [LangGraph Workflow]($GRAFANA_URL/d/voyageai-langgraph)
+          - ⚙️  [System Health]($GRAFANA_URL/d/voyageai-system-health)
+          - 📅 [Business Metrics]($GRAFANA_URL/d/voyageai-business)
+
+          ### Next steps
+          1. Log into Grafana with \`admin\` / (your \`GRAFANA_ADMIN_PASSWORD\` secret)
+          2. Set \`METRICS_SCRAPE_SECRET\` in DigitalOcean App Platform (Next.js service)
+          3. Add \`MONITORING_DOMAIN\` repo variable for a custom domain + HTTPS
+          4. Set \`MONITORING_SSH_FINGERPRINT\` secret if this was the first run
+          EOF

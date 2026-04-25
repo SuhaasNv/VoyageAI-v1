@@ -1,0 +1,122 @@
+{
+  "title": "AI Planner Business Metrics",
+  "uid": "voyageai-business",
+  "tags": ["voyageai", "business", "product"],
+  "schemaVersion": 39,
+  "refresh": "1m",
+  "time": { "from": "now-24h", "to": "now" },
+  "panels": [
+    {
+      "id": 1, "type": "stat", "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "title": "Itineraries Generated (24h)",
+      "targets": [{ "expr": "sum(increase(planner_itinerary_generated_total[24h]))" }]
+    },
+    {
+      "id": 2, "type": "stat", "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+      "title": "Plan Success Rate",
+      "targets": [{
+        "expr": "sum(rate(planner_itinerary_generated_total{status='success'}[1h])) / sum(rate(planner_itinerary_generated_total[1h]))"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": { "steps": [
+            { "color": "red", "value": null },
+            { "color": "yellow", "value": 0.8 },
+            { "color": "green", "value": 0.95 }
+          ]}
+        }
+      }
+    },
+    {
+      "id": 3, "type": "stat", "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
+      "title": "Trips Created (24h)",
+      "targets": [{ "expr": "sum(increase(planner_trip_created_total[24h]))" }]
+    },
+    {
+      "id": 4, "type": "stat", "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
+      "title": "Trips Deleted (24h)",
+      "targets": [{ "expr": "sum(increase(planner_trip_deleted_total[24h]))" }]
+    },
+    {
+      "id": 5, "type": "stat", "gridPos": { "x": 16, "y": 0, "w": 4, "h": 4 },
+      "title": "Plan Regenerations (24h)",
+      "targets": [{ "expr": "sum(increase(planner_regenerated_total[24h]))" }],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 10 },
+            { "color": "red", "value": 30 }
+          ]}
+        }
+      }
+    },
+    {
+      "id": 6, "type": "stat", "gridPos": { "x": 20, "y": 0, "w": 4, "h": 4 },
+      "title": "AI Dissatisfaction Rate",
+      "targets": [{
+        "expr": "sum(rate(planner_regenerated_total[1h])) / sum(rate(planner_itinerary_generated_total{status='success'}[1h]))"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": { "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 0.15 },
+            { "color": "red", "value": 0.3 }
+          ]}
+        }
+      }
+    },
+    {
+      "id": 10, "type": "timeseries", "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "title": "Itinerary Generations Over Time",
+      "targets": [
+        { "expr": "sum(rate(planner_itinerary_generated_total{status='success'}[30m])) by (source)", "legendFormat": "✅ {{ source }}" },
+        { "expr": "sum(rate(planner_itinerary_generated_total{status='error'}[30m]))", "legendFormat": "❌ error" }
+      ]
+    },
+    {
+      "id": 11, "type": "timeseries", "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "title": "Average Itinerary Generation Time",
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(planner_itinerary_duration_seconds_bucket[10m])) by (le))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, sum(rate(planner_itinerary_duration_seconds_bucket[10m])) by (le))", "legendFormat": "p95" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 12, "type": "timeseries", "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "title": "Trip CRUD Operations",
+      "targets": [
+        { "expr": "sum(rate(planner_trip_created_total[30m]))", "legendFormat": "Created" },
+        { "expr": "sum(rate(planner_trip_updated_total[30m]))", "legendFormat": "Updated" },
+        { "expr": "sum(rate(planner_trip_deleted_total[30m]))", "legendFormat": "Deleted" }
+      ]
+    },
+    {
+      "id": 13, "type": "timeseries", "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "title": "Auth Events",
+      "targets": [{
+        "expr": "sum(rate(planner_auth_total[30m])) by (event, method)",
+        "legendFormat": "{{ event }} ({{ method }})"
+      }]
+    },
+    {
+      "id": 14, "type": "timeseries", "gridPos": { "x": 0, "y": 20, "w": 12, "h": 8 },
+      "title": "LangGraph Outcomes Over Time",
+      "targets": [
+        { "expr": "sum(rate(langgraph_executions_total[30m])) by (outcome)", "legendFormat": "{{ outcome }}" }
+      ]
+    },
+    {
+      "id": 15, "type": "timeseries", "gridPos": { "x": 12, "y": 20, "w": 12, "h": 8 },
+      "title": "Chat Messages",
+      "targets": [{
+        "expr": "sum(rate(planner_chat_messages_total[30m])) by (direction)",
+        "legendFormat": "{{ direction }}"
+      }]
+    }
+  ]
+}

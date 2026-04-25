@@ -30,6 +30,17 @@ from typing import Any, Literal, Optional, TypedDict
 from langgraph.graph import StateGraph, END
 
 from client import AgentClient, AgentClientError
+from metrics import (
+    langgraph_node_duration_seconds,
+    langgraph_node_executions_total,
+    langgraph_node_errors_total,
+    langgraph_node_max_duration_seconds,
+    langgraph_agent_call_duration_seconds,
+    langgraph_loop_detected_total,
+    langgraph_early_termination_total,
+    langgraph_branch_path_total,
+    langgraph_repair_iterations_total,
+)
 
 # ─── Constants (match agentOrchestrator.ts) ───────────────────────────────────
 
@@ -174,6 +185,37 @@ def _trace_entry(
 _client = AgentClient(timeout=DEFAULT_AGENT_TIMEOUT)
 
 
+async def _instrumented_execute(
+    step: str,
+    payload: dict,
+    request_id: str,
+) -> tuple[Any, float]:
+    """
+    Wraps AgentClient.execute() with Prometheus timing and error labelling.
+    Returns (result, duration_ms). Raises AgentClientError on failure.
+    """
+    t0 = _time.monotonic()
+    try:
+        result = await _client.execute(step, payload, request_id)
+        duration_ms = (_time.monotonic() - t0) * 1000
+        langgraph_agent_call_duration_seconds.labels(step=step, status="success").observe(duration_ms / 1000)
+        return result, duration_ms
+    except AgentClientError as exc:
+        duration_ms = (_time.monotonic() - t0) * 1000
+        langgraph_agent_call_duration_seconds.labels(step=step, status="error").observe(duration_ms / 1000)
+        raise
+
+
+def _record_node(node: str, duration_ms: float, status: str) -> None:
+    """Update node-level counters and max-duration gauge."""
+    langgraph_node_duration_seconds.labels(node=node, status=status).observe(duration_ms / 1000)
+    langgraph_node_executions_total.labels(node=node, status=status).inc()
+    if status == "success":
+        current = langgraph_node_max_duration_seconds.labels(node=node)._value.get()
+        if duration_ms / 1000 > current:
+            langgraph_node_max_duration_seconds.labels(node=node).set(duration_ms / 1000)
+
+
 async def planner_node(state: PipelineState) -> PipelineState:
     t0 = _time.monotonic()
     request_id = state.get("request_id", str(uuid.uuid4()))
@@ -184,8 +226,8 @@ async def planner_node(state: PipelineState) -> PipelineState:
 
     input_snap = {"inputLength": len(state.get("input", ""))}
     try:
-        result = await _client.execute("planner", {"input": state["input"]}, request_id)
-        duration = (_time.monotonic() - t0) * 1000
+        result, duration = await _instrumented_execute("planner", {"input": state["input"]}, request_id)
+        _record_node("planner", duration, "success")
         log.append(_log_entry("planner", "success"))
         trace.append(_trace_entry("planner", duration, iteration, input_snap, _snap(result)))
         return {
@@ -198,6 +240,9 @@ async def planner_node(state: PipelineState) -> PipelineState:
         }
     except AgentClientError as exc:
         duration = (_time.monotonic() - t0) * 1000
+        _record_node("planner", duration, "error")
+        langgraph_node_errors_total.labels(node="planner", error_type="http_error").inc()
+        langgraph_early_termination_total.labels(failed_at_node="planner").inc()
         log.append(_log_entry("planner", "error", str(exc)))
         trace.append(_trace_entry("planner", duration, iteration, input_snap, {"error": str(exc)}))
         terminal = {"ok": False, "stage": "planner", "error": str(exc), "executionLog": log}
@@ -215,13 +260,16 @@ async def research_node(state: PipelineState) -> PipelineState:
     trip = state.get("trip", {})
     input_snap = _snap({"destination": trip.get("destination"), "durationDays": trip.get("durationDays")})
     try:
-        result = await _client.execute("research", trip, request_id)
-        duration = (_time.monotonic() - t0) * 1000
+        result, duration = await _instrumented_execute("research", trip, request_id)
+        _record_node("research", duration, "success")
         log.append(_log_entry("research", "success"))
         trace.append(_trace_entry("research", duration, iteration, input_snap, _snap(result)))
         return {**state, "enriched": result, "execution_log": log, "execution_trace": trace, "agent_calls": calls + 1}
     except AgentClientError as exc:
         duration = (_time.monotonic() - t0) * 1000
+        _record_node("research", duration, "error")
+        langgraph_node_errors_total.labels(node="research", error_type="http_error").inc()
+        langgraph_early_termination_total.labels(failed_at_node="research").inc()
         log.append(_log_entry("research", "error", str(exc)))
         trace.append(_trace_entry("research", duration, iteration, input_snap, {"error": str(exc)}))
         terminal = {"ok": False, "stage": "research", "context": trip, "error": str(exc), "executionLog": log}
@@ -247,14 +295,20 @@ async def logistics_node(state: PipelineState) -> PipelineState:
             enriched = {**enriched, "preferences": {**(enriched.get("preferences") or {}), "budget": prefs["budget"]}}
 
     input_snap = _snap({"destination": enriched.get("destination"), "days": len(enriched.get("days", [])), "repair_action": repair_action})
+    if repair_action:
+        langgraph_loop_detected_total.inc()
+        langgraph_repair_iterations_total.labels(action=repair_action).inc()
     try:
-        result = await _client.execute("logistics", enriched, request_id)
-        duration = (_time.monotonic() - t0) * 1000
+        result, duration = await _instrumented_execute("logistics", enriched, request_id)
+        _record_node("logistics", duration, "success")
         log.append(_log_entry("logistics", "success"))
         trace.append(_trace_entry("logistics", duration, iteration, input_snap, _snap(result)))
         return {**state, "optimized": result, "execution_log": log, "execution_trace": trace, "agent_calls": calls + 1}
     except AgentClientError as exc:
         duration = (_time.monotonic() - t0) * 1000
+        _record_node("logistics", duration, "error")
+        langgraph_node_errors_total.labels(node="logistics", error_type="http_error").inc()
+        langgraph_early_termination_total.labels(failed_at_node="logistics").inc()
         log.append(_log_entry("logistics", "error", str(exc)))
         trace.append(_trace_entry("logistics", duration, iteration, input_snap, {"error": str(exc)}))
         terminal = {"ok": False, "stage": "logistics", "context": state.get("enriched"), "error": str(exc), "executionLog": log}
@@ -275,13 +329,16 @@ async def budget_safety_node(state: PipelineState) -> PipelineState:
     t0 = _time.monotonic()
     budget_input_snap = _snap({"selectedHotel": (optimized.get("selectedHotel") or {}).get("name")})
     try:
-        budgeted = await _client.execute("budget", optimized, request_id)
-        dur = (_time.monotonic() - t0) * 1000
+        budgeted, dur = await _instrumented_execute("budget", optimized, request_id)
+        _record_node("budget", dur, "success")
         log.append(_log_entry("budget", "success"))
         trace.append(_trace_entry("budget", dur, iteration, budget_input_snap, _snap(budgeted.get("budget", {}))))
         calls += 1
     except AgentClientError as exc:
         dur = (_time.monotonic() - t0) * 1000
+        _record_node("budget", dur, "error")
+        langgraph_node_errors_total.labels(node="budget", error_type="http_error").inc()
+        langgraph_early_termination_total.labels(failed_at_node="budget").inc()
         log.append(_log_entry("budget", "error", str(exc)))
         trace.append(_trace_entry("budget", dur, iteration, budget_input_snap, {"error": str(exc)}))
         terminal = {"ok": False, "stage": "budget_safety", "context": optimized, "error": str(exc), "executionLog": log}
@@ -291,13 +348,15 @@ async def budget_safety_node(state: PipelineState) -> PipelineState:
     t0 = _time.monotonic()
     safety_input_snap = _snap({"isOverBudget": budgeted.get("budget", {}).get("isOverBudget")})
     try:
-        safe = await _client.execute("safety", budgeted, request_id)
-        dur = (_time.monotonic() - t0) * 1000
+        safe, dur = await _instrumented_execute("safety", budgeted, request_id)
+        _record_node("safety", dur, "success")
         log.append(_log_entry("safety", "success"))
         trace.append(_trace_entry("safety", dur, iteration, safety_input_snap, _snap(safe.get("safety", {}))))
         calls += 1
     except AgentClientError:
         dur = (_time.monotonic() - t0) * 1000
+        _record_node("safety", dur, "error")
+        langgraph_node_errors_total.labels(node="safety", error_type="http_error").inc()
         # Downgrade to safe default — same behaviour as agentOrchestrator.ts
         safe = {**budgeted, "safety": {"riskLevel": "low", "warnings": [], "tips": []}}
         log.append(_log_entry("safety", "error", "downgraded to safe default"))
@@ -415,21 +474,30 @@ def terminal_node(state: PipelineState) -> PipelineState:
 # ─── Routing functions ────────────────────────────────────────────────────────
 
 def route_after_planner(state: PipelineState) -> str:
-    return "terminal_output" if state.get("terminal") else "research"
+    dest = "terminal_output" if state.get("terminal") else "research"
+    langgraph_branch_path_total.labels(from_node="planner", to_node=dest).inc()
+    return dest
 
 
 def route_after_research(state: PipelineState) -> str:
-    return "terminal_output" if state.get("terminal") else "logistics"
+    dest = "terminal_output" if state.get("terminal") else "logistics"
+    langgraph_branch_path_total.labels(from_node="research", to_node=dest).inc()
+    return dest
 
 
 def route_after_logistics(state: PipelineState) -> str:
-    return "terminal_output" if state.get("terminal") else "budget_safety"
+    dest = "terminal_output" if state.get("terminal") else "budget_safety"
+    langgraph_branch_path_total.labels(from_node="logistics", to_node=dest).inc()
+    return dest
 
 
 def route_after_validate(state: PipelineState) -> str:
     if state.get("terminal"):
-        return "terminal_output"
-    return "logistics"
+        dest = "terminal_output"
+    else:
+        dest = "logistics"
+    langgraph_branch_path_total.labels(from_node="validate", to_node=dest).inc()
+    return dest
 
 
 # ─── Build graph ──────────────────────────────────────────────────────────────

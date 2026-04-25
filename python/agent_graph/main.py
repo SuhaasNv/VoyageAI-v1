@@ -19,13 +19,22 @@ import uuid
 from typing import Any
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from pydantic import BaseModel
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 load_dotenv()
 
 from contracts import Metrics, RunResponse, TraceEntry  # noqa: E402
 from graph import compiled_graph                        # noqa: E402
+from metrics import (                                   # noqa: E402
+    langgraph_executions_total,
+    langgraph_execution_duration_seconds,
+    langgraph_execution_steps_total,
+    langgraph_active_executions,
+    langgraph_requests_total,
+    langgraph_request_duration_seconds,
+)
 
 app = FastAPI(
     title="VoyageAI LangGraph Orchestration Service",
@@ -81,6 +90,27 @@ def _build_trace(final_state: dict[str, Any]) -> list[TraceEntry]:
     return result
 
 
+@app.middleware("http")
+async def prometheus_middleware(request: Request, call_next):
+    """Record per-request latency and status for every FastAPI endpoint."""
+    t0 = time.monotonic()
+    response = await call_next(request)
+    duration = time.monotonic() - t0
+    route = request.url.path
+    langgraph_requests_total.labels(
+        method=request.method, endpoint=route, status_code=str(response.status_code)
+    ).inc()
+    langgraph_request_duration_seconds.labels(method=request.method, endpoint=route).observe(duration)
+    return response
+
+
+@app.get("/metrics")
+async def metrics_endpoint():
+    """Prometheus scrape endpoint."""
+    data = generate_latest()
+    return Response(content=data, media_type=CONTENT_TYPE_LATEST)
+
+
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok", "service": "langgraph-orchestrator", "version": "2.0.0"}
@@ -100,6 +130,7 @@ async def run_pipeline(
     """
     request_id = body.request_id or str(uuid.uuid4())
     run_start = time.monotonic()
+    langgraph_active_executions.inc()
 
     initial_state: dict[str, Any] = {
         "input": body.input,
@@ -117,15 +148,38 @@ async def run_pipeline(
     try:
         final_state = await compiled_graph.ainvoke(initial_state)
     except Exception as exc:
+        langgraph_active_executions.dec()
+        elapsed = time.monotonic() - run_start
+        langgraph_executions_total.labels(status="error", outcome="error").inc()
+        langgraph_execution_duration_seconds.labels(outcome="error").observe(elapsed)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    langgraph_active_executions.dec()
+    elapsed = time.monotonic() - run_start
 
     terminal: dict[str, Any] = final_state.get("terminal") or {}
 
     if not terminal:
+        langgraph_executions_total.labels(status="error", outcome="error").inc()
+        langgraph_execution_duration_seconds.labels(outcome="error").observe(elapsed)
         raise HTTPException(
             status_code=500,
             detail="Graph completed without producing a terminal result",
         )
+
+    # Determine outcome label for Prometheus
+    if terminal.get("ok") is True:
+        outcome = "ok"
+    elif terminal.get("requiresHuman"):
+        outcome = "requires_human"
+    else:
+        outcome = "error"
+
+    langgraph_executions_total.labels(status="success" if outcome != "error" else "error", outcome=outcome).inc()
+    langgraph_execution_duration_seconds.labels(outcome=outcome).observe(elapsed)
+
+    trace_entries: list[dict[str, Any]] = final_state.get("execution_trace", [])
+    langgraph_execution_steps_total.labels(outcome=outcome).inc(len(trace_entries))
 
     metrics   = _build_metrics(final_state, terminal, run_start)
     trace     = _build_trace(final_state)

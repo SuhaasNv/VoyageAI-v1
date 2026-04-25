@@ -16,8 +16,7 @@ import { logStructured } from "@/infrastructure/logger";
 import { prisma } from "@/lib/prisma";
 import { safeTripContextToItinerary } from "@/lib/services/trips";
 import type { SafeTripContext } from "@/agents/safety/safetyAgent";
-import { formatAIResponse } from "@/lib/ai/explainability";
-import { computeConfidence } from "@/lib/ai/confidence";
+import { plannerItineraryGeneratedTotal, plannerItineraryDurationSeconds } from "@/lib/monitoring/businessMetrics";
 
 const Schema = z.object({
     tripId: z.string(),
@@ -58,6 +57,7 @@ export async function POST(req: NextRequest) {
         if (!body.ok) return body.response;
 
         const flowSessionId = req.headers.get("x-flow-session-id") ?? undefined;
+        const flowStartTime = req.headers.get("x-flow-start-time");
         logStructured({ layer: "agent", step: "start", data: { stage: "save", flowSessionId } });
 
         try {
@@ -97,14 +97,18 @@ export async function POST(req: NextRequest) {
                 },
             });
 
-            return successResponse(formatAIResponse(
-                { tripId: body.data.tripId, itineraryId: itinerary.id },
-                {
-                    confidence: computeConfidence({ mode: "DETERMINISTIC" }),
-                    reasoning:  "Deterministic DB write — SafeTripContext persisted as Itinerary. No AI inference at this stage.",
-                    sources:    ["Safety agent output (SafeTripContext)", "Database"],
-                },
-            ));
+            // Prometheus metrics
+            plannerItineraryGeneratedTotal.inc({ status: "success", source: "flow" });
+
+            if (flowStartTime) {
+                const startTime = parseFloat(flowStartTime);
+                if (!isNaN(startTime)) {
+                    const durationSeconds = (Date.now() - startTime) / 1000;
+                    plannerItineraryDurationSeconds.observe({ source: "flow", status: "success" }, durationSeconds);
+                }
+            }
+
+            return successResponse({ tripId: body.data.tripId, itineraryId: itinerary.id });
         } catch (err) {
             return formatErrorResponse(err);
         }

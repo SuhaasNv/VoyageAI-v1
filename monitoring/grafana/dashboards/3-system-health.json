@@ -1,0 +1,134 @@
+{
+  "title": "System Health",
+  "uid": "voyageai-system-health",
+  "tags": ["voyageai", "system", "infrastructure"],
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1, "type": "stat", "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "title": "Next.js Up",
+      "targets": [{ "expr": "up{job='nextjs'}", "legendFormat": "Status" }],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [{ "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }]
+        }
+      }
+    },
+    {
+      "id": 2, "type": "stat", "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+      "title": "LangGraph Up",
+      "targets": [{ "expr": "up{job='langgraph'}", "legendFormat": "Status" }],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [{ "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }]
+        }
+      }
+    },
+    {
+      "id": 3, "type": "gauge", "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
+      "title": "CPU Usage",
+      "targets": [{
+        "expr": "100 - (avg(rate(node_cpu_seconds_total{mode='idle'}[5m])) * 100)",
+        "legendFormat": "CPU %"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent", "min": 0, "max": 100,
+          "thresholds": { "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 70 },
+            { "color": "red", "value": 85 }
+          ]}
+        }
+      }
+    },
+    {
+      "id": 4, "type": "gauge", "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
+      "title": "Memory Usage",
+      "targets": [{
+        "expr": "(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100",
+        "legendFormat": "Memory %"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent", "min": 0, "max": 100,
+          "thresholds": { "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 70 },
+            { "color": "red", "value": 85 }
+          ]}
+        }
+      }
+    },
+    {
+      "id": 5, "type": "stat", "gridPos": { "x": 16, "y": 0, "w": 4, "h": 4 },
+      "title": "API RPS",
+      "targets": [{ "expr": "sum(rate(http_requests_total[1m]))", "legendFormat": "RPS" }],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+    {
+      "id": 6, "type": "stat", "gridPos": { "x": 20, "y": 0, "w": 4, "h": 4 },
+      "title": "API Error Rate (5xx)",
+      "targets": [{
+        "expr": "sum(rate(http_errors_total{error_class='5xx'}[5m])) / sum(rate(http_requests_total[5m]))",
+        "legendFormat": "5xx Rate"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": { "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 0.01 },
+            { "color": "red", "value": 0.05 }
+          ]}
+        }
+      }
+    },
+    {
+      "id": 10, "type": "timeseries", "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "title": "API Latency p50 / p95 / p99 (All Routes)",
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95" },
+        { "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p99" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 11, "type": "timeseries", "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "title": "HTTP Requests per Second by Route",
+      "targets": [{
+        "expr": "topk(10, sum(rate(http_requests_total[1m])) by (route))",
+        "legendFormat": "{{ route }}"
+      }]
+    },
+    {
+      "id": 12, "type": "timeseries", "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "title": "CPU Usage Over Time",
+      "targets": [{
+        "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode='idle'}[5m])) * 100)",
+        "legendFormat": "CPU {{ instance }}"
+      }],
+      "fieldConfig": { "defaults": { "unit": "percent" } }
+    },
+    {
+      "id": 13, "type": "timeseries", "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "title": "Memory Usage Over Time",
+      "targets": [{
+        "expr": "(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100",
+        "legendFormat": "Memory {{ instance }}"
+      }],
+      "fieldConfig": { "defaults": { "unit": "percent" } }
+    },
+    {
+      "id": 14, "type": "timeseries", "gridPos": { "x": 0, "y": 20, "w": 24, "h": 8 },
+      "title": "API Errors by Route",
+      "targets": [{
+        "expr": "sum(rate(http_errors_total[5m])) by (route, error_class)",
+        "legendFormat": "{{ error_class }} / {{ route }}"
+      }]
+    }
+  ]
+}

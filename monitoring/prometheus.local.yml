@@ -1,0 +1,64 @@
+
+global:
+  scrape_interval:     15s   # How often to scrape targets
+  evaluation_interval: 15s   # How often to evaluate alert rules
+  scrape_timeout:      10s
+
+  external_labels:
+    env: local
+    app: voyageai
+
+# ── Alert rule files ──────────────────────────────────────────────────────────
+rule_files:
+  - "alert_rules.yml"
+
+# ── Alertmanager ──────────────────────────────────────────────────────────────
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+# ── Scrape configs ────────────────────────────────────────────────────────────
+scrape_configs:
+
+  # ── Prometheus self-monitoring ──────────────────────────────────────────────
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # ── Next.js application (LOCAL DEV) ──────────────────────────────────────────
+  # Uses host.docker.internal to reach the host machine where Next.js runs
+  # on port 3000 via `npm run dev` or docker-compose app service.
+  - job_name: nextjs
+    metrics_path: /api/metrics
+    scheme: http
+    static_configs:
+      - targets: ["host.docker.internal:3000"]
+        labels:
+          service: nextjs
+          env: local
+
+  # ── Python LangGraph service (LOCAL DEV) ─────────────────────────────────────
+  - job_name: langgraph
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets: ["host.docker.internal:8000"]
+        labels:
+          service: langgraph
+          env: local
+
+  # ── Node exporter (host system metrics: CPU / Memory / Disk) ────────────────
+  - job_name: node_exporter
+    static_configs:
+      - targets: ["node-exporter:9100"]
+        labels:
+          service: host
+
+  # ── PostgreSQL exporter (OPTIONAL - not in main docker-compose.yml yet) ─────
+  # Uncomment if you add postgres-exporter to docker-compose.yml
+  # - job_name: postgres
+  #   static_configs:
+  #     - targets: ["postgres-exporter:9187"]
+  #       labels:
+  #         service: postgres
