@@ -1396,7 +1396,7 @@ jobs:
           exit 1
 
       - name: ZAP Full Scan — localhost:3000
-        uses: zaproxy/action-full-scan@v0.10.0
+        uses: zaproxy/action-full-scan@v0.13.0
         with:
           target: http://localhost:3000
           allow_issue_writing: true
@@ -1421,7 +1421,7 @@ jobs:
 
       - name: Upload ZAP SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
+        if: always() && hashFiles('results_sarif.json') != ''
         with:
           sarif_file: results_sarif.json
           category: owasp-zap

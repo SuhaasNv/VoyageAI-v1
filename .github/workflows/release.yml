@@ -559,6 +559,24 @@ jobs:
           [ -z "$NEXTJS_ID" ] && NEXTJS_ID="${{ needs.infra-apply.outputs.nextjs_app_id }}"
           [ -z "$LG_ID" ]     && LG_ID="${{ needs.infra-apply.outputs.app_id }}"
 
+          # Final fallback: repo variables (Settings → Variables → Actions)
+          # Set PRODUCTION_URL or STAGING_URL to the DO App Platform URL for that environment.
+          if [ -z "$NEXTJS_URL" ]; then
+            if [ "$ENV" = "production" ]; then
+              NEXTJS_URL="${{ vars.PRODUCTION_URL }}"
+            elif [ "$ENV" = "staging" ]; then
+              NEXTJS_URL="${{ vars.STAGING_URL }}"
+            fi
+          fi
+
+          if [ -z "$NEXTJS_URL" ]; then
+            echo "::error::Could not resolve Next.js URL for environment '${ENV}'." \
+              "Neither doctl nor Terraform produced a URL." \
+              "Set the PRODUCTION_URL (or STAGING_URL) repo variable at" \
+              "Settings → Variables → Actions."
+            exit 1
+          fi
+
           echo "nextjs_url=${NEXTJS_URL}"       >> "$GITHUB_OUTPUT"
           echo "langgraph_url=${LG_URL}"        >> "$GITHUB_OUTPUT"
           echo "nextjs_app_id=${NEXTJS_ID}"     >> "$GITHUB_OUTPUT"
@@ -1395,6 +1413,11 @@ jobs:
       - name: Smoke test — Next.js root page
         run: |
           URL="${{ needs.deploy-nextjs-do.outputs.app_url }}"
+          if [ -z "$URL" ]; then
+            echo "::error::app_url is empty — the Next.js URL could not be resolved." \
+              "Set PRODUCTION_URL (or STAGING_URL) at Settings → Variables → Actions."
+            exit 1
+          fi
           echo "Testing: ${URL}"
           for i in 1 2 3 4 5; do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "${URL}" || echo "000")
@@ -1519,7 +1542,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: ZAP Full Scan — ${{ needs.resolve-urls.outputs.nextjs_url }}
-        uses: zaproxy/action-full-scan@v0.10.0
+        uses: zaproxy/action-full-scan@v0.13.0
         with:
           target: ${{ needs.resolve-urls.outputs.nextjs_url }}
           allow_issue_writing: true
@@ -1544,7 +1567,7 @@ jobs:
 
       - name: Upload ZAP SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
+        if: always() && hashFiles('results_sarif.json') != ''
         with:
           sarif_file: results_sarif.json
           category: owasp-zap
