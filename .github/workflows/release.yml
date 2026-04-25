@@ -147,6 +147,8 @@ env:
   DOCR_DOCKER_USERNAME: ${{ secrets.DIGITALOCEAN_REGISTRY_USER || vars.DIGITALOCEAN_EMAIL || 'token' }}
   # AI gate — static checks, no real LLM calls, no production DB
   SKIP_ENV_VALIDATION: "1"
+  # Pin doctl version — avoids digitalocean/action-doctl@v2 double-v fallback bug (vv1.x.y → 404)
+  DOCTL_VERSION: "1.150.0"
   LLM_PROVIDER: "mock"
   DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgresql://ci:ci@localhost:5432/voyageai_ci' }}
   DIRECT_URL_MOCK: ${{ secrets.DIRECT_URL || secrets.DATABASE_URL || 'postgresql://ci:ci@localhost:5432/voyageai_ci' }}
@@ -413,9 +415,16 @@ jobs:
       # Skip placeholder push only when both repos already have :placeholder (matches Terraform default image tag).
       - name: Install doctl (registry repo check)
         if: steps.infra-changed.outputs.changed != '0'
-        uses: digitalocean/action-doctl@v2
-        with:
-          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+        run: |
+          for i in 1 2 3; do
+            curl -fsSL "https://github.com/digitalocean/doctl/releases/download/v${DOCTL_VERSION}/doctl-${DOCTL_VERSION}-linux-amd64.tar.gz" \
+              -o /tmp/doctl.tar.gz && break
+            echo "Attempt $i failed — retrying in 15s..."
+            sleep 15
+          done
+          tar xf /tmp/doctl.tar.gz -C /tmp
+          sudo mv /tmp/doctl /usr/local/bin/doctl
+          doctl auth init --access-token "${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}"
 
       - name: Push placeholder images to DOCR
         if: steps.infra-changed.outputs.changed != '0'
@@ -521,9 +530,16 @@ jobs:
 
     steps:
       - name: Install doctl
-        uses: digitalocean/action-doctl@v2
-        with:
-          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+        run: |
+          for i in 1 2 3; do
+            curl -fsSL "https://github.com/digitalocean/doctl/releases/download/v${DOCTL_VERSION}/doctl-${DOCTL_VERSION}-linux-amd64.tar.gz" \
+              -o /tmp/doctl.tar.gz && break
+            echo "Attempt $i failed — retrying in 15s..."
+            sleep 15
+          done
+          tar xf /tmp/doctl.tar.gz -C /tmp
+          sudo mv /tmp/doctl /usr/local/bin/doctl
+          doctl auth init --access-token "${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}"
 
       - name: Fetch App URLs from DigitalOcean
         id: fetch
@@ -617,9 +633,16 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install doctl
-        uses: digitalocean/action-doctl@v2
-        with:
-          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+        run: |
+          for i in 1 2 3; do
+            curl -fsSL "https://github.com/digitalocean/doctl/releases/download/v${DOCTL_VERSION}/doctl-${DOCTL_VERSION}-linux-amd64.tar.gz" \
+              -o /tmp/doctl.tar.gz && break
+            echo "Attempt $i failed — retrying in 15s..."
+            sleep 15
+          done
+          tar xf /tmp/doctl.tar.gz -C /tmp
+          sudo mv /tmp/doctl /usr/local/bin/doctl
+          doctl auth init --access-token "${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}"
 
       - name: Set up Docker Buildx
         if: github.event.inputs.image_tag == ''
@@ -875,9 +898,16 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install doctl
-        uses: digitalocean/action-doctl@v2
-        with:
-          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+        run: |
+          for i in 1 2 3; do
+            curl -fsSL "https://github.com/digitalocean/doctl/releases/download/v${DOCTL_VERSION}/doctl-${DOCTL_VERSION}-linux-amd64.tar.gz" \
+              -o /tmp/doctl.tar.gz && break
+            echo "Attempt $i failed — retrying in 15s..."
+            sleep 15
+          done
+          tar xf /tmp/doctl.tar.gz -C /tmp
+          sudo mv /tmp/doctl /usr/local/bin/doctl
+          doctl auth init --access-token "${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}"
 
       - name: Set up Docker Buildx
         if: github.event.inputs.image_tag == ''
@@ -1138,9 +1168,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Install doctl
-        uses: digitalocean/action-doctl@v2
-        with:
-          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+        run: |
+          for i in 1 2 3; do
+            curl -fsSL "https://github.com/digitalocean/doctl/releases/download/v${DOCTL_VERSION}/doctl-${DOCTL_VERSION}-linux-amd64.tar.gz" \
+              -o /tmp/doctl.tar.gz && break
+            echo "Attempt $i failed — retrying in 15s..."
+            sleep 15
+          done
+          tar xf /tmp/doctl.tar.gz -C /tmp
+          sudo mv /tmp/doctl /usr/local/bin/doctl
+          doctl auth init --access-token "${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}"
 
       # ── Next.js → LangGraph ───────────────────────────────────────────────
       # Ensure LANGGRAPH_SERVICE_URL in the Next.js App Platform spec matches
