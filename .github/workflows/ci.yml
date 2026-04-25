@@ -1406,7 +1406,7 @@ jobs:
             -z "-config globalexcludeurl.url_list.url(0).regex=.*\.map$
             -config globalexcludeurl.url_list.url(1).regex=.*/_next/static/.*
             -config globalexcludeurl.url_list.url(2).regex=.*/api/auth/.*"
-          artifact_name: zap-report-${{ github.sha }}
+          artifact_name: zap-report-${{ github.run_number }}
 
       - name: Upload ZAP SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v4

@@ -1529,7 +1529,7 @@ jobs:
             -z "-config globalexcludeurl.url_list.url(0).regex=.*\.map$
             -config globalexcludeurl.url_list.url(1).regex=.*/_next/static/.*
             -config globalexcludeurl.url_list.url(2).regex=.*/api/auth/.*"
-          artifact_name: zap-${{ github.event.inputs.environment || 'production' }}-${{ github.sha }}
+          artifact_name: zap-${{ github.event.inputs.environment || 'production' }}-${{ github.run_number }}
 
       - name: Upload ZAP SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v4
@@ -1554,7 +1554,7 @@ jobs:
             echo "| **Scan type** | Full (active + passive) |"
             echo "| **Commit** | \`${{ github.sha }}\` |"
             echo ""
-            echo "> Full HTML report available in the **zap-${{ github.event.inputs.environment || 'production' }}-${{ github.sha }}** artifact."
+            echo "> Full HTML report available in the **zap-${{ github.event.inputs.environment || 'production' }}-${{ github.run_number }}** artifact."
             echo "> Findings with severity ≥ WARN are also raised as GitHub Issues."
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -1703,7 +1703,7 @@ jobs:
             echo "| Artifact | Retention |"
             echo "|----------|-----------|"
             echo "| \`ai-gate-reports-${{ github.sha }}\` | 30 days |"
-            echo "| \`zap-production-${{ github.sha }}\` | (ZAP report) |"
+            echo "| \`zap-${{ github.event.inputs.environment || 'production' }}-${{ github.run_number }}\` | (ZAP report) |"
             echo ""
             echo "> Run [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
           } >> "$GITHUB_STEP_SUMMARY"
