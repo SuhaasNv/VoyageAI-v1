@@ -1525,17 +1525,28 @@ jobs:
           allow_issue_writing: true
           fail_action: true
           rules_file_name: .github/zap/rules.tsv
+          generate_sarif: 'true'
           cmd_options: >-
             -z "-config globalexcludeurl.url_list.url(0).regex=.*\.map$
             -config globalexcludeurl.url_list.url(1).regex=.*/_next/static/.*
             -config globalexcludeurl.url_list.url(2).regex=.*/api/auth/.*"
-          artifact_name: zap-${{ github.event.inputs.environment || 'production' }}-${{ github.run_number }}
+
+      - name: Upload ZAP HTML/JSON reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zap-${{ github.event.inputs.environment || 'production' }}-${{ github.run_number }}
+          path: |
+            report_html.html
+            report_json.json
+            report_md.md
+          if-no-files-found: warn
 
       - name: Upload ZAP SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
-          sarif_file: zap_scan_report.json
+          sarif_file: results_sarif.json
           category: owasp-zap
         continue-on-error: true
 
