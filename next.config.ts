@@ -4,9 +4,22 @@ const nextConfig: NextConfig = {
   // Produce a minimal self-contained server in .next/standalone — required for
   // the production Docker image (Dockerfile.app).
   output: "standalone",
+  // Remove the X-Powered-By: Next.js response header (security hardening).
+  poweredByHeader: false,
   // pdf-parse reads test fixtures at require-time; keep it out of the Next.js bundle.
   // prom-client uses Node.js cluster/perf_hooks/v8 internals that webpack must not bundle.
   serverExternalPackages: ["pdf-parse", "pdfjs-dist", "prom-client"],
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: [
+          // Prevents other origins from loading this site's resources cross-origin.
+          { key: "Cross-Origin-Resource-Policy", value: "same-origin" },
+        ],
+      },
+    ];
+  },
   async redirects() {
     return [
       { source: "/about", destination: "/", permanent: true },
