@@ -53,13 +53,20 @@ sbom.json
 # JMeter output (keep folder via jmeter/results/.gitkeep)
 /jmeter/results/*
 !/jmeter/results/.gitkeep
+jmeter.log
 /report-clean/
 /report/
 /performance/report/
+/performance/results/
+/performance/data/
 /playwright-report/
 /test-results/
 /results-clean.jtl
 /tests/e2e/storageState.json
+
+# Promptfoo / LLM eval output (may contain API responses and tokens)
+promptfoo-results.json
+promptfoo-results*.json
 
 # Terraform — local state and secrets (never commit)
 infra/.terraform/
