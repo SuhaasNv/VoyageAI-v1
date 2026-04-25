@@ -28,9 +28,10 @@ name: Release — VoyageAI Production Deployment
 #                              ↓
 #                        health-check
 #                  (Smoke tests on production)
+#                              │
 #                              ↓
-#                            dast
-#                    (OWASP ZAP full scan)
+#                        dast / dast-skipped
+#              (OWASP ZAP — scans live URL from resolve-urls)
 #                              ↓
 #                      release-summary
 #                  (Step summary + GitHub Release)
@@ -1485,10 +1486,10 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ════════════════════════════════════════════════════════════════════════════
-  #  STAGE 5 — DAST (OWASP ZAP Full Scan on Production)
+  #  STAGE 5 — DAST (OWASP ZAP Full Scan)
   #
-  #  Dynamic Application Security Testing against the live production URL.
-  #  Runs after a successful health check (confirms the app is ready for scan).
+  #  Scans the live deployed app URL resolved by the resolve-urls job.
+  #  Works for both staging and production — no PRODUCTION_URL secret needed.
   #
   #  Catches runtime issues that static analysis misses:
   #    • Missing security headers (CSP, HSTS, X-Frame-Options)
@@ -1501,10 +1502,14 @@ jobs:
   #  Skippable via workflow_dispatch.skip_dast=true.
   # ════════════════════════════════════════════════════════════════════════════
   dast:
-    name: "5 · DAST — OWASP ZAP (Production)"
-    needs: health-check
+    name: "5 · DAST — OWASP ZAP"
+    needs: [resolve-urls, health-check]
     runs-on: ubuntu-latest
-    if: github.event.inputs.skip_dast != 'true'
+    if: |
+      always() &&
+      needs.resolve-urls.result == 'success' &&
+      needs.health-check.result == 'success' &&
+      github.event.inputs.skip_dast != 'true'
     permissions:
       contents: read
       security-events: write
@@ -1513,25 +1518,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: ZAP Full Scan — ${{ needs.health-check.outputs.app_url }}
+      - name: ZAP Full Scan — ${{ needs.resolve-urls.outputs.nextjs_url }}
         uses: zaproxy/action-full-scan@v0.10.0
         with:
-          target: ${{ needs.health-check.outputs.app_url }}
+          target: ${{ needs.resolve-urls.outputs.nextjs_url }}
           allow_issue_writing: true
           fail_action: true
           rules_file_name: .github/zap/rules.tsv
-          cmd_options: |
-            -config globalexcludeurl.url_list.url(0).regex=.*\.map$
+          cmd_options: >-
+            -z "-config globalexcludeurl.url_list.url(0).regex=.*\.map$
             -config globalexcludeurl.url_list.url(1).regex=.*/_next/static/.*
-            -config globalexcludeurl.url_list.url(2).regex=.*/api/auth/.*
-          artifact_name: zap-production-${{ github.sha }}
+            -config globalexcludeurl.url_list.url(2).regex=.*/api/auth/.*"
+          artifact_name: zap-${{ github.event.inputs.environment || 'production' }}-${{ github.sha }}
 
       - name: Upload ZAP SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: zap_scan_report.json
-          category: owasp-zap-production
+          category: owasp-zap
         continue-on-error: true
 
       - name: Write DAST summary
@@ -1540,28 +1545,32 @@ jobs:
           STATUS="${{ job.status }}"
           ICON=$([ "$STATUS" = "success" ] && echo "✅" || echo "⚠️")
           {
-            echo "## 🕷️ DAST — ${ICON} OWASP ZAP (Production)"
+            echo "## DAST — ${ICON} OWASP ZAP (${{ github.event.inputs.environment || 'production' }})"
             echo ""
             echo "| Field | Value |"
             echo "|-------|-------|"
-            echo "| **Target** | ${{ needs.health-check.outputs.app_url }} |"
-            echo "| **Scan type** | Full scan (active + passive) |"
-            echo "| **Status** | ${STATUS^} |"
+            echo "| **Target** | \`${{ needs.resolve-urls.outputs.nextjs_url }}\` |"
+            echo "| **Environment** | \`${{ github.event.inputs.environment || 'production' }}\` |"
+            echo "| **Scan type** | Full (active + passive) |"
+            echo "| **Commit** | \`${{ github.sha }}\` |"
             echo ""
-            echo "> Full HTML report in artifact \`zap-production-${{ github.sha }}\`."
-            echo "> Findings ≥ WARN are automatically raised as GitHub Issues."
+            echo "> Full HTML report available in the **zap-${{ github.event.inputs.environment || 'production' }}-${{ github.sha }}** artifact."
+            echo "> Findings with severity ≥ WARN are also raised as GitHub Issues."
           } >> "$GITHUB_STEP_SUMMARY"
 
   dast-skipped:
     name: "5 · DAST — SKIPPED"
-    needs: health-check
+    needs: [resolve-urls]
     runs-on: ubuntu-latest
-    if: github.event.inputs.skip_dast == 'true'
+    if: |
+      always() &&
+      needs.resolve-urls.result == 'success' &&
+      github.event.inputs.skip_dast == 'true'
     steps:
       - name: Log skip reason
         run: |
           {
-            echo "## ⏭️ DAST — SKIPPED"
+            echo "## DAST — SKIPPED"
             echo ""
             echo "| Skipped by | Reason |"
             echo "|------------|--------|"

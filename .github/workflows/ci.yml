@@ -1402,10 +1402,10 @@ jobs:
           allow_issue_writing: true
           fail_action: true
           rules_file_name: .github/zap/rules.tsv
-          cmd_options: |
-            -config globalexcludeurl.url_list.url(0).regex=.*\.map$
+          cmd_options: >-
+            -z "-config globalexcludeurl.url_list.url(0).regex=.*\.map$
             -config globalexcludeurl.url_list.url(1).regex=.*/_next/static/.*
-            -config globalexcludeurl.url_list.url(2).regex=.*/api/auth/.*
+            -config globalexcludeurl.url_list.url(2).regex=.*/api/auth/.*"
           artifact_name: zap-report-${{ github.sha }}
 
       - name: Upload ZAP SARIF to GitHub Security tab
