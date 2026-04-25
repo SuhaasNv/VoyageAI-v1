@@ -165,7 +165,7 @@ env:
   TF_VAR_do_token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
   TF_VAR_next_internal_url: ${{ secrets.TF_VAR_next_internal_url || '' }}
   TF_VAR_internal_agent_secret: ${{ secrets.TF_VAR_internal_agent_secret }}
-  TF_VAR_environment: ${{ github.event.inputs.environment || 'production' }}
+  TF_VAR_environment: ${{ github.event.inputs.environment || 'staging' }}
   TF_VAR_region: ${{ vars.DO_REGION || 'sgp' }}
   # Pin registry / project when importing existing DO resources; default project name is VoyageAI (shared across environments).
   TF_VAR_registry_name: ${{ vars.REGISTRY_NAME }}
@@ -529,7 +529,7 @@ jobs:
         id: fetch
         run: |
           set -euo pipefail
-          ENV="${{ github.event.inputs.environment || 'production' }}"
+          ENV="${{ github.event.inputs.environment || 'staging' }}"
           APPS_JSON=$(doctl apps list --output json 2>/dev/null || echo '[]')
 
           # doctl may return a bare array or { "apps": [...] }; list payloads may omit spec.name (use active_deployment.spec.name).
@@ -570,11 +570,11 @@ jobs:
           fi
 
           if [ -z "$NEXTJS_URL" ]; then
-            echo "::error::Could not resolve Next.js URL for environment '${ENV}'." \
+            echo "::warning::Could not resolve Next.js URL for environment '${ENV}'." \
               "Neither doctl nor Terraform produced a URL." \
-              "Set the PRODUCTION_URL (or STAGING_URL) repo variable at" \
-              "Settings → Variables → Actions."
-            exit 1
+              "Health-check and DAST will be skipped." \
+              "To fix: set the PRODUCTION_URL (or STAGING_URL) repo variable at" \
+              "Settings → Variables → Actions, or run with force_infra=true to create the app via Terraform."
           fi
 
           echo "nextjs_url=${NEXTJS_URL}"       >> "$GITHUB_OUTPUT"
@@ -791,7 +791,7 @@ jobs:
           APP_ID="${{ needs.infra-apply.outputs.app_id }}"
           if [ -z "$APP_ID" ]; then APP_ID="${{ needs.resolve-urls.outputs.langgraph_app_id }}"; fi
           if [ -z "$APP_ID" ]; then
-            ENV="${{ github.event.inputs.environment || 'production' }}"
+            ENV="${{ github.event.inputs.environment || 'staging' }}"
             APPS_JSON=$(doctl apps list --output json 2>/dev/null || echo '[]')
             APP_ID=$(echo "$APPS_JSON" | jq -r --arg n "voyageai-langgraph-${ENV}" '
               def applist:
@@ -1034,7 +1034,7 @@ jobs:
           APP_ID="${{ needs.infra-apply.outputs.nextjs_app_id }}"
           if [ -z "$APP_ID" ]; then APP_ID="${{ needs.resolve-urls.outputs.nextjs_app_id }}"; fi
           if [ -z "$APP_ID" ]; then
-            ENV="${{ github.event.inputs.environment || 'production' }}"
+            ENV="${{ github.event.inputs.environment || 'staging' }}"
             APPS_JSON=$(doctl apps list --output json 2>/dev/null || echo '[]')
             APP_ID=$(echo "$APPS_JSON" | jq -r --arg n "voyageai-nextjs-${ENV}" '
               def applist:
@@ -1282,7 +1282,7 @@ jobs:
     runs-on: ubuntu-latest
     # Use the target environment so staging and production each use their own
     # DIRECT_URL / DATABASE_URL secrets and approval gates.
-    environment: ${{ github.event.inputs.environment || 'production' }}
+    environment: ${{ github.event.inputs.environment || 'staging' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -1354,7 +1354,7 @@ jobs:
     outputs:
       app_url: ${{ needs.resolve-urls.outputs.nextjs_url }}
     environment:
-      name: ${{ github.event.inputs.environment || 'production' }}
+      name: ${{ github.event.inputs.environment || 'staging' }}
       url: ${{ needs.resolve-urls.outputs.nextjs_url }}
 
     steps:
@@ -1375,7 +1375,7 @@ jobs:
             echo "| Field | Value |"
             echo "|-------|-------|"
             echo "| **Platform** | DigitalOcean App Platform |"
-            echo "| **Environment** | ${{ github.event.inputs.environment || 'production' }} |"
+            echo "| **Environment** | ${{ github.event.inputs.environment || 'staging' }} |"
             echo "| **App URL** | ${APP_URL} |"
             echo "| **Commit** | \`${{ github.sha }}\` |"
             echo "| **Author** | @${{ github.actor }} |"
@@ -1558,7 +1558,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: zap-${{ github.event.inputs.environment || 'production' }}-${{ github.run_number }}
+          name: zap-${{ github.event.inputs.environment || 'staging' }}-${{ github.run_number }}
           path: |
             report_html.html
             report_json.json
@@ -1579,16 +1579,16 @@ jobs:
           STATUS="${{ job.status }}"
           ICON=$([ "$STATUS" = "success" ] && echo "✅" || echo "⚠️")
           {
-            echo "## DAST — ${ICON} OWASP ZAP (${{ github.event.inputs.environment || 'production' }})"
+            echo "## DAST — ${ICON} OWASP ZAP (${{ github.event.inputs.environment || 'staging' }})"
             echo ""
             echo "| Field | Value |"
             echo "|-------|-------|"
             echo "| **Target** | \`${{ needs.resolve-urls.outputs.nextjs_url }}\` |"
-            echo "| **Environment** | \`${{ github.event.inputs.environment || 'production' }}\` |"
+            echo "| **Environment** | \`${{ github.event.inputs.environment || 'staging' }}\` |"
             echo "| **Scan type** | Full (active + passive) |"
             echo "| **Commit** | \`${{ github.sha }}\` |"
             echo ""
-            echo "> Full HTML report available in the **zap-${{ github.event.inputs.environment || 'production' }}-${{ github.run_number }}** artifact."
+            echo "> Full HTML report available in the **zap-${{ github.event.inputs.environment || 'staging' }}-${{ github.run_number }}** artifact."
             echo "> Findings with severity ≥ WARN are also raised as GitHub Issues."
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -1737,7 +1737,7 @@ jobs:
             echo "| Artifact | Retention |"
             echo "|----------|-----------|"
             echo "| \`ai-gate-reports-${{ github.sha }}\` | 30 days |"
-            echo "| \`zap-${{ github.event.inputs.environment || 'production' }}-${{ github.run_number }}\` | (ZAP report) |"
+            echo "| \`zap-${{ github.event.inputs.environment || 'staging' }}-${{ github.run_number }}\` | (ZAP report) |"
             echo ""
             echo "> Run [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
           } >> "$GITHUB_STEP_SUMMARY"
