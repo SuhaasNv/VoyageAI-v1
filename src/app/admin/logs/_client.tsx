@@ -196,7 +196,7 @@ export default function LogsClient({ logs, initialLayer }: { logs: LogEntry[]; i
                     </thead>
                     <tbody>
                         {filtered.length === 0 ? (
-                            <tr><td colSpan={5} className="px-4 py-12 text-center text-xs text-slate-600">No log entries match your filters.</td></tr>
+                            <tr><td colSpan={5} className="px-4 py-12 text-center text-xs text-slate-600">No logs available yet. Run a trip to generate logs.</td></tr>
                         ) : (
                             filtered.map((l) => <LogRow key={l.id} log={l} />)
                         )}

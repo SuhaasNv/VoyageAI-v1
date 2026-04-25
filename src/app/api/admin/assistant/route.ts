@@ -20,7 +20,7 @@ import { z } from "zod";
 import { requireAdminApiAuth } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import { OpenAIClient } from "@/infrastructure/llm/openaiClient";
-import { internalErrorResponse, errorResponse } from "@/lib/api/response";
+import { errorResponse } from "@/lib/api/response";
 import { logError, logInfo } from "@/infrastructure/logger";
 import { runWithRequestContext } from "@/lib/requestContext";
 import { sanitizeUserInput } from "@/security/safety";
@@ -280,9 +280,9 @@ ${ai.byProvider.map((p) => `${p.provider}: ${p._count.id} calls, ${(p._sum.total
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are an AI operations analyst for VoyageAI, an AI-powered travel planning SaaS.
+const SYSTEM_PROMPT = `You are a query and summarization tool for VoyageAI admin data. You receive system log snapshots and return structured summaries grounded in those numbers.
 
-Your job is not to answer questions — it is to analyze system data, detect problems, and drive decisions.
+Your job is to summarize the system log data provided, surface observations, and suggest next steps. You do not have access to real-time data beyond the snapshot supplied.
 
 You will receive:
 - A live system snapshot with user, trip, and AI usage data
@@ -315,9 +315,10 @@ Rules:
 - If anomalies are detected, lead with them; they are highest priority
 - actions[] is optional (omit if no concrete next steps); max 4 items
 - Each action must have a unique id, a clear label, and an exact type from the list above
-- Be direct and opinionated — you are a senior analyst, not a neutral reporter
+- Be direct and factual — cite the exact numbers from the snapshot
 - Numbers must match the snapshot exactly
-- If data is sparse (low counts), note it explicitly and temper conclusions`;
+- If data is sparse (low counts), state that explicitly and do not extrapolate
+- Do not claim capabilities or awareness beyond the data in the snapshot`;
 
 // ─── Output schema ────────────────────────────────────────────────────────────
 
@@ -337,6 +338,8 @@ const OutputSchema = z.object({
 
 export type ActionItem        = z.infer<typeof ActionItemSchema>;
 export type AssistantResponse = z.infer<typeof OutputSchema>;
+
+const ASSISTANT_FALLBACK_MESSAGE = "Unable to generate summary. Please refer to logs and metrics directly.";
 
 // ─── Route handler ────────────────────────────────────────────────────────────
 
@@ -362,14 +365,29 @@ export async function POST(req: NextRequest) {
         try {
             const apiKey = process.env.OPENAI_API_KEY;
             if (!apiKey) {
-                return errorResponse("LLM_ERROR", "OPENAI_API_KEY is not configured", 500);
+                return Response.json({
+                    insight: ASSISTANT_FALLBACK_MESSAGE,
+                    reasoning: ASSISTANT_FALLBACK_MESSAGE,
+                    recommendation: ASSISTANT_FALLBACK_MESSAGE,
+                    _meta: {
+                        source: "derived-from-logs",
+                        anomalyCount: 0,
+                        anomalySeverities: [],
+                        predictions: [],
+                    },
+                });
             }
 
-            // Parallel: data fetch + predictive analysis (cached, non-blocking)
-            const [data, predReport] = await Promise.all([
-                fetchSystemData(),
-                getPredictions().catch(() => null),
-            ]);
+            const showPredictions =
+                process.env.SHOW_PREDICTIONS === "true" ||
+                process.env.SHOW_PREDICTIONS === "1";
+
+            // Parallel: core data fetch; predictions are optional and gated.
+            const data = await fetchSystemData();
+            let predReport: Awaited<ReturnType<typeof getPredictions>> | null = null;
+            if (showPredictions) {
+                predReport = await getPredictions().catch(() => null);
+            }
             const anomalies       = detectAnomalies(data);
             const predictionBlock = predReport ? formatPredictionsForContext(predReport) : "";
             const context         = buildContext(data, anomalies, predictionBlock);
@@ -410,11 +428,11 @@ export async function POST(req: NextRequest) {
             try {
                 parsed = OutputSchema.parse(JSON.parse(result.content));
             } catch {
-                // Fallback: wrap raw text so the UI always gets a valid shape
+                // Fallback: always return a safe, non-hallucinated shape.
                 parsed = {
-                    insight:        result.content.slice(0, 300),
-                    reasoning:      "Could not structure the full response.",
-                    recommendation: "Try rephrasing your question.",
+                    insight:        ASSISTANT_FALLBACK_MESSAGE,
+                    reasoning:      ASSISTANT_FALLBACK_MESSAGE,
+                    recommendation: ASSISTANT_FALLBACK_MESSAGE,
                 };
             }
 
@@ -433,6 +451,7 @@ export async function POST(req: NextRequest) {
             return Response.json({
                 ...parsed,
                 _meta: {
+                    source:            "derived-from-logs",
                     anomalyCount:      anomalies.length,
                     anomalySeverities: anomalies.map((a) => ({ label: a.label, severity: a.severity })),
                     predictions:       predReport?.predictions ?? [],
@@ -449,7 +468,17 @@ export async function POST(req: NextRequest) {
                     endpoint:  "admin_assistant",
                 });
             }
-            return internalErrorResponse("Assistant unavailable — please try again.");
+            return Response.json({
+                insight: ASSISTANT_FALLBACK_MESSAGE,
+                reasoning: ASSISTANT_FALLBACK_MESSAGE,
+                recommendation: ASSISTANT_FALLBACK_MESSAGE,
+                _meta: {
+                    source: "derived-from-logs",
+                    anomalyCount: 0,
+                    anomalySeverities: [],
+                    predictions: [],
+                },
+            });
         }
     });
 }

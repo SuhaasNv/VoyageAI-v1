@@ -405,6 +405,12 @@ jobs:
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v3
+        # Don't block CI when the repo has Code Scanning disabled at the
+        # settings level (upload step 403s with "Code scanning is not enabled").
+        # The scan itself still runs and prints findings to the job log.
+        # Re-enable strict mode by turning this off once Code scanning is
+        # enabled under Settings → Security → Code security and analysis.
+        continue-on-error: true
         with:
           category: /language:javascript-typescript
           # Always upload so results appear in the Security tab, not just on failure
@@ -624,6 +630,63 @@ jobs:
           retention-days: 14
 
   # ══════════════════════════════════════════════════════════════════════════
+  #  11b. LLM ADVERSARIAL TESTS — Promptfoo against live local API routes
+  # ══════════════════════════════════════════════════════════════════════════
+  llm-adversarial-tests:
+    name: "11b · LLM Adversarial Tests (Promptfoo)"
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event.inputs.skip_tests != 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+      - run: npx prisma generate
+
+      - name: Start Next.js app for Promptfoo
+        run: |
+          npm run dev > /tmp/next-dev.log 2>&1 &
+          echo $! > /tmp/next-dev.pid
+
+      - name: Wait for app readiness
+        run: |
+          for i in {1..90}; do
+            if curl -fsS "http://127.0.0.1:3000/api/health" >/dev/null; then
+              echo "App is ready."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Next.js app failed to start in time."
+          echo "--- /tmp/next-dev.log ---"
+          cat /tmp/next-dev.log
+          exit 1
+
+      - name: Run Promptfoo adversarial suite
+        run: npm run test:llm
+
+      - name: Stop Next.js app
+        if: always()
+        run: |
+          if [ -f /tmp/next-dev.pid ]; then
+            kill "$(cat /tmp/next-dev.pid)" || true
+          fi
+          pkill -f "next dev -p 3000" || true
+
+      - name: Upload Next.js dev log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: promptfoo-next-dev-log-${{ github.sha }}
+          path: /tmp/next-dev.log
+          retention-days: 7
+
+  # ══════════════════════════════════════════════════════════════════════════
   #  12. EVALUATION — Aggregate offline metrics + quality gate
   # ══════════════════════════════════════════════════════════════════════════
   evaluation:
@@ -666,8 +729,23 @@ jobs:
           name: safety-tests-${{ github.sha }}
           path: reports/
 
+      - name: Download data validation report
+        uses: actions/download-artifact@v4
+        with:
+          name: data-validation-${{ github.sha }}
+          path: reports/
+
+      - name: Download model validation report
+        uses: actions/download-artifact@v4
+        with:
+          name: model-validation-${{ github.sha }}
+          path: reports/
+
       - name: Run offline evaluation
-        run: npx tsx scripts/ci/evaluate.ts
+        env:
+          LLM_PROVIDER: mock
+          TSX_TSCONFIG_PATH: ./tsconfig.scripts.json
+        run: node_modules/.bin/tsx scripts/ci/evaluate.ts
 
       - name: Upload evaluation report
         if: always()
@@ -730,7 +808,7 @@ jobs:
   # ══════════════════════════════════════════════════════════════════════════
   quality-gate:
     name: "✅ Quality Gate (all checks)"
-    needs: [unittest, sast, sca, data-validation, evaluation]
+    needs: [unittest, sast, sca, data-validation, llm-adversarial-tests, evaluation]
     runs-on: ubuntu-latest
     # Runs when all needs completed (any result) so we can inspect them ourselves.
     # When ignore_test_failures=true we pass regardless; otherwise we require
@@ -746,10 +824,11 @@ jobs:
           SAST="${{ needs.sast.result }}"
           SCA="${{ needs.sca.result }}"
           DATA="${{ needs.data-validation.result }}"
+          LLM="${{ needs.llm-adversarial-tests.result }}"
           EVAL="${{ needs.evaluation.result }}"
 
           FAILED=0
-          for JOB in "$UNITTEST" "$SAST" "$SCA" "$DATA" "$EVAL"; do
+          for JOB in "$UNITTEST" "$SAST" "$SCA" "$DATA" "$LLM" "$EVAL"; do
             if [ "$JOB" != "success" ] && [ "$JOB" != "skipped" ]; then
               FAILED=1
             fi
@@ -776,6 +855,7 @@ jobs:
             echo "| SAST (CodeQL)      | 5  | $( [ "$SAST"     = "success" ] && echo '✅' || echo '⚠️' ) ${SAST} |"
             echo "| SCA (deps CVE)     | 6  | $( [ "$SCA"      = "success" ] && echo '✅' || echo '⚠️' ) ${SCA} |"
             echo "| Data Validation    | 7  | $( [ "$DATA"     = "success" ] && echo '✅' || echo '⚠️' ) ${DATA} |"
+            echo "| LLM Adversarial    | 11b| $( [ "$LLM"      = "success" ] && echo '✅' || echo '⚠️' ) ${LLM} |"
             echo "| Evaluation         | 12 | $( [ "$EVAL"     = "success" ] && echo '✅' || echo '⚠️' ) ${EVAL} |"
             echo ""
             echo "> Pipeline cleared for Docker build and delivery stages."
@@ -867,13 +947,10 @@ jobs:
           name: langgraph-image-${{ github.sha }}
           path: /tmp/
 
-      - name: Load image into Docker daemon
-        run: docker load --input /tmp/langgraph-image.tar
-
       - name: Trivy — SARIF report (all severities → Security tab)
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.IMAGE_NAME }}:latest
+          input: /tmp/langgraph-image.tar
           format: sarif
           output: trivy-results.sarif
           severity: "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"
@@ -893,7 +970,7 @@ jobs:
         # Non-blocking when skip_tests or ignore_test_failures is active
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.IMAGE_NAME }}:latest
+          input: /tmp/langgraph-image.tar
           format: table
           severity: CRITICAL
           ignore-unfixed: true
@@ -904,7 +981,7 @@ jobs:
       - name: Trivy — warn on HIGH CVEs (non-blocking)
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.IMAGE_NAME }}:latest
+          input: /tmp/langgraph-image.tar
           format: table
           severity: HIGH
           ignore-unfixed: true
@@ -915,7 +992,7 @@ jobs:
       - name: Trivy — secret scan inside image filesystem
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.IMAGE_NAME }}:latest
+          input: /tmp/langgraph-image.tar
           format: table
           scanners: "secret"
           exit-code: ${{ (github.event.inputs.skip_tests == 'true' || github.event.inputs.ignore_test_failures == 'true') && '0' || '1' }}
@@ -1087,13 +1164,10 @@ jobs:
           name: nextjs-image-${{ github.sha }}
           path: /tmp/
 
-      - name: Load image into Docker daemon
-        run: docker load --input /tmp/nextjs-image.tar
-
       - name: Trivy — SARIF (all severities → Security tab)
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.NEXTJS_IMAGE_NAME }}:latest
+          input: /tmp/nextjs-image.tar
           format: sarif
           output: trivy-nextjs.sarif
           severity: "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"
@@ -1112,7 +1186,7 @@ jobs:
       - name: Trivy — gate on CRITICAL CVEs
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.NEXTJS_IMAGE_NAME }}:latest
+          input: /tmp/nextjs-image.tar
           format: table
           severity: CRITICAL
           ignore-unfixed: true
@@ -1123,7 +1197,7 @@ jobs:
       - name: Trivy — warn on HIGH CVEs (non-blocking)
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.NEXTJS_IMAGE_NAME }}:latest
+          input: /tmp/nextjs-image.tar
           format: table
           severity: HIGH
           ignore-unfixed: true
@@ -1134,7 +1208,7 @@ jobs:
       - name: Trivy — secret scan inside image filesystem
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.NEXTJS_IMAGE_NAME }}:latest
+          input: /tmp/nextjs-image.tar
           format: table
           scanners: "secret"
           exit-code: ${{ (github.event.inputs.skip_tests == 'true' || github.event.inputs.ignore_test_failures == 'true') && '0' || '1' }}
@@ -1143,8 +1217,7 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: config
-          scan-ref: .
-          config: Dockerfile.app
+          scan-ref: Dockerfile.app
           format: table
           exit-code: ${{ (github.event.inputs.skip_tests == 'true' || github.event.inputs.ignore_test_failures == 'true') && '0' || '1' }}
           severity: "CRITICAL,HIGH"

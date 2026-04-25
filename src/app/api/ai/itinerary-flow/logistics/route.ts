@@ -1,3 +1,11 @@
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║  PRIMARY PRODUCTION PATH — Stage 3 of 5: Logistics Agent               ║
+ * ║  Called by ItineraryCreationFlow.tsx after the Research stage.          ║
+ * ║  Applies deterministic scheduling, geo-clustering, and travel routing.  ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ */
+
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { getAuthContext, validateBody } from "@/lib/api/request";

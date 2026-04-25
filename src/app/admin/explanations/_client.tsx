@@ -2,7 +2,7 @@
 
 import React, { useMemo } from "react";
 import {
-    Brain, Bot, Wrench, TrendingUp, ChevronDown,
+    Brain, Wrench, ChevronDown,
     BookOpen, Database, BarChart3, ArrowRight, Search,
     Clock, CircleCheck, AlertCircle,
 } from "lucide-react";
@@ -10,7 +10,9 @@ import type { DecisionEntry } from "@/services/ai/explanation.service";
 
 // ─── Decision type config ─────────────────────────────────────────────────────
 
-type DecisionTypeFilter = "ALL" | "ASSISTANT_RESPONSE" | "AUTO_HEAL" | "AUTONOMOUS_ACTION" | "OPTIMIZATION";
+// AUTONOMOUS_ACTION and OPTIMIZATION are omitted — these types are only logged
+// when AUTONOMY_MODE is active (default: OFF). Showing empty filter tabs breaks trust.
+type DecisionTypeFilter = "ALL" | "ASSISTANT_RESPONSE" | "AUTO_HEAL";
 
 const TYPE_CONFIG: Record<string, {
     label:  string;
@@ -30,40 +32,63 @@ const TYPE_CONFIG: Record<string, {
         color: "text-amber-400",
         badge: "bg-amber-500/10 border-amber-500/20 text-amber-300",
     },
-    AUTONOMOUS_ACTION: {
-        label: "Autonomous",
-        icon:  Bot,
-        color: "text-[#10B981]",
-        badge: "bg-[#10B981]/10 border-[#10B981]/20 text-[#10B981]",
-    },
-    OPTIMIZATION: {
-        label: "Optimization",
-        icon:  TrendingUp,
-        color: "text-blue-400",
-        badge: "bg-blue-500/10 border-blue-500/20 text-blue-300",
-    },
 };
 
 const FILTER_TABS: { id: DecisionTypeFilter; label: string }[] = [
     { id: "ALL",                label: "All decisions" },
     { id: "ASSISTANT_RESPONSE", label: "Assistant"    },
     { id: "AUTO_HEAL",          label: "Auto-Heal"    },
-    { id: "AUTONOMOUS_ACTION",  label: "Autonomous"   },
-    { id: "OPTIMIZATION",       label: "Optimization" },
 ];
+const STATS_TYPES: Exclude<DecisionTypeFilter, "ALL">[] = ["ASSISTANT_RESPONSE", "AUTO_HEAL"];
+
+const FALLBACK_TYPE_CONFIG = {
+    label: "Assistant",
+    icon: Brain,
+    color: "text-violet-400",
+    badge: "bg-violet-500/10 border-violet-500/20 text-violet-300",
+} as const;
+
+function getTypeConfig(type: string | null | undefined) {
+    if (!type) return FALLBACK_TYPE_CONFIG;
+    // Guard against unknown values and prototype-chain keys from stale/corrupt data.
+    if (Object.prototype.hasOwnProperty.call(TYPE_CONFIG, type)) {
+        return TYPE_CONFIG[type];
+    }
+    return FALLBACK_TYPE_CONFIG;
+}
+
+function isDecisionEntry(value: DecisionEntry | null | undefined): value is DecisionEntry {
+    if (!value) return false;
+    return (
+        typeof value.id === "string" &&
+        typeof value.source === "string" &&
+        typeof value.reasoning === "string" &&
+        typeof value.outcome === "string" &&
+        typeof value.createdAt === "string"
+    );
+}
 
 // ─── Confidence bar ───────────────────────────────────────────────────────────
+//
+// ⚠  Values shown are HEURISTIC scores, not calibrated probabilities.
+// Pipeline-stage scores come from a rule-based formula (mode + penalties).
+// Decision-log scores come from ordinal severity mappings.
+// Neither should be interpreted as "X% chance of being correct."
 
 function ConfidenceBar({ value }: { value: number | null }) {
     if (value === null) return <span className="text-[10px] text-slate-600">—</span>;
     const pct = Math.round(value * 100);
     const color = pct >= 75 ? "#10B981" : pct >= 50 ? "#F59E0B" : "#EF4444";
     return (
-        <div className="flex items-center gap-1.5">
+        <div
+            className="flex items-center gap-1.5"
+            title="Heuristic score — rule-derived, not a statistical probability"
+        >
             <div className="w-16 h-1.5 rounded-full bg-white/[0.08] overflow-hidden">
                 <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
             </div>
             <span className="text-[10px] text-slate-500 tabular-nums">{pct}%</span>
+            <span className="text-[9px] text-slate-700 font-medium uppercase tracking-wide">Heuristic</span>
         </div>
     );
 }
@@ -71,8 +96,8 @@ function ConfidenceBar({ value }: { value: number | null }) {
 // ─── Explanation drawer (inline expansion) ────────────────────────────────────
 
 function ExplanationPanel({ decision }: { decision: DecisionEntry }) {
-    const cfg  = TYPE_CONFIG[decision.decisionType] ?? TYPE_CONFIG.ASSISTANT_RESPONSE;
-    const Icon = cfg.icon;
+    const cfg  = getTypeConfig(decision?.decisionType);
+    const Icon = cfg?.icon ?? Brain;
 
     const relTime = useMemo(() => {
         // eslint-disable-next-line react-hooks/purity
@@ -153,8 +178,8 @@ function DecisionRow({
     isExpanded: boolean;
     onToggle:   () => void;
 }) {
-    const cfg  = TYPE_CONFIG[decision.decisionType] ?? TYPE_CONFIG.ASSISTANT_RESPONSE;
-    const Icon = cfg.icon;
+    const cfg  = getTypeConfig(decision?.decisionType);
+    const Icon = cfg?.icon ?? Brain;
 
     const timeStr = new Date(decision.createdAt).toLocaleTimeString([], {
         hour: "2-digit", minute: "2-digit",
@@ -217,7 +242,7 @@ function EmptyState({ hasFilter }: { hasFilter: boolean }) {
                 <BarChart3 className="w-5 h-5 text-slate-600" />
             </div>
             <p className="text-sm font-medium text-slate-400">
-                {hasFilter ? "No decisions match this filter" : "No AI decisions logged yet"}
+                {hasFilter ? "No decisions match this filter" : "No decisions recorded yet. Use the system to populate logs."}
             </p>
             <p className="text-xs text-slate-600 max-w-xs leading-relaxed">
                 {hasFilter
@@ -239,8 +264,13 @@ export default function ExplanationsClient({ decisions }: ExplanationsClientProp
     const [search, setSearch]       = React.useState("");
     const [expandedId, setExpandedId] = React.useState<string | null>(null);
 
+    const safeDecisions = React.useMemo(
+        () => decisions.filter(isDecisionEntry),
+        [decisions]
+    );
+
     const filtered = React.useMemo(() => {
-        let result = decisions;
+        let result = safeDecisions;
         if (filter !== "ALL") {
             result = result.filter((d) => d.decisionType === filter);
         }
@@ -254,15 +284,15 @@ export default function ExplanationsClient({ decisions }: ExplanationsClientProp
             );
         }
         return result;
-    }, [decisions, filter, search]);
+    }, [safeDecisions, filter, search]);
 
     const counts = React.useMemo(() => {
-        const c: Record<string, number> = { ALL: decisions.length };
-        for (const d of decisions) {
+        const c: Record<string, number> = { ALL: safeDecisions.length };
+        for (const d of safeDecisions) {
             c[d.decisionType] = (c[d.decisionType] ?? 0) + 1;
         }
         return c;
-    }, [decisions]);
+    }, [safeDecisions]);
 
     const toggle = (id: string) =>
         setExpandedId((prev) => (prev === id ? null : id));
@@ -278,10 +308,10 @@ export default function ExplanationsClient({ decisions }: ExplanationsClientProp
                     </p>
                 </div>
                 <div className="flex items-center gap-2 text-xs text-slate-500">
-                    {decisions.length > 0 ? (
+                    {safeDecisions.length > 0 ? (
                         <>
                             <CircleCheck className="w-3.5 h-3.5 text-[#10B981]" />
-                            {decisions.length} decision{decisions.length !== 1 ? "s" : ""} logged
+                            {safeDecisions.length} decision{safeDecisions.length !== 1 ? "s" : ""} logged
                         </>
                     ) : (
                         <>
@@ -331,10 +361,10 @@ export default function ExplanationsClient({ decisions }: ExplanationsClientProp
             </div>
 
             {/* Stats strip */}
-            {decisions.length > 0 && (
+            {safeDecisions.length > 0 && (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    {(["ASSISTANT_RESPONSE", "AUTO_HEAL", "AUTONOMOUS_ACTION", "OPTIMIZATION"] as const).map((type) => {
-                        const cfg   = TYPE_CONFIG[type];
+                    {STATS_TYPES.map((type) => {
+                        const cfg   = getTypeConfig(type);
                         const Icon  = cfg.icon;
                         const count = counts[type] ?? 0;
                         return (
@@ -376,7 +406,7 @@ export default function ExplanationsClient({ decisions }: ExplanationsClientProp
             )}
 
             {/* Info footer */}
-            {decisions.length > 0 && (
+            {safeDecisions.length > 0 && (
                 <div className="flex items-center gap-2 px-1 text-[11px] text-slate-600">
                     <AlertCircle className="w-3 h-3 shrink-0" />
                     Input summaries are sanitized — no user data, API keys, or sensitive information is stored.

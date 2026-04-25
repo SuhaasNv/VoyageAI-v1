@@ -5,9 +5,10 @@ name: CodeQL
 # and posts findings directly to the GitHub Security tab.
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
+  workflow_dispatch:
   schedule:
     # Every Monday at 10:00 UTC — catches new advisories against existing code
     - cron: "0 10 * * 1"

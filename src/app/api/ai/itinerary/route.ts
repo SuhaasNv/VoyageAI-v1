@@ -1,11 +1,17 @@
 /**
- * app/api/ai/itinerary/route.ts
- *
- * POST /api/ai/itinerary
- *
- * Generates a full day-by-day itinerary using the AI service layer,
- * then persists the raw JSON into the Itinerary table (upsert).
- * If the trip already has an itinerary row it is replaced.
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║  ⚠  LEGACY PATH (NOT USED IN DEMO)                                      ║
+ * ║                                                                          ║
+ * ║  POST /api/ai/itinerary                                                  ║
+ * ║                                                                          ║
+ * ║  This is the original one-shot itinerary generator. It bypasses the     ║
+ * ║  staged multi-agent pipeline (itinerary-flow) and calls a single tool   ║
+ * ║  (generateItinerary) with no intermediate state or agent handoff.       ║
+ * ║                                                                          ║
+ * ║  PRODUCTION PATH: /api/ai/itinerary-flow/* (staged pipeline)            ║
+ * ║                                                                          ║
+ * ║  DO NOT add new callers. Retained for backward-compatibility only.       ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
  *
  * Request body: GenerateItineraryRequestSchema fields + required `tripId`.
  * Invalid inputs return 422 with field-level error details.
@@ -25,6 +31,8 @@ import { unauthorizedResponse, errorResponse } from "@/lib/api/response";
 import { prisma } from "@/lib/prisma";
 import { getTravelPreferenceContext } from "@/memory/contextStore";
 import { sanitizeUserInput, validateLLMOutput } from "@/security/safety";
+import { formatAIResponse } from "@/lib/ai/explainability";
+import { computeConfidence } from "@/lib/ai/confidence";
 
 // Extend the base schema to require a tripId for persistence.
 const ItineraryRouteSchema = GenerateItineraryRequestSchema.extend({
@@ -89,7 +97,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
                 }),
             ]);
 
-            return NextResponse.json({ success: true, data: result }, { status: 200 });
+            return NextResponse.json({
+                success: true,
+                data: formatAIResponse(result, {
+                    confidence: computeConfidence({ mode: "LLM_ONLY" }),
+                    reasoning:  `One-shot itinerary generated for ${aiPayload.destination} via LLM parametric knowledge. ` +
+                                `No external data source — output not externally verified.`,
+                    sources:    ["User input", "Travel DNA preferences", "LLM knowledge base (unverified)"],
+                }),
+            }, { status: 200 });
         } catch (err) {
             logError("[API] Itinerary generation error", err);
             return formatErrorResponse(err);

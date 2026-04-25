@@ -1,0 +1,10 @@
+/
+/dashboard
+/icon.svg?icon.a814d6a2.svg
+/login
+/manifest.json
+/privacy
+/signup
+/smart-routes
+/terms
+/vision-maps

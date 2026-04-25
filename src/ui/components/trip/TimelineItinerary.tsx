@@ -44,6 +44,13 @@ interface TimelineItineraryProps {
     onDayChange?: (day: number) => void;
     onActivityFocus?: (event: ItineraryEvent) => void;
     onEventsReorder?: (dayNumber: number, orderedIds: string[]) => void;
+    /**
+     * PRIMARY PRODUCTION PATH callback.
+     * When provided, the "Generate itinerary" button delegates to this handler
+     * so the parent (TripViewClient) can open ItineraryCreationFlow — the
+     * staged multi-agent pipeline — instead of the legacy one-shot route.
+     */
+    onRequestNewItinerary?: () => void;
 }
 
 // ─── Motion Variants ─────────────────────────────────────────────────────────
@@ -344,7 +351,7 @@ function DayView({ day, direction, isMobile, onActivityFocus, onEventsReorder }:
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function TimelineItinerary({ trip, onRefresh, onDayChange, onActivityFocus, onEventsReorder }: TimelineItineraryProps) {
+export function TimelineItinerary({ trip, onRefresh, onDayChange, onActivityFocus, onEventsReorder, onRequestNewItinerary }: TimelineItineraryProps) {
     const [activeDay, setActiveDay] = useState(1);
     const [direction, setDirection] = useState(0); // +1 = forward, -1 = backward
     const [itinerary, setItinerary] = useState<ItineraryDay[]>(trip.itinerary);
@@ -386,6 +393,16 @@ export function TimelineItinerary({ trip, onRefresh, onDayChange, onActivityFocu
 
     // ── Itinerary generation ──────────────────────────────────────────────────
     async function handleGenerate() {
+        // PRIMARY PRODUCTION PATH: delegate to ItineraryCreationFlow via the
+        // onRequestNewItinerary callback supplied by TripViewClient.
+        if (onRequestNewItinerary) {
+            onRequestNewItinerary();
+            return;
+        }
+
+        // ⚠ LEGACY FALLBACK — only reached when the component is rendered
+        // without the onRequestNewItinerary prop (e.g. in Storybook or tests).
+        // Do NOT add new callers of /api/ai/itinerary; use ItineraryCreationFlow.
         setIsGenerating(true);
         setGenError(null);
         try {

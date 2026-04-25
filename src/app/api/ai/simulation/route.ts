@@ -19,6 +19,9 @@ import { runWithRequestContext } from "@/lib/requestContext";
 import { checkRateLimit } from "@/security/rateLimiter";
 import { unauthorizedResponse } from "@/lib/api/response";
 import { simulationCacheKey, getSimulationCached, setSimulationCached } from "@/lib/ai/cache";
+import { formatAIResponse } from "@/lib/ai/explainability";
+import { computeConfidence } from "@/lib/ai/confidence";
+import { validateLLMOutput } from "@/security/safety";
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
     return runWithRequestContext(req, async () => {
@@ -33,14 +36,22 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
         const { tripId, itinerary, scenarios, simulationDepth } = validation.data;
         const cacheKey = simulationCacheKey({ tripId, itinerary, scenarios, simulationDepth });
+
+        const withMeta = (data: object) => formatAIResponse(data, {
+            confidence: computeConfidence({ mode: "LLM_ONLY" }),
+            reasoning:  `Scenario simulation run against ${scenarios.length} scenario(s) at depth "${simulationDepth}" via LLM reasoning.`,
+            sources:    ["Trip itinerary", "User-defined scenarios", "LLM knowledge base (unverified)"],
+        });
+
         const cached = await getSimulationCached(cacheKey);
         if (cached) {
-            return NextResponse.json({ success: true, data: cached }, { status: 200 });
+            return NextResponse.json({ success: true, data: withMeta(cached as object) }, { status: 200 });
         }
 
         const result = await simulateTrip(validation.data);
+        validateLLMOutput(JSON.stringify(result), "json");
         await setSimulationCached(cacheKey, result);
-        return NextResponse.json({ success: true, data: result }, { status: 200 });
+        return NextResponse.json({ success: true, data: withMeta(result as object) }, { status: 200 });
     } catch (err) {
         logError("[API] Simulation error", err);
         return formatErrorResponse(err);

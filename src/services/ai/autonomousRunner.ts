@@ -220,6 +220,9 @@ function ruleFallbackDecision(anomalies: Anomaly[]): LLMDecision {
     const hasErrors  = anomalies.some((a) => a.category === "error_rate");
     const hasCrit    = anomalies.some((a) => a.severity === "critical");
 
+    // ⚠  HEURISTIC confidence values — these are rule-derived, not statistically
+    // calibrated.  Values reflect how reliably the triggering condition maps to
+    // the proposed action in operational experience, not a probability of success.
     if (hasCost && hasCrit) {
         proposals.push({ type: "REDUCE_TOKENS_50PCT", reason: "Critical cost surge — aggressive token reduction", confidence: 0.80 });
     } else if (hasCost || hasLatency) {

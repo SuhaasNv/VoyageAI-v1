@@ -1,6 +1,23 @@
 "use client";
 
 /**
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║  PRIMARY PRODUCTION UI — ItineraryCreationFlow                          ║
+ * ║                                                                          ║
+ * ║  This component is the single canonical entry point for itinerary       ║
+ * ║  generation. It drives the staged pipeline in order:                    ║
+ * ║    1. POST /api/ai/itinerary-flow/planner                               ║
+ * ║    2. POST /api/ai/itinerary-flow/research                              ║
+ * ║    3. POST /api/ai/itinerary-flow/logistics                             ║
+ * ║    4. POST /api/ai/itinerary-flow/budget                                ║
+ * ║    5. POST /api/ai/itinerary-flow/safety                                ║
+ * ║    6. POST /api/ai/itinerary-flow/save                                  ║
+ * ║                                                                          ║
+ * ║  All UI surfaces that need to trigger itinerary generation MUST open    ║
+ * ║  this component. The legacy /api/ai/itinerary route must NOT be called  ║
+ * ║  from any production UI path.                                           ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ *
  * ItineraryCreationFlow — Master orchestrator for the 5-stage agent pipeline.
  *
  * Renders as a full-screen fixed overlay (z-50 inset-0 bg-[#0A0D12]).

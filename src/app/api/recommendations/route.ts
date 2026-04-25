@@ -13,6 +13,7 @@ import { successResponse, unauthorizedResponse } from "@/lib/api/response";
 import { getAuthContext } from "@/lib/api/request";
 import { runWithRequestContext } from "@/lib/requestContext";
 import { logError } from "@/infrastructure/logger";
+import { computeConfidence } from "@/lib/ai/confidence";
 import { checkRateLimit } from "@/security/rateLimiter";
 import { formatErrorResponse } from "@/lib/errors";
 import { formatAIResponse } from "@/lib/ai/explainability";
@@ -153,10 +154,12 @@ export async function GET(req: NextRequest) {
                 formatAIResponse(
                     { tripSuggestions, destinations },
                     {
-                        // Trip suggestions are LLM-generated (0.85).
-                        // Destination recommendations are deterministic DNA scoring (0.95).
-                        // Blended weight reflects the mix.
-                        confidence: tripSuggestions.length > 0 ? 0.88 : 0.95,
+                        // Heuristic: LLM_GROUNDED when trip suggestions were generated
+                        // (LLM + Travel DNA context), DETERMINISTIC when only the
+                        // rule-based destination scorer ran (no LLM involved).
+                        confidence: computeConfidence({
+                            mode: tripSuggestions.length > 0 ? "LLM_GROUNDED" : "DETERMINISTIC",
+                        }),
                         reasoning: `Generated ${totalSuggestions} trip suggestion(s) via LLM, ranked by Travel DNA preferences. ` +
                             `Produced ${destinations.length} destination recommendation(s) via deterministic DNA scoring ` +
                             `against a curated pool of ${destinations.length > 0 ? "global destinations" : "no visited matches"}.`,

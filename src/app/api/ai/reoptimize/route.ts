@@ -22,6 +22,8 @@ import { unauthorizedResponse, errorResponse } from "@/lib/api/response";
 import { prisma } from "@/lib/prisma";
 import { getTravelPreferenceContext } from "@/memory/contextStore";
 import { sanitizeUserInput, validateLLMOutput } from "@/security/safety";
+import { formatAIResponse } from "@/lib/ai/explainability";
+import { computeConfidence } from "@/lib/ai/confidence";
 
 // Extend schema to require tripId at the route level for ownership check + persistence.
 const ReoptimizeRouteSchema = ReoptimizeRequestSchema.extend({
@@ -85,7 +87,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
                 }),
             ]);
 
-            return NextResponse.json({ success: true, data: result }, { status: 200 });
+            return NextResponse.json({
+                success: true,
+                data: formatAIResponse(result as object, {
+                    confidence: computeConfidence({ mode: "LLM_ONLY", usedFallback: !dnaContext }),
+                    reasoning:  `Itinerary reoptimized for trip ${tripId} using LLM with modification instruction and ` +
+                                (dnaContext ? "Travel DNA context." : "no Travel DNA context (fallback)."),
+                    sources:    ["Existing itinerary", "Modification instruction", ...(dnaContext ? ["Travel DNA preferences"] : []), "LLM knowledge base"],
+                }),
+            }, { status: 200 });
         } catch (err) {
             logError("[API] Reoptimize error", err);
             return formatErrorResponse(err);

@@ -273,12 +273,17 @@ interface AISuggestionsPanelProps {
     isLoading: boolean;
 }
 
+function resolveAgent(stage: FlowStage) {
+    if (stage === "saved") return AGENT_REGISTRY.safety;
+    return AGENT_REGISTRY[stage] ?? AGENT_REGISTRY.planner;
+}
+
 // ─── Main Panel ───────────────────────────────────────────────────────────────
 
 export function AISuggestionsPanel({ state, isLoading }: AISuggestionsPanelProps) {
     const prefersReduced = useReducedMotion();
     const scrollRef = useRef<HTMLDivElement>(null);
-    const agent = state.stage !== "saved" ? AGENT_REGISTRY[state.stage] : AGENT_REGISTRY.safety;
+    const agent = resolveAgent(state.stage);
 
     const insights = useMemo(() => generateInsights(state), [state]);
     const { imageUrl, destination } = state.input;

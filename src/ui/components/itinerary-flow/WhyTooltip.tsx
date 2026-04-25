@@ -75,7 +75,7 @@ export function WhyTooltip({ reason, confidence, agentColor = "indigo" }: WhyToo
                                     />
                                 </div>
                                 <span className="text-[10px] text-slate-500 flex-shrink-0">
-                                    {Math.round(confidence * 100)}% confident
+                                    {Math.round(confidence * 100)}% (heuristic)
                                 </span>
                             </div>
                         )}

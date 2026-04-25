@@ -78,6 +78,15 @@ export default function AdminHeader({ email, notificationCount = 0 }: AdminHeade
                 )}
             </div>
 
+            {/* Data provenance badge — visible on every admin page */}
+            <span
+                title="Every metric is read from the live database (Prisma). No simulated or hardcoded values."
+                className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#10B981]/[0.08] border border-[#10B981]/20 text-[10px] font-medium text-[#10B981]/70 shrink-0 select-none"
+            >
+                <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] inline-block" />
+                Live DB data
+            </span>
+
             {/* Right-side actions */}
             <div className="flex items-center gap-2 shrink-0">
 

@@ -5,9 +5,9 @@
  * No heavy infra — all aggregation is in-DB via Prisma.
  */
 
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { successResponse, internalErrorResponse } from "@/lib/api/response";
+import { successResponse } from "@/lib/api/response";
 import { runWithRequestContext } from "@/lib/requestContext";
 import { requireAdminApiAuth } from "@/lib/admin";
 import { whereAiCallFailedSince } from "@/lib/metrics/aiUsageLog";
@@ -81,8 +81,12 @@ export async function GET(req: NextRequest) {
             };
 
             return successResponse(health);
-        } catch {
-            return internalErrorResponse();
+        } catch (err) {
+            console.error("[admin/system-health]", err);
+            return NextResponse.json({
+                status: "degraded",
+                error: "system_health_failed",
+            });
         }
     });
 }

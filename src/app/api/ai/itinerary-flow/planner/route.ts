@@ -1,3 +1,11 @@
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║  PRIMARY PRODUCTION PATH — Stage 1 of 5: Planner Agent                 ║
+ * ║  Called by ItineraryCreationFlow.tsx as the first step of the staged    ║
+ * ║  multi-agent pipeline: planner → research → logistics → budget → safety ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ */
+
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { getAuthContext, validateBody } from "@/lib/api/request";
@@ -8,6 +16,7 @@ import { logStructured } from "@/infrastructure/logger";
 import { PlannerAgent } from "@/agents/planner/plannerAgent";
 import { formatAIResponse } from "@/lib/ai/explainability";
 import { computeConfidence } from "@/lib/ai/confidence";
+import { sanitizeUserInput, validateLLMOutput } from "@/security/safety";
 
 const Schema = z.object({
     input: z.string().min(5).max(2000),
@@ -26,13 +35,15 @@ export async function POST(req: NextRequest) {
         logStructured({ layer: "agent", step: "start", data: { stage: "planner", flowSessionId } });
 
         try {
+            const safeInput = sanitizeUserInput(body.data.input);
             const t0 = Date.now();
             const agent = new PlannerAgent();
-            const result = await agent.run(body.data.input, flowSessionId);
+            const result = await agent.run(safeInput, flowSessionId);
+            validateLLMOutput(JSON.stringify(result), "json");
             const durationMs = Date.now() - t0;
 
             const decisionsLog = [
-                `Received trip input: "${body.data.input.slice(0, 60)}..."`,
+                `Received trip input: "${safeInput.slice(0, 60)}..."`,
                 `Parsed destination and date range`,
                 `Inferred travel style from preferences`,
                 `Assigned themes to ${result.durationDays} days`,

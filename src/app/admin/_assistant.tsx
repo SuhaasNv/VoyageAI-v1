@@ -11,6 +11,7 @@ import {
 import { ensureCsrfToken } from "@/lib/api";
 import type { AssistantResponse, ActionItem } from "@/app/api/admin/assistant/route";
 import type { Prediction } from "@/services/ai/predictive.service";
+import { ADMIN_FLAGS } from "@/lib/featureFlags";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -23,6 +24,7 @@ interface AssistantMessage {
     role:     "assistant";
     response: AssistantResponse & {
         _meta?: {
+            source:            string;
             anomalyCount:      number;
             anomalySeverities: AnomalyMeta[];
             predictions?:      Prediction[];
@@ -71,7 +73,7 @@ function PredictionBanner({
         <div className="space-y-1.5">
             <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500 px-0.5">
                 <TrendingUp className="w-3 h-3 text-amber-400" />
-                Predictive signals
+                Log-based trend warnings
             </div>
             {visible.slice(0, 3).map((p) => (
                 <div
@@ -92,7 +94,7 @@ function PredictionBanner({
                                     style={{ width: `${Math.round(p.confidence * 100)}%` }}
                                 />
                             </div>
-                            <span className="text-[9px] opacity-60">{Math.round(p.confidence * 100)}% confidence</span>
+                            <span className="text-[9px] opacity-60" title="Coefficient of determination (R²) — measures trend fit, not probability">{Math.round(p.confidence * 100)}% R² fit</span>
                         </div>
                         <button
                             type="button"
@@ -238,8 +240,8 @@ function ResponseCard({ msg }: { msg: AssistantMessage }) {
                 <p className="px-3 py-2.5 text-sm text-slate-200 leading-relaxed">{recommendation}</p>
             </div>
 
-            {/* ACTIONS — executable buttons */}
-            {actions && actions.length > 0 && (
+            {/* ACTIONS — gated by SHOW_AUTONOMY flag (requires AUTONOMY_MODE != OFF) */}
+            {ADMIN_FLAGS.SHOW_AUTONOMY && actions && actions.length > 0 && (
                 <div className="space-y-1.5 pt-0.5">
                     <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-600 px-0.5">Run action</p>
                     <div className="flex flex-wrap gap-1.5">
@@ -249,6 +251,11 @@ function ResponseCard({ msg }: { msg: AssistantMessage }) {
                     </div>
                 </div>
             )}
+
+            {/* Provenance disclaimer */}
+            <p className="text-[10px] text-slate-700 pt-0.5">
+                Generated from system logs, not autonomous reasoning
+            </p>
         </div>
     );
 }
@@ -277,9 +284,9 @@ export default function AdminAssistant() {
         }
     }, [open, minimized]);
 
-    // Fetch predictions when the panel first opens
+    // Fetch predictions only when the banner is enabled (SHOW_PREDICTIONS flag)
     React.useEffect(() => {
-        if (!open) return;
+        if (!open || !ADMIN_FLAGS.SHOW_PREDICTIONS) return;
         fetch("/api/admin/predictions", { credentials: "include" })
             .then((r) => r.json())
             .then((j: { success?: boolean; data?: { predictions?: Prediction[] } }) => {
@@ -313,7 +320,7 @@ export default function AdminAssistant() {
                 throw new Error(json?.error?.message ?? `Error ${res.status}`);
             }
 
-            const data = await res.json() as AssistantResponse & { _meta?: { anomalyCount: number; anomalySeverities: AnomalyMeta[] } };
+            const data = await res.json() as AssistantResponse & { _meta?: { source: string; anomalyCount: number; anomalySeverities: AnomalyMeta[] } };
             setMessages((prev) => [...prev, { role: "assistant", response: data }]);
             // Revalidate server-rendered admin pages (e.g. Explainability list) after a decision is logged.
             router.refresh();
@@ -339,13 +346,13 @@ export default function AdminAssistant() {
             <button
                 type="button"
                 onClick={() => { setOpen(true); setMinimized(false); }}
-                aria-label="Open AI ops analyst"
+                aria-label="Open ops assistant"
                 className="fixed bottom-6 right-6 z-50 w-12 h-12 rounded-full bg-[#10B981] hover:bg-[#0EA472] active:scale-95 shadow-lg shadow-[#10B981]/30 flex items-center justify-center transition-all duration-200 group"
             >
                 <Sparkles className="w-5 h-5 text-white" />
-                <span className="absolute right-14 bg-[#0C131D] text-white text-xs px-2.5 py-1.5 rounded-lg border border-white/[0.1] whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150 shadow-xl font-medium">
-                    AI Ops Analyst
-                </span>
+                    <span className="absolute right-14 bg-[#0C131D] text-white text-xs px-2.5 py-1.5 rounded-lg border border-white/[0.1] whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150 shadow-xl font-medium">
+                        Ops Assistant
+                    </span>
             </button>
         );
     }
@@ -363,9 +370,9 @@ export default function AdminAssistant() {
                     <Sparkles className="w-3.5 h-3.5 text-[#10B981]" />
                 </div>
                 <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-white leading-tight tracking-tight">AI Ops Analyst</p>
+                    <p className="text-sm font-semibold text-white leading-tight tracking-tight">Ops Assistant</p>
                     {!minimized && (
-                        <p className="text-[10px] text-slate-500">Insight · Reasoning · Recommendation</p>
+                        <p className="text-[10px] text-slate-500">Answers questions from live system data</p>
                     )}
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
@@ -388,19 +395,26 @@ export default function AdminAssistant() {
 
             {!minimized && (
                 <>
+                    <div className="px-4 py-2 border-b border-white/[0.06] bg-white/[0.01]">
+                        <p className="text-[11px] text-slate-500">
+                            Responses are generated from system logs. Not autonomous analysis.
+                        </p>
+                    </div>
                     {/* Thread */}
                     <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 scroll-smooth">
                         {isEmpty && (
                             <div className="space-y-4">
                                 <div className="text-center space-y-1.5 pt-2">
-                                    <p className="text-sm font-semibold text-white">Ask the analyst</p>
+                                    <p className="text-sm font-semibold text-white">Ask a question</p>
                                     <p className="text-xs text-slate-500 leading-relaxed">
-                                        Every response gives you insight, reasoning, and a clear recommendation — not just an answer.
+                                        Queries live DB data and returns an insight, reasoning trace, and recommendation. Reactive — not continuous.
                                     </p>
                                 </div>
 
-                                {/* Predictive signals — only shown when trends are forming */}
-                                <PredictionBanner predictions={predictions} onAsk={send} />
+                                {/* Log-based trend warnings — gated by SHOW_PREDICTIONS flag */}
+                                {ADMIN_FLAGS.SHOW_PREDICTIONS && (
+                                    <PredictionBanner predictions={predictions} onAsk={send} />
+                                )}
 
                                 <div className="grid grid-cols-2 gap-1.5">
                                     {SUGGESTIONS.map((s) => (
@@ -436,7 +450,7 @@ export default function AdminAssistant() {
                             <div className="space-y-2">
                                 <div className="flex items-center gap-2 text-xs text-slate-500">
                                     <Loader2 className="w-3.5 h-3.5 animate-spin text-[#10B981]" />
-                                    Fetching system data & analyzing…
+                                    Fetching system data & summarising…
                                 </div>
                                 <div className="space-y-2">
                                     {["w-full", "w-4/5", "w-3/5"].map((w, i) => (

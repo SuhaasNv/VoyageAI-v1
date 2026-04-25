@@ -28,15 +28,18 @@
  * `reasoning`, and `sources`.
  */
 
+import { CONFIDENCE_TYPE, type ConfidenceType } from "@/lib/ai/confidence";
+
 // ─── Core interface ────────────────────────────────────────────────────────────
 
 /**
  * Standardised explainability envelope attached to every AI response `_meta`.
  *
  * Required fields (always present after `formatAIResponse`):
- *   confidence  — 0.0–1.0; 1.0 = fully deterministic, lower = LLM-dependent
- *   reasoning   — one human-readable sentence explaining the output
- *   sources     — list of data sources consulted
+ *   confidence      — 0.0–1.0 heuristic indicator (NOT a calibrated probability)
+ *   confidenceType  — always "heuristic"; clarifies the epistemological category
+ *   reasoning       — one human-readable sentence explaining the output
+ *   sources         — list of data sources consulted
  *
  * Optional fields (kept for backward-compatibility and debugging):
  *   durationMs    — wall-clock time for this stage
@@ -44,8 +47,22 @@
  *   dataSources   — legacy alias of sources (kept for UI backward compat)
  */
 export interface AIResponseMeta {
-    /** 0.0–1.0. 1.0 = deterministic, <1.0 = LLM-dependent or has fallbacks. */
+    /**
+     * 0.0–1.0 heuristic score.
+     *
+     * ⚠  This is NOT a calibrated probability — it does not mean the output
+     * will be correct `confidence × 100`% of the time.  It is a rule-derived
+     * indicator: 1.0 = fully deterministic code path, <1.0 = LLM-dependent
+     * or has observed quality penalties.  See lib/ai/confidence.ts for the
+     * full penalty table.
+     */
     confidence: number;
+    /**
+     * Always "heuristic" for pipeline-stage responses.
+     * Exposed so UI labels can display the correct epistemological category
+     * rather than implying a statistical success rate.
+     */
+    confidenceType: ConfidenceType;
     /** Plain-English explanation of what the agent did and why. */
     reasoning: string;
     /** Canonical list of data sources consulted to produce this output. */
@@ -89,6 +106,7 @@ export function formatAIResponse<T extends object>(
         ...data,
         _meta: {
             confidence,
+            confidenceType: CONFIDENCE_TYPE,     // always "heuristic" for pipeline stages
             reasoning:   meta.reasoning,
             sources:     meta.sources,
             dataSources: meta.sources,           // backward-compat mirror

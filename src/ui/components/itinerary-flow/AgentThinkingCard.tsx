@@ -45,7 +45,7 @@ export function AgentThinkingCard({
     skeleton,
     destination,
 }: AgentThinkingCardProps) {
-    const agent = AGENT_REGISTRY[stage];
+    const agent = AGENT_REGISTRY[stage] ?? AGENT_REGISTRY.planner;
     const colors = agentColorClasses(agent.color);
     const prefersReduced = useReducedMotion();
 

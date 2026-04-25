@@ -59,7 +59,7 @@ Respond to the user's query using the provided context. Follow these rules:
 - Include a short, helpful message.
 - Detect the user's intent and populate the "intent" field.
 - Suggest up to three actionable buttons in "suggestedActions" (label, action, optional payload).
-- Provide related travel tips and a confidenceScore (0‑1).
+- Provide related travel tips and a confidenceScore (0‑1, your own self-assessed estimate — not a statistical probability).
 - Include modelVersion and respondedAt timestamps.
 `;
 

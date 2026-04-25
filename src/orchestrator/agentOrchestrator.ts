@@ -1,3 +1,20 @@
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║  ⚗  EXPERIMENTAL ORCHESTRATION — NOT ON ANY PRODUCTION HTTP ROUTE       ║
+ * ║                                                                          ║
+ * ║  AgentOrchestrator runs the full agent pipeline (planner → research →   ║
+ * ║  logistics → budget → safety) in a single in-process call with an       ║
+ * ║  LLM-driven re-try loop (MAX_ITERATIONS = 3).                           ║
+ * ║                                                                          ║
+ * ║  PRODUCTION PATH: each agent stage is an independent HTTP route under   ║
+ * ║  /api/ai/itinerary-flow/* orchestrated by ItineraryCreationFlow.tsx.    ║
+ * ║                                                                          ║
+ * ║  This class is used ONLY by tests and the LangGraph parity harness.     ║
+ * ║  Do NOT wire it to a production API route without a full security and   ║
+ * ║  timeout review.                                                         ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ */
+
 import { PlannerAgent, type TripContext } from "@/agents/planner/plannerAgent";
 import { ResearchAgent, type EnrichedTripContext } from "@/agents/research/researchAgent";
 import { LogisticsAgent } from "@/agents/logistics/logisticsAgent";

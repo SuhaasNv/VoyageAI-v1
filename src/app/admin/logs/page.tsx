@@ -87,7 +87,9 @@ interface LogsPageProps {
 
 export default async function LogsPage({ searchParams }: LogsPageProps) {
     const params = await searchParams;
-    const layer = params?.layer ?? "all";
+    const allowedLayers = new Set(["all", "auth", "ai"]);
+    const layerParam = params?.layer ?? "all";
+    const layer = allowedLayers.has(layerParam) ? layerParam : "all";
 
     return (
         <Suspense fallback={

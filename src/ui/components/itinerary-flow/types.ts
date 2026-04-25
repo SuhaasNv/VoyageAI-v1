@@ -32,7 +32,14 @@ export interface FlowInput {
 export interface FlowMetadata {
     /** Wall-clock duration the API call took (ms). */
     durationMs: number;
-    /** 0–1 confidence estimate from the agent layer. Omitted when not measured. */
+    /**
+     * 0–1 heuristic confidence indicator from the agent layer.
+     *
+     * ⚠  This is NOT a statistical probability — it is a rule-based score
+     * derived from the execution mode (deterministic / LLM-grounded / LLM-only)
+     * and observable quality signals (fallback usage, geo-accuracy, warnings).
+     * Omitted when not measured.
+     */
     confidence?: number;
     /** Human-readable list of data sources used by this agent. */
     dataSources: string[];

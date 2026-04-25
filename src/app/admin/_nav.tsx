@@ -16,16 +16,17 @@ import {
     Lightbulb,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
+import { ADMIN_FLAGS }  from "@/lib/featureFlags";
 
 const NAV_LINKS = [
-    { href: "/admin",            icon: LayoutDashboard, label: "Overview"   },
-    { href: "/admin/users",      icon: Users,           label: "Users"      },
-    { href: "/admin/ai-metrics", icon: BarChart2,       label: "AI Metrics" },
-    { href: "/admin/agents",     icon: Bot,             label: "Agents"     },
-    { href: "/admin/logs",         icon: ScrollText,  label: "Logs"          },
-    { href: "/admin/explanations", icon: Lightbulb,   label: "Explainability"},
-    { href: "/admin/cache",        icon: HardDrive,   label: "Cache"         },
-];
+    { href: "/admin",              icon: LayoutDashboard, label: "Overview",       hidden: false                       },
+    { href: "/admin/users",        icon: Users,           label: "Users",          hidden: !ADMIN_FLAGS.SHOW_USERS_NAV },
+    { href: "/admin/ai-metrics",   icon: BarChart2,       label: "AI Metrics",     hidden: false                       },
+    { href: "/admin/agents",       icon: Bot,             label: "Agents",         hidden: false                       },
+    { href: "/admin/logs",         icon: ScrollText,      label: "Logs",           hidden: false                       },
+    { href: "/admin/explanations", icon: Lightbulb,       label: "Explainability", hidden: false                       },
+    { href: "/admin/cache",        icon: HardDrive,       label: "Cache",          hidden: !ADMIN_FLAGS.SHOW_CACHE_NAV },
+].filter((link) => !link.hidden);
 
 interface AdminNavProps { email: string }
 

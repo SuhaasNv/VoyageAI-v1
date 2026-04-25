@@ -619,9 +619,10 @@ function AILandingPrompt() {
                     onChange={(e) => setPrompt(e.target.value)}
                     maxLength={500}
                     disabled={isBusy}
-                    placeholder={isListening ? "" : "Ask Anything..."}
+                    placeholder="Ask Anything..."
                     aria-label="Ask a travel question"
                     className="bg-transparent border-none outline-none flex-1 text-sm text-slate-50 placeholder:text-slate-400 disabled:opacity-50"
+                    suppressHydrationWarning
                 />
                 {isListening && (
                     <span className="text-xs text-red-400/80 whitespace-nowrap animate-pulse mr-1">

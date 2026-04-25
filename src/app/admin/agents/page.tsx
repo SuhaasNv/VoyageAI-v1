@@ -78,8 +78,6 @@ async function getRecentRuns(): Promise<PipelineRun[]> {
     const runs: PipelineRun[] = [];
 
     for (const requestId of allReqIds) {
-        if (runs.length >= 25) break;
-
         const structuredSteps = structuredByReq.get(requestId) ?? [];
         const usageTotals     = usageByReq.get(requestId) ?? { tokens: 0, cost: 0 };
 
@@ -123,7 +121,9 @@ async function getRecentRuns(): Promise<PipelineRun[]> {
         }
     }
 
-    return runs.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+    return runs
+        .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
+        .slice(0, 25);
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -149,8 +149,8 @@ async function AgentsContent() {
 
             {runs.length === 0 ? (
                 <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] px-6 py-16 text-center">
-                    <p className="text-sm text-slate-500">No agent executions recorded yet.</p>
-                    <p className="text-xs text-slate-700 mt-1">Logs appear after trips are created via the orchestrator.</p>
+                    <p className="text-sm text-slate-500">No pipeline runs yet. Generate a trip to see agent execution.</p>
+                    <p className="text-xs text-slate-700 mt-1">Runs appear after the itinerary flow executes through planner → safety.</p>
                 </div>
             ) : (
                 <AgentReplayView runs={runs} />

@@ -1,3 +1,11 @@
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║  PRIMARY PRODUCTION PATH — Stage 6 of 6: Save                          ║
+ * ║  Called by ItineraryCreationFlow.tsx after all 5 agent stages complete. ║
+ * ║  Persists the finalised SafeTripContext to the database as an Itinerary.║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ */
+
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { getAuthContext, validateBody } from "@/lib/api/request";
@@ -91,7 +99,7 @@ export async function POST(req: NextRequest) {
 
             // Prometheus metrics
             plannerItineraryGeneratedTotal.inc({ status: "success", source: "flow" });
-            
+
             if (flowStartTime) {
                 const startTime = parseFloat(flowStartTime);
                 if (!isNaN(startTime)) {

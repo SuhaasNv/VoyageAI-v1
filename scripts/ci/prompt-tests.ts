@@ -36,6 +36,14 @@ function check(name: string, fn: () => void | Promise<void>): Promise<void> {
         });
 }
 
+// ─── Main ─────────────────────────────────────────────────────────────────────
+//
+// Wrapped in an async IIFE because tsx transpiles this file as CJS (no
+// "type": "module" in package.json), and top-level await is not supported
+// under the CJS output format.
+
+void (async () => {
+
 // ─── 1. Prompt presence ───────────────────────────────────────────────────────
 
 console.log("\n📝 Prompt presence checks");
@@ -252,3 +260,8 @@ writeFileSync(path.join("reports", "prompt-tests.json"), JSON.stringify(report, 
 
 console.log(`\n${passed ? "✅" : "❌"} Prompt tests: ${results.filter((r) => r.passed).length}/${results.length} checks passed`);
 process.exit(passed ? 0 : 1);
+
+})().catch((err: unknown) => {
+    console.error("Prompt tests crashed:", err);
+    process.exit(1);
+});

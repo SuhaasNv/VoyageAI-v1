@@ -1,3 +1,11 @@
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║  PRIMARY PRODUCTION PATH — Stage 5 of 5: Safety Agent                  ║
+ * ║  Called by ItineraryCreationFlow.tsx as the final pipeline stage.       ║
+ * ║  Applies fatigue rules, pacing constraints, and travel advisories.      ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ */
+
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { getAuthContext, validateBody } from "@/lib/api/request";
@@ -9,6 +17,7 @@ import { SafetyAgent } from "@/agents/safety/safetyAgent";
 import type { BudgetedTripContext } from "@/agents/budget/budgetAgent";
 import { formatAIResponse } from "@/lib/ai/explainability";
 import { computeConfidence } from "@/lib/ai/confidence";
+import { validateLLMOutput } from "@/security/safety";
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 //
@@ -104,6 +113,9 @@ export async function POST(req: NextRequest) {
 
             const warningCount = result.safety.warnings.length;
             const llmUsed = warningCount > 0;
+            if (llmUsed) {
+                validateLLMOutput(result.safety.tips.join("\n"), "text");
+            }
 
             const sources = [
                 "Deterministic safety rule engine",

@@ -60,8 +60,21 @@ export interface Prediction {
     changeDirection:     "increasing" | "decreasing" | "stable";
     /** % change from currentValue to predictedValue (signed). */
     changePct:           number;
-    /** R² of the underlying regression — natural 0–1 confidence score. */
+    /**
+     * R² (coefficient of determination) of the underlying OLS regression.
+     *
+     * Ranges 0–1: 1.0 = the linear model explains all variance in the data;
+     * 0.0 = the model explains none.  This is a goodness-of-fit measure, NOT
+     * a probability that the prediction will be correct.  A high R² only means
+     * the historical trend is strongly linear — it says nothing about whether
+     * that trend will continue.
+     *
+     * `confidenceType: "regression_r2"` distinguishes this from heuristic
+     * pipeline scores so UI labels can be set accurately.
+     */
     confidence:          number;
+    /** Epistemological category — always "regression_r2" for predictions. */
+    confidenceType:      "regression_r2";
     willBreachThreshold: boolean;
     thresholdValue?:     number;
     /** One sentence, human-readable forecast. */
@@ -252,6 +265,7 @@ function buildCostPredictions(dayBuckets: DayBucket[]): Prediction[] {
             changeDirection:     direction,
             changePct:           Math.round(changePct * 10) / 10,
             confidence:          Math.round(reg.r2 * 100) / 100,
+            confidenceType:      "regression_r2" as const,
             willBreachThreshold: willBreach,
             prediction:          `Daily AI spend is ${direction} at +$${Math.abs(reg.slope).toFixed(5)}/day. ` +
                                   `Projected ${horizonDays}-day daily cost: $${projectedCost.toFixed(4)} ` +
@@ -307,6 +321,7 @@ function buildLatencyPredictions(hourBuckets: HourBucket[]): Prediction[] {
             changeDirection:     "increasing",
             changePct:           Math.round(changePct * 10) / 10,
             confidence:          Math.round(reg.r2 * 100) / 100,
+            confidenceType:      "regression_r2" as const,
             willBreachThreshold: willBreachHigh,
             thresholdValue:      THRESHOLDS.latencyHighMs,
             prediction:          `Avg latency is trending upward at +${Math.round(reg.slope)}ms/hour. ` +
@@ -365,6 +380,7 @@ function buildErrorRatePredictions(hourBuckets: HourBucket[]): Prediction[] {
             changeDirection:     "increasing",
             changePct:           Math.round(changePct * 10) / 10,
             confidence:          Math.round(reg.r2 * 100) / 100,
+            confidenceType:      "regression_r2" as const,
             willBreachThreshold: willBreachHigh,
             thresholdValue:      THRESHOLDS.errorRateHighPct,
             prediction:          `AI error rate (0-token responses) is rising at +${reg.slope.toFixed(2)}%/hour. ` +
@@ -410,6 +426,7 @@ function buildVolumePrediction(dayBuckets: DayBucket[]): Prediction | null {
         changeDirection:     "increasing",
         changePct:           Math.round(changePct * 10) / 10,
         confidence:          Math.round(reg.r2 * 100) / 100,
+        confidenceType:      "regression_r2" as const,
         willBreachThreshold: false,
         prediction:          `AI call volume is growing at +${Math.round(reg.slope)} calls/day. ` +
                               `Projected 3-day daily volume: ${Math.round(projectedVol)} calls/day (+${changePct.toFixed(0)}%).`,
@@ -532,7 +549,7 @@ export function formatPredictionsForContext(report: PredictiveReport): string {
 
     const lines = report.predictions.map((p) =>
         `[${p.severity.toUpperCase()}] ${p.prediction} ` +
-        `(confidence: ${(p.confidence * 100).toFixed(0)}%) → ${p.recommendedAction}`
+        `(R² trend fit: ${(p.confidence * 100).toFixed(0)}%) → ${p.recommendedAction}`
     );
 
     return `[PREDICTIONS — act preemptively to prevent these from becoming anomalies]\n${lines.join("\n")}`;

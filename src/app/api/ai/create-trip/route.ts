@@ -11,6 +11,7 @@ import { serializeTrip, type TripDTO } from "@/lib/services/trips";
 import { getDestinationImage } from "@/lib/services/image.service";
 import { extractTripFromText } from "@/services/ai/create-trip-from-text.service";
 import { getTravelPreferenceContext } from "@/memory/contextStore";
+import { sanitizeUserInput, validateLLMOutput } from "@/security/safety";
 
 const CreateTripAISchema = z.object({
     text: z.string().min(5).max(1000)
@@ -36,9 +37,11 @@ export async function POST(req: NextRequest) {
         try {
             await checkRateLimit(`ai:${auth.user.sub}:create-trip`);
 
+            const safeText = sanitizeUserInput(body.data.text);
             const dnaContext = await getTravelPreferenceContext(auth.user.sub);
 
-            const extracted = await extractTripFromText(body.data.text, dnaContext ?? undefined);
+            const extracted = await extractTripFromText(safeText, dnaContext ?? undefined);
+            validateLLMOutput(JSON.stringify(extracted), "json");
 
             const defaults = defaultTripDates();
             const startDate = extracted.startDate ?? defaults.startDate;

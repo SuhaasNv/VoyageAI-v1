@@ -117,7 +117,7 @@ export function ExplainabilityPanel({
                             {meta && confidence !== undefined && (
                                 <div>
                                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-2">
-                                        Confidence
+                                        Confidence (heuristic)
                                     </p>
                                     <div className="flex items-center gap-3">
                                         <div className="flex-1 h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
@@ -145,7 +145,8 @@ export function ExplainabilityPanel({
                                         </span>
                                     </div>
                                     <p className="text-[11px] text-slate-600 mt-1.5">
-                                        Completed in {(meta.durationMs / 1000).toFixed(1)}s
+                                        Completed in {(meta.durationMs / 1000).toFixed(1)}s ·{" "}
+                                        Rule-based score, not a statistical probability
                                     </p>
                                 </div>
                             )}
