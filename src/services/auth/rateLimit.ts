@@ -158,13 +158,16 @@ function memoryRateLimit(key: string, opts: RateLimitOptions): RateLimitResult {
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API
 //
-// Failure policy:
-//   Redis error → fall back to PostgreSQL (rate limits still enforced).
-//   DEVELOPMENT: DB error → in-memory (not used in production multi-instance).
-//   PRODUCTION: if DB rate-limiting also fails, throw (fail-closed on total DB loss).
+// Failure policy (fail-open with degraded enforcement):
+//   Redis error  → fall back to PostgreSQL (rate limits still enforced).
+//   DB error     → fall back to in-memory per-process store.
+//
+// Rationale: auth routes already require the database for user lookups and
+// token writes. If the database is completely unavailable those queries fail
+// first and rate limiting is moot. A more common case is a missing table due
+// to schema drift — throwing here would block ALL auth operations, which is
+// far more harmful than slightly relaxed per-instance rate limiting.
 // ─────────────────────────────────────────────────────────────────────────────
-
-const isProduction = process.env.NODE_ENV === "production";
 
 export async function rateLimit(
     key: string,
@@ -186,11 +189,7 @@ export async function rateLimit(
     try {
         return await dbRateLimit(key, opts);
     } catch (err) {
-        if (isProduction) {
-            logError("[rateLimit] DB unavailable in production — failing closed", err);
-            throw err;
-        }
-        logError("[rateLimit] DB error, falling back to memory store", err);
+        logError("[rateLimit] DB error, falling back to in-memory store", err);
     }
 
     return memoryRateLimit(key, opts);
