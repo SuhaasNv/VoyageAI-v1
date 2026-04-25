@@ -8,7 +8,7 @@
  * Persists to localStorage so users can resume a planning session.
  */
 
-import { useReducer, useEffect, useCallback, useState } from "react";
+import { useReducer, useEffect, useCallback, useState, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
 import type {
     FlowStage,
