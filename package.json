@@ -78,6 +78,11 @@
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.1.0"
   },
+  "overrides": {
+    "nunjucks": {
+      "chokidar": "^3.6.0"
+    }
+  },
   "optionalDependencies": {
     "@tailwindcss/oxide-darwin-arm64": "4.2.1",
     "@tailwindcss/oxide-linux-x64-gnu": "4.2.1",
