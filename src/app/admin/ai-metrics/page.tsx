@@ -81,18 +81,18 @@ async function getMetrics(): Promise<MetricsData> {
         avgLatencyMs: Math.round(totals._avg.latencyMs ?? 0),
         errorRate:    totalCalls > 0 ? (errorCount / totalCalls) * 100 : 0,
         totalCostUsd: totals._sum.costEstimateUsd ?? 0,
-        byEndpoint: byEndpointRaw.map((r) => ({
+        byEndpoint: byEndpointRaw.map((r: (typeof byEndpointRaw)[number]) => ({
             endpoint: r.endpoint ?? "(unknown)", calls: r._count.id,
             tokens: r._sum.totalTokens ?? 0, avgLatencyMs: Math.round(r._avg.latencyMs ?? 0),
             costUsd: r._sum.costEstimateUsd ?? 0,
         })),
-        byProvider: byProviderRaw.map((r) => ({
+        byProvider: byProviderRaw.map((r: (typeof byProviderRaw)[number]) => ({
             provider: r.provider, calls: r._count.id,
             tokens: r._sum.totalTokens ?? 0, avgLatencyMs: Math.round(r._avg.latencyMs ?? 0),
             costUsd: r._sum.costEstimateUsd ?? 0,
         })),
         dailyBuckets,
-        recentFailures: recentFailuresRaw.map((r) => ({
+        recentFailures: recentFailuresRaw.map((r: (typeof recentFailuresRaw)[number]) => ({
             ...r, endpoint: r.endpoint, createdAt: r.createdAt.toISOString(),
         })),
     };

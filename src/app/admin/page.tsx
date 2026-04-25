@@ -64,8 +64,8 @@ async function getOverview(): Promise<Overview> {
 
     return {
         totalUsers, activeUsers7d, newUsers7d, roleCounts, totalTrips,
-        topDestinations: topDestinationsRaw.map((r) => ({ destination: r.destination, count: r._count.id })),
-        recentUsers: recentUsersRaw.map((u) => ({ ...u, createdAt: u.createdAt.toISOString() })),
+        topDestinations: topDestinationsRaw.map((r: (typeof topDestinationsRaw)[number]) => ({ destination: r.destination, count: r._count.id })),
+        recentUsers: recentUsersRaw.map((u: (typeof recentUsersRaw)[number]) => ({ ...u, createdAt: u.createdAt.toISOString() })),
         totalAiCalls: aiAggregate._count.id,
         aiLast7d,
         totalTokens: aiAggregate._sum.totalTokens ?? 0,

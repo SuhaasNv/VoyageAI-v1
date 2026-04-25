@@ -235,7 +235,9 @@ function buildContext(
     predictionBlock = "",
 ): string {
     const { users, trips, ai } = d;
-    const roles = Object.fromEntries(users.usersByRole.map((r) => [r.role, r._count.id]));
+    const roles = Object.fromEntries(
+        users.usersByRole.map((r: { role: string; _count: { id: number } }) => [r.role, r._count.id])
+    );
 
     const errorRate1h = ai.h1.total > 0
         ? ((ai.h1.errors / ai.h1.total) * 100).toFixed(1)
@@ -258,7 +260,7 @@ Engagement: ${users.totalUsers > 0 ? ((users.activeUsers7d / users.totalUsers) *
 
 [TRIPS]
 Total: ${trips.totalTrips} | Created last 7d: ${trips.tripsLast7d}
-Top destinations: ${trips.topDestinations.map((d) => `${d.destination}(${d._count.id})`).join(", ")}
+Top destinations: ${trips.topDestinations.map((d: { destination: string; _count: { id: number } }) => `${d.destination}(${d._count.id})`).join(", ")}
 
 [AI USAGE — ALL TIME]
 Calls: ${ai.allTime._count.id} | Tokens: ${(ai.allTime._sum.totalTokens ?? 0).toLocaleString()}
@@ -275,7 +277,7 @@ Calls: ${ai.d7._count.id} | Cost: $${(ai.d7._sum.costEstimateUsd ?? 0).toFixed(4
 Calls: ${ai.d30._count.id} | Cost: $${(ai.d30._sum.costEstimateUsd ?? 0).toFixed(4)}
 
 [PROVIDERS]
-${ai.byProvider.map((p) => `${p.provider}: ${p._count.id} calls, ${(p._sum.totalTokens ?? 0).toLocaleString()} tokens, $${(p._sum.costEstimateUsd ?? 0).toFixed(4)}`).join(" | ")}`.trim();
+${ai.byProvider.map((p: { provider: string; _count: { id: number }; _sum: { totalTokens: number | null; costEstimateUsd: number | null } }) => `${p.provider}: ${p._count.id} calls, ${(p._sum.totalTokens ?? 0).toLocaleString()} tokens, $${(p._sum.costEstimateUsd ?? 0).toFixed(4)}`).join(" | ")}`.trim();
 }
 
 // ─── System prompt ────────────────────────────────────────────────────────────

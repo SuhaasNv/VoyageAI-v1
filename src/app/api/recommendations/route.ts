@@ -78,7 +78,7 @@ export async function GET(req: NextRequest) {
             });
 
             const tripSuggestionsPromise = Promise.all(
-                trips.map(async (trip): Promise<TripSuggestion> => {
+                trips.map(async (trip: (typeof trips)[number]): Promise<TripSuggestion> => {
                     const cacheKey = suggestionsCacheKey(trip.id);
                     const cached = await getSuggestionsCached(cacheKey);
                     if (cached && Array.isArray((cached as { suggestions: unknown[] }).suggestions)) {
@@ -147,7 +147,10 @@ export async function GET(req: NextRequest) {
                 destinationsPromise,
             ]);
 
-            const totalSuggestions = tripSuggestions.reduce((s, t) => s + t.suggestions.length, 0);
+            const totalSuggestions = tripSuggestions.reduce(
+                (s: number, t: TripSuggestion) => s + t.suggestions.length,
+                0
+            );
             const durationMs = Date.now() - t0;
 
             return successResponse(

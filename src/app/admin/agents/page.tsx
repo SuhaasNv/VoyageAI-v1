@@ -101,7 +101,7 @@ async function getRecentRuns(): Promise<PipelineRun[]> {
             });
         } else {
             // Legacy: only AiUsageLog data available
-            const usageLogs = usageRaw.filter((l) => l.requestId === requestId);
+            const usageLogs = usageRaw.filter((l: (typeof usageRaw)[number]) => l.requestId === requestId);
             const sorted    = [...usageLogs].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
             const first     = sorted[0];
             const last      = sorted[sorted.length - 1];
@@ -114,7 +114,7 @@ async function getRecentRuns(): Promise<PipelineRun[]> {
                 totalTokens:       usageTotals.tokens,
                 totalCostUsd:      usageTotals.cost,
                 stepCount:         usageLogs.length,
-                hasError:          usageLogs.some((l) => isAiUsageLogFailure(l)),
+                hasError:          usageLogs.some((l: (typeof usageRaw)[number]) => isAiUsageLogFailure(l)),
                 failedAgent:       null,
                 hasStructuredLogs: false,
             });
