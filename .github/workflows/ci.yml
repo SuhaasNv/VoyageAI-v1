@@ -95,13 +95,13 @@ defaults:
 #                                │
 #              ┌─────────────────┴──────────────────┐
 #  15 push-to-docr  ← trivy-scan  (main only)        │
-#  16 dast          ← trivy-scan  (main only)  ──────┘
+#  15b push-nextjs  ← trivy-scan  (main only)         │
+#  16 dast          ← push-nextjs (main only; pulls image from DOCR, runs locally)
 #
 #  Required secrets for stages 15–16:
 #    DIGITALOCEAN_ACCESS_TOKEN  — DO API token (write:registry; rotate on 401 from registry auth)
 #    DIGITALOCEAN_EMAIL         — Optional — DO account email for docker login; if unset, workflows use username "token" + PAT
 #    DO_REGISTRY_NAME           — registry slug (overrides vars.REGISTRY_NAME; default voyageai-docr)
-#    PRODUCTION_URL             — public Railway app URL for DAST (main only), e.g. https://xxx.up.railway.app
 #
 #  workflow_dispatch inputs:
 #    force_push           — push to DOCR even on non-main branch
@@ -139,12 +139,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      security-events: write   # Needed to read/write secret scanning alerts
+      security-events: write # Needed to read/write secret scanning alerts
 
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # Full history so every commit in the push is checked
+          fetch-depth: 0 # Full history so every commit in the push is checked
 
       # ── Step 1: GitHub Secret Scanning alert check ────────────────────────
       # Queries the GitHub Secret Scanning API for any open (unresolved) alerts.
@@ -813,7 +813,8 @@ jobs:
   # ══════════════════════════════════════════════════════════════════════════
   quality-gate:
     name: "✅ Quality Gate (all checks)"
-    needs: [unittest, sast, sca, data-validation, llm-adversarial-tests, evaluation]
+    needs:
+      [unittest, sast, sca, data-validation, llm-adversarial-tests, evaluation]
     runs-on: ubuntu-latest
     # Runs when all needs completed (any result) so we can inspect them ourselves.
     # When ignore_test_failures=true we pass regardless; otherwise we require
@@ -1027,8 +1028,8 @@ jobs:
   #      Attaches SLSA provenance + CycloneDX SBOM to the image manifest.
   #
   #  Required secrets:
-#    DIGITALOCEAN_ACCESS_TOKEN  — DO personal access token (write:registry)
-#    DIGITALOCEAN_EMAIL         — Optional — DO login email for DOCR; else username "token" + PAT
+  #    DIGITALOCEAN_ACCESS_TOKEN  — DO personal access token (write:registry)
+  #    DIGITALOCEAN_EMAIL         — Optional — DO login email for DOCR; else username "token" + PAT
   #    DO_REGISTRY_NAME           — registry slug (overrides vars; default voyageai-docr)
   # ══════════════════════════════════════════════════════════════════════════
   push-to-docr:
@@ -1241,8 +1242,8 @@ jobs:
   #       Re-builds with DOCR registry tags using the GHA layer cache.
   #
   #  Required secrets:
-#    DIGITALOCEAN_ACCESS_TOKEN  — DO personal access token (write:registry)
-#    DIGITALOCEAN_EMAIL         — Optional — DO login email for DOCR; else username "token" + PAT
+  #    DIGITALOCEAN_ACCESS_TOKEN  — DO personal access token (write:registry)
+  #    DIGITALOCEAN_EMAIL         — Optional — DO login email for DOCR; else username "token" + PAT
   #    DO_REGISTRY_NAME           — registry slug (overrides vars; default voyageai-docr)
   # ══════════════════════════════════════════════════════════════════════════
   push-nextjs-to-docr:
@@ -1329,8 +1330,9 @@ jobs:
 
   # ══════════════════════════════════════════════════════════════════════════
   #  16. DAST — OWASP ZAP FULL SCAN
-  #      Dynamic Application Security Testing against the live staging URL.
-  #      Runs in parallel with push-to-docr (both gate on trivy-scan).
+  #      Pulls the already-pushed Next.js image from DOCR, runs it on the
+  #      runner, then points ZAP at http://localhost:3000.
+  #      No PRODUCTION_URL secret required.
   #      Catches runtime issues that static analysis cannot:
   #        • Missing security headers (CSP, HSTS, X-Frame-Options)
   #        • Insecure cookies / session fixation
@@ -1338,19 +1340,15 @@ jobs:
   #        • Open redirects + injection surfaces
   #        • Information disclosure in error responses
   #
-  #  Required secret:
-  #    PRODUCTION_URL — public Railway HTTPS URL (same as NEXT_PUBLIC_APP_URL origin)
-  #
   #  False-positive suppressions: .github/zap/rules.tsv
   # ══════════════════════════════════════════════════════════════════════════
   dast:
     name: "16 · DAST (OWASP ZAP)"
-    needs: [build-image, trivy-scan]
+    needs: [push-nextjs-to-docr]
     runs-on: ubuntu-latest
     if: |
       always() &&
-      needs.build-image.result == 'success' &&
-      (needs.trivy-scan.result == 'success' || needs.trivy-scan.result == 'skipped') &&
+      needs.push-nextjs-to-docr.result == 'success' &&
       github.ref == 'refs/heads/main' &&
       github.event_name != 'pull_request' &&
       github.event.inputs.skip_deploy != 'true'
@@ -1362,10 +1360,45 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: ZAP Full Scan — ${{ secrets.PRODUCTION_URL }}
+      - name: Log in to DigitalOcean Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: registry.digitalocean.com
+          username: ${{ env.DOCR_DOCKER_USERNAME }}
+          password: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Pull Next.js image from DOCR
+        run: |
+          docker pull registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.NEXTJS_IMAGE_NAME }}:latest
+
+      - name: Start Next.js container
+        run: |
+          docker run -d \
+            --name nextjs-dast \
+            --network host \
+            -e NODE_ENV=production \
+            -e NEXTAUTH_URL=http://localhost:3000 \
+            -e NEXT_PUBLIC_APP_URL=http://localhost:3000 \
+            registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.NEXTJS_IMAGE_NAME }}:latest
+
+      - name: Wait for app to be healthy
+        run: |
+          echo "Waiting for http://localhost:3000 ..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000 > /dev/null 2>&1; then
+              echo "App is up after ${i}s"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::App did not become healthy within 60 s"
+          docker logs nextjs-dast
+          exit 1
+
+      - name: ZAP Full Scan — localhost:3000
         uses: zaproxy/action-full-scan@v0.10.0
         with:
-          target: ${{ secrets.PRODUCTION_URL }}
+          target: http://localhost:3000
           allow_issue_writing: true
           fail_action: true
           rules_file_name: .github/zap/rules.tsv
@@ -1383,15 +1416,20 @@ jobs:
           category: owasp-zap
         continue-on-error: true
 
+      - name: Stop Next.js container
+        if: always()
+        run: docker rm -f nextjs-dast || true
+
       - name: Write DAST summary
         if: always()
         run: |
           {
-            echo "## 🕷️ DAST — OWASP ZAP Full Scan"
+            echo "## DAST — OWASP ZAP Full Scan"
             echo ""
             echo "| Field | Value |"
             echo "|-------|-------|"
-            echo "| **Target** | ${{ secrets.PRODUCTION_URL }} |"
+            echo "| **Image** | \`registry.digitalocean.com/${{ env.DOCR_REGISTRY_NAME }}/${{ env.NEXTJS_IMAGE_NAME }}:latest\` |"
+            echo "| **Target** | \`http://localhost:3000\` |"
             echo "| **Scan type** | Full (active + passive) |"
             echo "| **Commit** | \`${{ github.sha }}\` |"
             echo ""
