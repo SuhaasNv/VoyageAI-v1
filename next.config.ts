@@ -16,6 +16,8 @@ const nextConfig: NextConfig = {
         headers: [
           // Prevents other origins from loading this site's resources cross-origin.
           { key: "Cross-Origin-Resource-Policy", value: "same-origin" },
+          // Restricts browser feature access to only what the app needs.
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(self), interest-cohort=()" },
         ],
       },
     ];

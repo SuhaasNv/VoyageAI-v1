@@ -11,9 +11,14 @@
 # 10023  /dashboard 500 in DAST — no DB/auth in CI runner (expected)
 # 10035  HSTS enforced at edge / DO App Platform, not origin
 # 10038  CSP unsafe-inline required by Next.js inline styles (nonce mitigates)
+# 10044  /dashboard 307 is expected — unauthenticated ZAP gets redirected to /login
+# 10047  HTTPS-via-HTTP on Cloudflare cdn-cgi/ paths — not under app control
+# 10054  SameSite cookies flagged on DO App Platform / Cloudflare infrastructure cookies
 # 10055  CSP managed at edge CDN layer
+# 10063  Permissions-Policy added in next.config.ts; cdn-cgi/ paths are Cloudflare infrastructure
 # 10096  Timestamp in /api/health is intentional
 # 10106  DAST target is http://localhost — HTTPS enforced at edge in production
+# 40025  Proxy disclosure on Cloudflare cdn-cgi/ infrastructure paths — not app code
 # 43     Source Code Disclosure false-positive on _next/image proxy 400 responses
 # 90004  CORP header added via next.config.ts headers(); edge may strip it in transit
 # 90022  Framework fingerprinting accepted for staging
@@ -22,9 +27,14 @@
 10023	IGNORE	Dashboard 500 in DAST environment — no database or auth configured in CI runner
 10035	IGNORE	HSTS enforced at edge level
 10038	IGNORE	Next.js requires unsafe-inline; nonce mitigates
+10044	IGNORE	/dashboard 307 redirect is expected — unauthenticated ZAP scanner is redirected to login
+10047	IGNORE	HTTPS content via HTTP on Cloudflare cdn-cgi/ paths — infrastructure not under app control
+10054	IGNORE	SameSite attribute missing on DO App Platform / Cloudflare infrastructure cookies, not application auth cookies
 10055	IGNORE	CSP managed at edge CDN layer
+10063	IGNORE	Permissions-Policy set in next.config.ts for app routes; cdn-cgi/ paths are Cloudflare infrastructure
 10096	IGNORE	Intentional timestamp in /api/health endpoint
 10106	IGNORE	DAST scans over HTTP to localhost — HTTPS enforced at the DO App Platform edge in production
+40025	IGNORE	Proxy disclosure on Cloudflare cdn-cgi/ infrastructure paths — inherent platform behavior
 43	IGNORE	False positive — _next/image proxy returns 400 for external URLs with unusual query params
 90004	IGNORE	Cross-Origin-Resource-Policy set in next.config.ts; may not be visible to ZAP at scan time
 90022	IGNORE	Framework fingerprinting accepted for staging

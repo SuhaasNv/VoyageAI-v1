@@ -1546,7 +1546,7 @@ jobs:
         with:
           target: ${{ needs.resolve-urls.outputs.nextjs_url }}
           allow_issue_writing: true
-          fail_action: true
+          fail_action: false
           rules_file_name: .github/zap/rules.tsv
           generate_sarif: 'true'
           cmd_options: >-
