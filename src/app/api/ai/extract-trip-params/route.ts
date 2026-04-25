@@ -14,7 +14,7 @@ import { checkRateLimit } from "@/security/rateLimiter";
 import { formatErrorResponse } from "@/lib/errors";
 import { getDestinationImage } from "@/lib/services/image.service";
 import { extractTripFromText } from "@/services/ai/create-trip-from-text.service";
-import { CreateTripFromTextInputSchema, type CreateTripFromTextOutput } from "@/lib/ai/schemas";
+import { CreateTripFromTextInputSchema } from "@/lib/ai/schemas";
 import { getTravelPreferenceContext } from "@/memory/contextStore";
 import { formatAIResponse } from "@/lib/ai/explainability";
 import { computeConfidence } from "@/lib/ai/confidence";

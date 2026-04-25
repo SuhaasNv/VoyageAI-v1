@@ -427,6 +427,7 @@ export async function invalidateTravelDNACache(userId: string): Promise<void> {
  *   5–7 days  → "5-7"
  *   8+ days   → "8+"
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function bucketDays(n: number): string {
     if (n <= 2) return "1-2";
     if (n <= 4) return "3-4";

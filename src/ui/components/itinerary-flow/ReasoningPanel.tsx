@@ -137,7 +137,7 @@ const AGENT_STAGES: Exclude<FlowStage, "saved">[] = [
     "planner", "research", "logistics", "budget", "safety",
 ];
 
-export function ReasoningPanel({ state, isLoading, className = "", imageUrl, destination }: ReasoningPanelProps) {
+export function ReasoningPanel({ state, isLoading, className = "", imageUrl }: ReasoningPanelProps) {
     const entries = buildTraceEntries({ ...state, isLoading });
     const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -217,7 +217,6 @@ export function ReasoningPanel({ state, isLoading, className = "", imageUrl, des
                         const stageMeta = state.meta[agentStage];
                         const isRunning = entry.status === "running";
                         const isDone = entry.status === "done";
-                        const isError = entry.status === "error";
 
                         const logLines = isDone && stageMeta?.decisionsLog
                             ? pickLogLines(stageMeta.decisionsLog)

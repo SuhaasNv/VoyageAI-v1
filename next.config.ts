@@ -5,7 +5,8 @@ const nextConfig: NextConfig = {
   // the production Docker image (Dockerfile.app).
   output: "standalone",
   // pdf-parse reads test fixtures at require-time; keep it out of the Next.js bundle.
-  serverExternalPackages: ["pdf-parse", "pdfjs-dist"],
+  // prom-client uses Node.js cluster/perf_hooks/v8 internals that webpack must not bundle.
+  serverExternalPackages: ["pdf-parse", "pdfjs-dist", "prom-client"],
   async redirects() {
     return [
       { source: "/about", destination: "/", permanent: true },

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { Brain, Lightbulb, CalendarDays, Wallet, PlusCircle, Dna } from "lucide-react";
+import { Brain, Lightbulb, PlusCircle, Dna } from "lucide-react";
 import { getCsrfToken, type Trip } from "@/lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────

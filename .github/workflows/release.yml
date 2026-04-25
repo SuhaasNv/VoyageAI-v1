@@ -1263,7 +1263,9 @@ jobs:
       (needs.ai-gate.result == 'success' || needs.ai-gate-skipped.result == 'success') &&
       (needs.infra-apply.result == 'success' || needs.infra-apply.result == 'skipped')
     runs-on: ubuntu-latest
-    environment: production
+    # Use the target environment so staging and production each use their own
+    # DIRECT_URL / DATABASE_URL secrets and approval gates.
+    environment: ${{ github.event.inputs.environment || 'production' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -1278,16 +1280,19 @@ jobs:
       - name: Generate Prisma client
         run: npx prisma generate
         env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
 
       - name: Validate migration state (dry run)
         run: npx prisma migrate status
         env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
 
       - name: Apply pending migrations
         run: npx prisma migrate deploy
         env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
 
       - name: Write migration summary

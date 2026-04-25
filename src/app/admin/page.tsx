@@ -11,9 +11,9 @@ import { whereAiCallFailedSince } from "@/lib/metrics/aiUsageLog";
 import Link from "next/link";
 import {
     Users, Activity, UserPlus, MapPin, Zap, DollarSign,
-    MessageSquare, Layers, Cpu, Clock, AlertTriangle, TrendingUp,
+    MessageSquare, Layers, Cpu, TrendingUp,
 } from "lucide-react";
-import { SkeletonCard, SkeletonRow } from "./_skeleton";
+
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

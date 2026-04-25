@@ -7,7 +7,6 @@ import {
     ChevronDown,
     RotateCcw,
     ArrowUpRight,
-    ArrowDownRight,
     Minus,
     Sparkles,
     CheckCircle2,

@@ -7,11 +7,11 @@ import type { TravelDNA } from "../lib/ai/schemas/index";
 import { prisma } from "@/lib/prisma";
 import { buildTravelDNARules } from "../lib/ai/travelDNARules";
 
-export async function storeTravelDNA(userId: string, preferences: TravelDNA): Promise<void> {
+export async function storeTravelDNA(_userId: string, _preferences: TravelDNA): Promise<void> {
   // Stub: no embeddings yet
 }
 
-export async function getTravelDNA(userId: string): Promise<TravelDNA | null> {
+export async function getTravelDNA(_userId: string): Promise<TravelDNA | null> {
   // Stub
   return null;
 }

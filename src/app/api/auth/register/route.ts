@@ -34,34 +34,34 @@ import { plannerAuthTotal } from "@/lib/monitoring/businessMetrics";
 
 export async function POST(req: NextRequest) {
     return runWithRequestContext(req, async () => {
-        const ip = getClientIp(req);
-        const ua = req.headers.get("user-agent") ?? "unknown";
-
-        // ── Rate limit ─────────────────────────────────────────────────────────────
-        const rl = await rateLimit(`register:ip:${ip}`, AUTH_RATE_LIMIT);
-        if (!rl.allowed) {
-            writeAuditLog({ action: "RATE_LIMITED", ipAddress: ip, userAgent: ua }).catch(err => logError("[register] Delayed audit failed", err));
-            return rateLimitResponse(rl.retryAfterMs);
-        }
-
-        // ── Parse & validate body ─────────────────────────────────────────────────
-        let body: unknown;
         try {
-            body = await req.json();
-        } catch {
-            return errorResponse("BAD_REQUEST", "Request body must be valid JSON", 400);
-        }
+            const ip = getClientIp(req);
+            const ua = req.headers.get("user-agent") ?? "unknown";
 
-        let input;
-        try {
-            input = RegisterSchema.parse(body);
-        } catch (err) {
-            if (err instanceof ZodError) return validationErrorResponse(err);
-            throw err;
-        }
+            // ── Rate limit ─────────────────────────────────────────────────────────────
+            const rl = await rateLimit(`register:ip:${ip}`, AUTH_RATE_LIMIT);
+            if (!rl.allowed) {
+                writeAuditLog({ action: "RATE_LIMITED", ipAddress: ip, userAgent: ua }).catch(err => logError("[register] Delayed audit failed", err));
+                return rateLimitResponse(rl.retryAfterMs);
+            }
 
-        try {
-            // ── Check duplicate email ─────────────────────────────────────────────
+            // ── Parse & validate body ─────────────────────────────────────────────────
+            let body: unknown;
+            try {
+                body = await req.json();
+            } catch {
+                return errorResponse("BAD_REQUEST", "Request body must be valid JSON", 400);
+            }
+
+            let input;
+            try {
+                input = RegisterSchema.parse(body);
+            } catch (err) {
+                if (err instanceof ZodError) return validationErrorResponse(err);
+                throw err;
+            }
+
+            // ── Check duplicate email ─────────────────────────────────────────────────
             const existing = await prisma.user.findUnique({
                 where: { email: input.email },
                 select: { id: true },
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
                 );
             }
 
-            // ── Create user ───────────────────────────────────────────────────────
+            // ── Create user ───────────────────────────────────────────────────────────
             const passwordHash = await hashPassword(input.password);
             const user = await prisma.user.create({
                 data: {
@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
                 },
             });
 
-            // ── Issue tokens ──────────────────────────────────────────────────────
+            // ── Issue tokens ──────────────────────────────────────────────────────────
             const accessToken = signAccessToken({
                 sub: user.id,
                 email: user.email,
@@ -123,7 +123,7 @@ export async function POST(req: NextRequest) {
                 userAgent: ua,
             }).catch(err => logError("[register] Delayed audit failed", err));
 
-            // ── Response ──────────────────────────────────────────────────────────
+            // ── Response ──────────────────────────────────────────────────────────────
             const response = successResponse(
                 {
                     user: {
@@ -157,7 +157,7 @@ export async function POST(req: NextRequest) {
                     409
                 );
             }
-            logError("[register] DB error", err);
+            logError("[register] Unhandled error", err);
             return internalErrorResponse();
         }
     });

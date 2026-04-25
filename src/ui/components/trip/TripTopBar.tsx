@@ -13,7 +13,7 @@ interface TripTopBarProps {
     onShareExport?: () => void;
 }
 
-export function TripTopBar({ trip, onTripUpdate, onShareExport }: TripTopBarProps) {
+export function TripTopBar({ trip, onTripUpdate: _onTripUpdate, onShareExport }: TripTopBarProps) {
     const [menuOpen, setMenuOpen] = useState(false);
     const [deleteOpen, setDeleteOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);

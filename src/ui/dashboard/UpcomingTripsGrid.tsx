@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { MapPin, ChevronRight, MoreVertical, Trash2, Plane, Plus, ImageIcon, ArrowRight, FileUp } from "lucide-react";
+import { MapPin, ChevronRight, MoreVertical, Trash2, Plane, ImageIcon, ArrowRight, FileUp } from "lucide-react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import Image from "next/image";

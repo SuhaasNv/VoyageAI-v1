@@ -331,6 +331,11 @@ jobs:
       - run: npx prisma generate
       - run: npx prisma validate
 
+      - name: Prisma migration status (detect schema drift)
+        run: npx prisma migrate status
+        # Warn on drift without blocking CI — actual deploy is gated in release.yml migrate job.
+        continue-on-error: true
+
       - name: Next.js production build
         run: npm run build
 
@@ -464,7 +469,7 @@ jobs:
           retention-days: 14
 
       - name: Generate SBOM (CycloneDX)
-        run: npx @cyclonedx/cyclonedx-npm --output-format json --output-file sbom.json
+        run: npx @cyclonedx/cyclonedx-npm --ignore-npm-errors --output-format json --output-file sbom.json
 
       - name: Upload SBOM
         uses: actions/upload-artifact@v4

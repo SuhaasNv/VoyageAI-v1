@@ -8,7 +8,7 @@
  * Persists to localStorage so users can resume a planning session.
  */
 
-import { useReducer, useEffect, useCallback, useRef, useState } from "react";
+import { useReducer, useEffect, useCallback, useState, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
 import type {
     FlowStage,
@@ -174,7 +174,7 @@ export interface UseFlowStateReturn {
 }
 
 export function useFlowState(input: FlowInput): UseFlowStateReturn {
-    const sessionId = useRef(uuidv4()).current;
+    const [sessionId] = useState(() => uuidv4());
     const [state, dispatch] = useReducer(reducer, initialState(input, sessionId));
     // useState so that setting a saved session triggers a re-render and the
     // resume banner can appear in the UI.

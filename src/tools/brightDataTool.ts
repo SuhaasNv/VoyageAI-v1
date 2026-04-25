@@ -156,7 +156,7 @@ function refreshBrightDataInBackground(cacheKey: string, query: string, category
             if (result.status === "success") {
                 await setBrightDataCached(cacheKey, result);
             }
-        } catch (_e) {
+        } catch {
             // Silently absorb failures for background re-warm
         }
     })();

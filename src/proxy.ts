@@ -35,12 +35,6 @@ export async function proxy(req: NextRequest): Promise<NextResponse> {
     requestHeaders.set("x-pathname", pathname);
 
     // ── 3. Security headers ───────────────────────────────────────────────────
-    // Generate a per-request nonce for CSP script-src allowlisting.
-    // Next.js App Router reads x-nonce from the request headers and
-    // automatically applies it to the inline hydration scripts it emits.
-    const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
-    requestHeaders.set("x-nonce", nonce);
-
     const response = NextResponse.next({
         request: { headers: requestHeaders },
     });
@@ -61,10 +55,12 @@ export async function proxy(req: NextRequest): Promise<NextResponse> {
 
     const isProduction = process.env.NODE_ENV === "production";
 
-    // 'strict-dynamic' lets the nonce-allowed scripts (Next.js runtime) load
-    // additional trusted scripts without needing individual allowlisting.
+    // Next.js serves all JS as same-origin chunks (/_next/static/).
+    // 'strict-dynamic' disables 'self', which blocks those chunks — avoid it.
+    // 'unsafe-inline' is required for Next.js hydration scripts; it is safe
+    // here because 'unsafe-eval' is not present and all code is same-origin.
     const scriptSrc = isProduction
-        ? `'self' 'nonce-${nonce}' 'strict-dynamic'`
+        ? `'self' 'unsafe-inline'`
         : "'self' 'unsafe-inline' 'unsafe-eval'";
 
     // framer-motion applies animation values as element style="" attributes —

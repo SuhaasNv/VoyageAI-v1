@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, Clock, MapPin, Sparkles, Utensils, History, Map } from "lucide-react";
-import Link from "next/link";
+
 import { use } from "react";
 
 interface DestinationInfo {

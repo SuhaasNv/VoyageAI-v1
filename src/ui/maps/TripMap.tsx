@@ -215,7 +215,9 @@ export function TripMap({ rawItinerary, selectedDay, focusedActivity, eventOrder
     /** Bumps when the Mapbox style finishes loading so redraw can run (was skipped if data arrived first). */
     const [mapStyleReady, setMapStyleReady] = useState(false);
 
-    eventOrderRef.current = eventOrder;
+    useEffect(() => {
+        eventOrderRef.current = eventOrder;
+    }, [eventOrder]);
 
     const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 

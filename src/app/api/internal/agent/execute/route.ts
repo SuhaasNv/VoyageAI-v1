@@ -15,7 +15,6 @@ import { timingSafeEqual } from "crypto";
 import { validateBody } from "@/lib/api/request";
 import { successResponse, errorResponse, forbiddenResponse } from "@/lib/api/response";
 import { logStructured, generateRequestId } from "@/infrastructure/logger";
-import { formatErrorResponse } from "@/lib/errors";
 import { runWithReplayLog } from "@/services/ai/agentReplayLogger";
 
 import { PlannerAgent } from "@/agents/planner/plannerAgent";

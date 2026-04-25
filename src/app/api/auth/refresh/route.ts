@@ -42,6 +42,7 @@ import { runWithRequestContext } from "@/lib/requestContext";
 
 export async function POST(req: NextRequest) {
     return runWithRequestContext(req, async () => {
+        try {
         const ip = getClientIp(req);
         const ua = req.headers.get("user-agent") ?? "unknown";
 
@@ -62,7 +63,7 @@ export async function POST(req: NextRequest) {
         let payload;
         try {
             payload = verifyRefreshToken(rawToken);
-        } catch (err) {
+        } catch {
             // Expired or invalid JWT
             const clearCookie = clearRefreshTokenCookie();
             const response = unauthorizedResponse("Refresh token is invalid or expired");
@@ -220,5 +221,9 @@ export async function POST(req: NextRequest) {
         response.headers.append("Set-Cookie", serializeCsrfCookie(generateCsrfToken()));
 
         return response;
+        } catch (err) {
+            logError("[refresh] Unhandled error", err);
+            return internalErrorResponse();
+        }
     });
 }

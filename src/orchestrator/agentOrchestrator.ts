@@ -120,6 +120,7 @@ function defaultDecideNextAction(
 
 // ─── Validation helpers ───────────────────────────────────────────────────────
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function maxActivitiesInDay(ctx: { days?: Array<{ activities?: unknown[] }> }): number {
     let m = 0;
     for (const d of ctx.days ?? []) {

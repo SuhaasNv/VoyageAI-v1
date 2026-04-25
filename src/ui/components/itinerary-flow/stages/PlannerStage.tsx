@@ -216,7 +216,7 @@ interface PlannerStageProps extends StageProps<TripContext> {
 export function PlannerStage({
     input,
     result,
-    meta,
+    meta: _meta,
     isLoading,
     error,
     onApprove,

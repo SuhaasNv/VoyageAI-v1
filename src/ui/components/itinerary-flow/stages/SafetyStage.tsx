@@ -75,10 +75,10 @@ const WARNING_KEYWORD: Record<SafetyWarning["type"], string> = {
 export function SafetyStage({
     input,
     result,
-    meta,
+    meta: _meta,
     isLoading,
     error,
-    onApprove,
+    onApprove: _onApprove,
     onExplain,
     onRetry,
     onSave,

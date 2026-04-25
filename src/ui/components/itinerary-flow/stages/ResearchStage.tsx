@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { X, Sparkles, Loader2, Star, GripVertical, ArrowLeftRight, LayoutGrid } from "lucide-react";
 import {

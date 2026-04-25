@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Sparkles, Send, Loader2, CheckCircle2, Edit2, Check, X, Calendar, Wallet, Compass } from "lucide-react";
+import { Sparkles, Send, Loader2, CheckCircle2, Edit2, Check, X, Calendar, Wallet } from "lucide-react";
 import { ensureCsrfToken, type Trip } from "@/lib/api";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -75,7 +75,7 @@ export function DashboardAIAssistant({ onTripCreated }: DashboardAIAssistantProp
             } else {
                 throw new Error(data.message);
             }
-        } catch (err) {
+        } catch {
             setErrorMsg("Failed to create trip");
         } finally {
             setIsLoading(false);
