@@ -17,7 +17,7 @@
  *  - /api/admin/auto-heal     — reads status for admin visibility
  */
 
-import { logInfo, logError } from "@/infrastructure/logger";
+import { logInfo } from "@/infrastructure/logger";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

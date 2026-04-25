@@ -21,7 +21,7 @@ interface AIMessage {
 
 function generateInsights(state: FlowState): AIMessage[] {
     const msgs: AIMessage[] = [];
-    const { stage, plannerResult, researchResult, logisticsResult, budgetResult, safetyResult, input } = state;
+    const { plannerResult, researchResult, logisticsResult, budgetResult, safetyResult, input } = state;
 
     // Opening — always present
     msgs.push({

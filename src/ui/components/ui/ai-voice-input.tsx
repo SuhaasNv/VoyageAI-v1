@@ -26,7 +26,13 @@ export function AIVoiceInput({
     const [isClient, setIsClient] = useState(false);
     const [isDemo, setIsDemo] = useState(demoMode);
 
+    const [barHeights, setBarHeights] = useState<number[]>([]);
+
     useEffect(() => { setIsClient(true); }, []);
+
+    useEffect(() => {
+        setBarHeights(Array.from({ length: visualizerBars }, () => 20 + Math.random() * 80));
+    }, [visualizerBars]);
 
     useEffect(() => {
         let intervalId: ReturnType<typeof setInterval>;
@@ -100,7 +106,7 @@ export function AIVoiceInput({
                                 submitted ? "bg-white/50 animate-pulse" : "bg-white/10 h-1",
                             )}
                             style={submitted && isClient
-                                ? { height: `${20 + Math.random() * 80}%`, animationDelay: `${i * 0.05}s` }
+                                ? { height: `${barHeights[i]}%`, animationDelay: `${i * 0.05}s` }
                                 : undefined}
                         />
                     ))}

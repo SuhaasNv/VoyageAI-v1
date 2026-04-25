@@ -349,7 +349,6 @@ function validateAndSanitize(
             const rawActivities = Array.isArray(d.activities) ? (d.activities as unknown[]) : [];
             const styleTokens = style ? style.toLowerCase().split(",").map((s) => s.trim()) : [];
             const isAdventureStyle = styleTokens.includes("adventure");
-            const isRelaxedStyle = styleTokens.includes("relaxed");
 
             const activities: Activity[] = rawActivities
                 .filter((a): a is Record<string, unknown> => typeof a === "object" && a !== null)
@@ -693,6 +692,7 @@ export class ResearchAgent {
                 (cached as { groundingMode?: string }).groundingMode === "unverified"
                     ? "unverified"
                     : "brightdata";
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { groundingMode: _gm, ...cachedResult } =
                 cached as EnrichedTripContext & { groundingMode?: string };
             const cachedGeoWarnings = computeGeoWarnings(cachedResult.days);

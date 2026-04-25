@@ -3,7 +3,7 @@
 import React from "react";
 import {
     ChevronDown, ChevronRight, CheckCircle2, XCircle,
-    Clock, Zap, DollarSign, Bot, RefreshCw, AlertTriangle,
+    Clock, Zap, DollarSign, Bot, AlertTriangle,
     ArrowRight, Code2,
 } from "lucide-react";
 import type { PipelineRun } from "./types";

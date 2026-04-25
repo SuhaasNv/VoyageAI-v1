@@ -63,7 +63,6 @@ export function AgentThinkingCard({
         setLogIndex(0);
          
         setMessageIndex(0);
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setElapsedS(0);
     }, [stage, isError]);
 

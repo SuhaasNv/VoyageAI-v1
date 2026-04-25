@@ -27,7 +27,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
+
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { WifiOff, ArrowLeft } from "lucide-react";
 import confetti from "canvas-confetti";
@@ -122,7 +122,6 @@ function Toast({ message, variant = "success" }: { message: string; variant?: "s
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: ItineraryCreationFlowProps) {
-    const router = useRouter();
     const prefersReduced = useReducedMotion();
     const flowInput: FlowInput = { ...input, tripId };
 
@@ -292,6 +291,7 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
                 ? { ...mergedResult, _feedback: feedback }
                 : mergedResult;
             const data = await callApi<EnrichedTripContext & { _meta: { durationMs: number; confidence: number; dataSources: string[]; decisionsLog: string[] }; _dataSource?: string }>("research", context);
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { _meta, _dataSource: _ds, ...result } = data;
             dispatch({ type: "SET_RESEARCH", result, meta: _meta });
         } catch (err) {
@@ -443,7 +443,7 @@ export function ItineraryCreationFlow({ tripId, input, onComplete, onClose }: It
                     : "Plan applied with some notes",
                 data.warnings.length === 0 ? "success" : "info",
             );
-        } catch (err) {
+        } catch {
             showToast("Failed to apply plan. Check your connection and try again.", "error");
         } finally {
             setIsApplyingPlan(false);

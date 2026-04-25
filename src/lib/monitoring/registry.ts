@@ -16,8 +16,7 @@ import {
 } from "prom-client";
 
 declare global {
-    // eslint-disable-next-line no-var
-    var __promRegistry: Registry | undefined;
+    var __promRegistry: Registry | undefined; // eslint-disable-line no-var
 }
 
 function createRegistry(): Registry {

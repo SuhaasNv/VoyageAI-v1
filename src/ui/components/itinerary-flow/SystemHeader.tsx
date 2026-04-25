@@ -19,9 +19,6 @@ interface SystemHeaderProps {
     children?: React.ReactNode;
 }
 
-const STAGE_ORDER: Exclude<FlowStage, "saved">[] = [
-    "planner", "research", "logistics", "budget", "safety",
-];
 
 function computeProgress(state: FlowState, isLoading: boolean): number {
     if (state.stage === "saved") return 100;

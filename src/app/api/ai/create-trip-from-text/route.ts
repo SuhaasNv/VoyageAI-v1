@@ -8,7 +8,6 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
     successResponse,
-    errorResponse,
     unauthorizedResponse,
 } from "@/lib/api/response";
 import { getAuthContext, validateBody } from "@/lib/api/request";

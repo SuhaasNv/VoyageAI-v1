@@ -41,10 +41,7 @@ import {
     type ProposedAction,
     type GuardDecision,
 } from "./guard";
-import {
-    setHealingOverrides,
-    type HealingAction,
-} from "./healingStore";
+import { setHealingOverrides } from "./healingStore";
 import { executeAdminAction } from "@/services/admin/actionExecutor";
 import { whereAiCallFailedSince } from "@/lib/metrics/aiUsageLog";
 import { logDecision, ASSESSMENT_CONFIDENCE } from "./explanation.service";

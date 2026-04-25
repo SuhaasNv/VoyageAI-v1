@@ -40,7 +40,7 @@ export function OnboardingModal({ isOpen }: OnboardingModalProps) {
     const [travelStyles, setTravelStyles] = useState<string[]>([]);
     const [pacePreference, setPacePreference] = useState<"slow" | "moderate" | "fast">("moderate");
     const [budgetTier, setBudgetTier] = useState<"budget" | "mid-range" | "luxury">("mid-range");
-    const [interests, setInterests] = useState<string[]>([]);
+    const [interests] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [confettiFired, setConfettiFired] = useState(false);
 

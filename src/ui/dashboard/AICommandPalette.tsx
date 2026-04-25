@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Sparkles, Send, Loader2, CheckCircle2, X, Edit2, ArrowRight, MapPin, Calendar, DollarSign, Heart, RefreshCw } from "lucide-react";
+import { Sparkles, Send, Loader2, X, Edit2, ArrowRight, MapPin, Calendar, DollarSign, Heart, RefreshCw } from "lucide-react";
 import { ensureCsrfToken, type Trip } from "@/lib/api";
 
 interface ExtractedTripParams {
@@ -43,7 +43,6 @@ export function AICommandPalette({ onTripCreated, onFlowStart }: AICommandPalett
     const [isLoading, setIsLoading] = useState(false);
     const [extractedParams, setExtractedParams] = useState<ExtractedTripParams | null>(null);
 
-    const [successMsg, setSuccessMsg] = useState<string | null>(null);
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const successTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -57,7 +56,6 @@ export function AICommandPalette({ onTripCreated, onFlowStart }: AICommandPalett
             if (focusTimer.current) clearTimeout(focusTimer.current);
             setPrompt("");
             setExtractedParams(null);
-            setSuccessMsg(null);
             setErrorMsg(null);
         }
     }, [isOpen]);

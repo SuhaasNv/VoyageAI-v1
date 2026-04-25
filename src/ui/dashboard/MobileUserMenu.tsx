@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { Settings, LogOut, User } from "lucide-react";
+import { Settings } from "lucide-react";
 import { DashboardSidebarFooter } from "./DashboardSidebarFooter";
 
 interface MobileUserMenuProps {

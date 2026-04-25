@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
         let payload;
         try {
             payload = verifyRefreshToken(rawToken);
-        } catch (err) {
+        } catch {
             // Expired or invalid JWT
             const clearCookie = clearRefreshTokenCookie();
             const response = unauthorizedResponse("Refresh token is invalid or expired");

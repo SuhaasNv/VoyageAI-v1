@@ -10,7 +10,6 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import {
     successResponse,
-    errorResponse,
     unauthorizedResponse,
     internalErrorResponse,
 } from "@/lib/api/response";

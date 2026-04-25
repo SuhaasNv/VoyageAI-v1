@@ -164,6 +164,9 @@ function AILandingPrompt() {
     const rafRef = useRef<number | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const pendingActionRef = useRef<string | null>(null);
+    // Stable ref so effects declared before executeSubmit can call it without
+    // violating the hooks-immutability rule (accessing a const before declaration).
+    const executeSubmitRef = useRef<((prompt: string) => void) | null>(null);
 
     // ── Hydration guard + mic support detection ────────────────────────────
     useEffect(() => {
@@ -249,7 +252,7 @@ function AILandingPrompt() {
                 const pending = sessionStorage.getItem(PENDING_PROMPT_KEY);
                 if (pending === decoded) {
                     sessionStorage.removeItem(PENDING_PROMPT_KEY);
-                    setTimeout(() => executeSubmit(decoded), 0);
+                    setTimeout(() => executeSubmitRef.current?.(decoded), 0);
                 }
             } catch { /* sessionStorage may be unavailable */ }
         }
@@ -445,6 +448,11 @@ function AILandingPrompt() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
         [isClient, user, accessToken, router, startTypewriter, stopTypewriter]
     );
+
+    // Keep the ref in sync so effects declared before executeSubmit can call it.
+    useEffect(() => {
+        executeSubmitRef.current = executeSubmit;
+    }, [executeSubmit]);
 
     // ── Custom event handler for triggering submit from sibling components ──
     useEffect(() => {

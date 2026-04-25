@@ -492,7 +492,7 @@ export interface BudgetStageProps extends StageProps<BudgetedTripContext> {
 export function BudgetStage({
     input,
     result,
-    meta,
+    meta: _meta,
     isLoading,
     error,
     onApprove,

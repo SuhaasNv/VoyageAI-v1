@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { generateCsrfToken } from "@/services/auth/csrf";
 import { serializeCsrfCookie } from "@/services/auth/cookies";
 import { successResponse } from "@/lib/api/response";

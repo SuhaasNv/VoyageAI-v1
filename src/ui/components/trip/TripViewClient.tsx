@@ -58,9 +58,8 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
     // in the URL client-side (no Suspense needed — dynamic route, runs post-mount).
     const [showFlow, setShowFlow] = useState(false);
     const hasLaunchedFlowRef = useRef(false);
-    // Style preference forwarded from the landing extraction — stored in a ref so
-    // it's available synchronously when the overlay first renders.
-    const flowStyleRef = useRef<string | undefined>(undefined);
+    // Style preference forwarded from the landing extraction.
+    const [flowStyle, setFlowStyle] = useState<string | undefined>(undefined);
 
     useEffect(() => {
          
@@ -73,7 +72,7 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
         if (initialRaw || hasLaunchedFlowRef.current) return;
         const params = new URLSearchParams(window.location.search);
         if (params.get("fromLanding") !== "1") return;
-        flowStyleRef.current = params.get("style") ?? undefined;
+        setFlowStyle(params.get("style") ?? undefined);
         hasLaunchedFlowRef.current = true;
          
         setShowFlow(true);
@@ -382,13 +381,13 @@ export function TripViewClient({ trip: initialTrip, rawItinerary: initialRaw, in
                     startDate: initialTrip.startDate,
                     imageUrl: initialTrip.imageUrl,
                     endDate: initialTrip.endDate,
-                    style: flowStyleRef.current ?? trip.style,
+                    style: flowStyle ?? trip.style,
                 };
                 return (
                     <ItineraryCreationFlow
                         tripId={initialTrip.id}
                         input={flowInput}
-                        onComplete={(_tripId: string) => {
+                        onComplete={(_: string) => {
                             setShowFlow(false);
                             window.history.replaceState({}, "", `/dashboard/trip/${initialTrip.id}`);
                             void handleItineraryRefresh();
