@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
                 body.data.safetyResult as unknown as SafeTripContext,
             );
 
-            const itinerary = await prisma.$transaction(async (tx: any) => {
+            const itinerary = await prisma.$transaction(async (tx) => {
                 await tx.itinerary.deleteMany({ where: { tripId: body.data.tripId } });
                 return tx.itinerary.create({
                     data: {

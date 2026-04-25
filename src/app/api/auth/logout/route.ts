@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
             const tokenHash = hashToken(rawToken);
             prisma.refreshToken
                 .updateMany({ where: { tokenHash, isRevoked: false }, data: { isRevoked: true } })
-                .catch((err: any) => logError("[logout] Failed to revoke token", err));
+                .catch((err: unknown) => logError("[logout] Failed to revoke token", err));
         }
         writeAuditLog({
             action: "LOGOUT",
