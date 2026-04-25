@@ -102,7 +102,7 @@ on:
       environment:
         description: "Target environment to deploy to"
         required: false
-        default: "production"
+        default: "staging"
         type: choice
         options: [staging, production]
       skip_dast:
@@ -199,7 +199,6 @@ defaults:
 
 # ─────────────────────────────────────────────────────────────────────────────
 jobs:
-
   # ════════════════════════════════════════════════════════════════════════════
   #  STAGE 1 — AI SECURITY GATE
   #
@@ -324,10 +323,10 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     outputs:
-      app_id:      ${{ steps.tf-out.outputs.app_id }}
-      app_url:     ${{ steps.tf-out.outputs.app_url }}
-      registry:    ${{ steps.tf-out.outputs.registry }}
-      nextjs_app_id:  ${{ steps.tf-out.outputs.nextjs_app_id }}
+      app_id: ${{ steps.tf-out.outputs.app_id }}
+      app_url: ${{ steps.tf-out.outputs.app_url }}
+      registry: ${{ steps.tf-out.outputs.registry }}
+      nextjs_app_id: ${{ steps.tf-out.outputs.nextjs_app_id }}
       nextjs_app_url: ${{ steps.tf-out.outputs.nextjs_app_url }}
     defaults:
       run:
@@ -336,7 +335,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2  # Need parent commit to detect changed files
+          fetch-depth: 2 # Need parent commit to detect changed files
 
       - name: Detect infra file changes
         id: infra-changed
@@ -514,9 +513,9 @@ jobs:
       (needs.ai-gate.result == 'success' || needs.ai-gate-skipped.result == 'success')
     runs-on: ubuntu-latest
     outputs:
-      nextjs_url:       ${{ steps.fetch.outputs.nextjs_url }}
-      langgraph_url:    ${{ steps.fetch.outputs.langgraph_url }}
-      nextjs_app_id:    ${{ steps.fetch.outputs.nextjs_app_id }}
+      nextjs_url: ${{ steps.fetch.outputs.nextjs_url }}
+      langgraph_url: ${{ steps.fetch.outputs.langgraph_url }}
+      nextjs_app_id: ${{ steps.fetch.outputs.nextjs_app_id }}
       langgraph_app_id: ${{ steps.fetch.outputs.langgraph_app_id }}
 
     steps:
@@ -1118,7 +1117,6 @@ jobs:
       (needs.docker-push-nextjs.result == 'success' || needs.docker-push-nextjs.result == 'skipped') &&
       needs.resolve-urls.result == 'success'
     runs-on: ubuntu-latest
-
     steps:
       - name: Install doctl
         uses: digitalocean/action-doctl@v2
@@ -1387,7 +1385,7 @@ jobs:
       needs.deploy-nextjs-do.result == 'success'
     runs-on: ubuntu-latest
     outputs:
-      app_url:      ${{ needs.deploy-nextjs-do.outputs.app_url }}
+      app_url: ${{ needs.deploy-nextjs-do.outputs.app_url }}
 
     steps:
       - name: Wait for App Platform deploy propagation
@@ -1581,11 +1579,24 @@ jobs:
   # ════════════════════════════════════════════════════════════════════════════
   release-summary:
     name: "6 · Release Summary"
-    needs: [ai-gate, ai-gate-skipped, infra-apply, docker-push, docker-push-nextjs, wire-services, migrate, deploy-nextjs-do, health-check, dast, dast-skipped]
+    needs:
+      [
+        ai-gate,
+        ai-gate-skipped,
+        infra-apply,
+        docker-push,
+        docker-push-nextjs,
+        wire-services,
+        migrate,
+        deploy-nextjs-do,
+        health-check,
+        dast,
+        dast-skipped,
+      ]
     runs-on: ubuntu-latest
     if: always()
     permissions:
-      contents: write    # Required to create a GitHub Release
+      contents: write # Required to create a GitHub Release
 
     steps:
       - uses: actions/checkout@v4
@@ -1595,7 +1606,7 @@ jobs:
         with:
           name: ai-gate-reports-${{ github.sha }}
           path: reports/ai-gate/
-        continue-on-error: true   # May not exist if ai-gate was skipped
+        continue-on-error: true # May not exist if ai-gate was skipped
 
       - name: Write comprehensive release summary
         run: |
