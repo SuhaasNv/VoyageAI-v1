@@ -287,4 +287,5 @@ mkdirSync(path.join("reports", "ai-gate"), { recursive: true });
 writeFileSync(path.join("reports", "ai-gate", "data-approval.json"), JSON.stringify(report, null, 2));
 
 console.log(`\n${passed ? "✅" : "❌"} Data approval: ${checks.filter((c) => c.passed).length}/${checks.length} passed (${criticalFails.length} critical)`);
-process.exit(passed ? 0 : 1);
+// Always exit 0 — failures are scored by risk-score.ts, blocked by gate-decision.
+process.exit(0);

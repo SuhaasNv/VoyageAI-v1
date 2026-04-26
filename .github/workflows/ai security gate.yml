@@ -68,13 +68,17 @@ defaults:
     shell: bash
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  Gate order (sequential — each step must pass before the next runs):
+#  Gate order (sequential collection, single gate decision at the end):
 #
 #   1  model-approval   ← verify model registry, config contracts, provider safety
 #   2  data-approval    ← verify data contracts, schema integrity, PII controls
 #   3  bias-check       ← demographic & geographic coverage, preference neutrality
 #   4  risk-score       ← aggregate all gate results → composite risk score
-#   5  gate-decision    ← needs: risk-score → block or approve the PR/merge
+#   5  gate-decision    ← reads risk-score report → BLOCKS or APPROVES the PR/merge
+#
+#  Stages 1–3 always exit 0 (they are data collectors).
+#  Failures are recorded in their JSON reports and scored by stage 4.
+#  Only gate-decision (stage 5) actually blocks the pipeline.
 # ─────────────────────────────────────────────────────────────────────────────
 
 jobs:

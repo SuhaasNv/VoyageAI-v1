@@ -352,4 +352,6 @@ mkdirSync(path.join("reports", "ai-gate"), { recursive: true });
 writeFileSync(path.join("reports", "ai-gate", "bias-check.json"), JSON.stringify(report, null, 2));
 
 console.log(`\n${passed ? "✅" : "❌"} Bias check: ${checks.filter((c) => c.passed).length}/${checks.length} passed (${criticalFails.length} critical)`);
-process.exit(passed ? 0 : 1);
+// Always exit 0 — failures are scored by risk-score.ts, blocked by gate-decision.
+// Exiting 1 here would prevent risk-score from running and skip the gate decision.
+process.exit(0);
