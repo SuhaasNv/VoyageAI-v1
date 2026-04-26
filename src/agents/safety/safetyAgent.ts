@@ -27,6 +27,9 @@ export type SafeTripContext = BudgetedTripContext & {
 export const FATIGUE_HIGH_THRESHOLD   = 5;
 export const FATIGUE_MEDIUM_THRESHOLD = 4;
 
+/** All valid risk level values — derived from SafetyResult["riskLevel"]. */
+export const SAFETY_RISK_LEVEL_VALUES = ["low", "medium", "high"] as const satisfies ReadonlyArray<SafetyResult["riskLevel"]>;
+
 /** Travel time thresholds in milliseconds. */
 const TRAVEL_HIGH_MS   = 2 * 60 * 60 * 1000; // 2 hours
 const TRAVEL_MEDIUM_MS = 90 * 60 * 1000;      // 90 minutes

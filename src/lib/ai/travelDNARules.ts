@@ -21,7 +21,7 @@ const STYLE_KEYWORDS: Record<string, string[]> = {
     "nightlife": ["nightlife", "evening", "entertainment", "show", "club"],
 };
 
-const INTEREST_KEYWORDS: Record<string, string[]> = {
+export const INTEREST_KEYWORDS: Record<string, string[]> = {
     beaches:      ["beach", "coast", "ocean", "sea", "swim", "snorkel"],
     mountains:    ["mountain", "hiking", "trek", "altitude", "summit", "ski"],
     cities:       ["city", "urban", "downtown", "metro", "street"],
@@ -32,7 +32,7 @@ const INTEREST_KEYWORDS: Record<string, string[]> = {
     architecture: ["architecture", "building", "monument", "historic", "cathedral"],
 };
 
-const LUXURY_TERMS   = ["luxury", "premium", "5-star", "fine dining", "vip", "exclusive", "private tour"];
+export const LUXURY_TERMS   = ["luxury", "premium", "5-star", "fine dining", "vip", "exclusive", "private tour"];
 const ADRENALINE_TAGS = ["adventure", "outdoor", "sport", "adrenaline", "extreme", "high-energy"];
 
 function haystack(s: DashboardSuggestion): string {
