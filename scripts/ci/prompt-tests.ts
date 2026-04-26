@@ -6,11 +6,12 @@
  * Verifies that:
  *   1. All agent prompts are present and non-empty.
  *   2. Required interpolation tokens exist in each prompt.
- *   3. Mock LLM returns parseable JSON for every agent's prompt structure.
- *   4. parseJSONResponse handles all three extraction strategies correctly.
- *   5. Repair prompt path is tested end-to-end with the mock client.
+ *   3. parseJSONResponse handles all three extraction strategies correctly.
+ *   4. Planner LLM output shape satisfies the real TripContext interface.
+ *   5. Research LLM output shape satisfies real EnrichedDay / HotelOption types.
  *
- * LLM_PROVIDER=mock — no real API calls.
+ * All fixtures are statically typed against the production source interfaces —
+ * TypeScript enforces their shape at compile time. No mock provider, no fake types.
  */
 
 import { writeFileSync, mkdirSync } from "fs";
@@ -19,6 +20,8 @@ import path from "path";
 import { PLANNER_SYSTEM_PROMPT, buildPlannerUserPrompt, PLANNER_REPAIR_USER_PROMPT } from "../../src/agents/planner/plannerPrompts.js";
 import { RESEARCH_SYSTEM_PROMPT, RESEARCH_SCHEMA_INSTRUCTION } from "../../src/agents/research/researchPrompts.js";
 import { parseJSONResponse } from "../../src/lib/ai/llm.js";
+import type { TripContext } from "../../src/agents/planner/plannerAgent.js";
+import type { EnrichedDay, HotelOption, PriceRange } from "../../src/agents/shared/tripPipelineTypes.js";
 
 type CheckResult = { name: string; passed: boolean; error?: string };
 const results: CheckResult[] = [];
@@ -35,12 +38,6 @@ function check(name: string, fn: () => void | Promise<void>): Promise<void> {
             console.error(`  ❌ ${name}: ${err.message}`);
         });
 }
-
-// ─── Main ─────────────────────────────────────────────────────────────────────
-//
-// Wrapped in an async IIFE because tsx transpiles this file as CJS (no
-// "type": "module" in package.json), and top-level await is not supported
-// under the CJS output format.
 
 void (async () => {
 
@@ -134,12 +131,11 @@ await check("parseJSONResponse: throws on non-JSON content", () => {
         throw new Error("Should have thrown");
     } catch (err) {
         if ((err as Error).message === "Should have thrown") throw err;
-        // Expected — any AIServiceError is fine
+        // Expected — any AIServiceError is acceptable
     }
 });
 
 await check("parseJSONResponse: handles array response", () => {
-    // Wrapped in an object to satisfy the outermost {} extraction strategy
     const raw = '{"items":[1,2,3]}';
     const r = parseJSONResponse<{ items: number[] }>(raw);
     if (!Array.isArray(r.items) || r.items.length !== 3) throw new Error("Array not parsed");
@@ -151,14 +147,15 @@ await check("parseJSONResponse: handles nested objects", () => {
     if (r.preferences.budget !== 500) throw new Error("Nested value mismatch");
 });
 
-// ─── 4. Mock LLM planner output shape ────────────────────────────────────────
+// ─── 4. Planner LLM output shape ─────────────────────────────────────────────
+//
+// A representative planner response typed against the real TripContext interface.
+// TypeScript enforces every field at compile time — if the interface changes,
+// this fixture fails to compile before any check runs.
 
-console.log("\n🤖 Mock LLM output shape checks");
+console.log("\n🗺️  Planner output shape checks");
 
-// These are the shapes the mock LLM returns — verify the output can be parsed
-// by the planner's validateAndNormalize logic.
-
-const MOCK_PLANNER_OUTPUT = {
+const PLANNER_OUTPUT_FIXTURE: TripContext = {
     destination: "Tokyo",
     startDate: "2026-05-01",
     endDate: "2026-05-05",
@@ -173,38 +170,44 @@ const MOCK_PLANNER_OUTPUT = {
     ],
 };
 
-await check("Mock planner output: destination present and non-empty", () => {
-    if (!MOCK_PLANNER_OUTPUT.destination) throw new Error("destination missing");
+await check("Planner fixture: destination is non-empty", () => {
+    if (!PLANNER_OUTPUT_FIXTURE.destination) throw new Error("destination missing");
 });
 
-await check("Mock planner output: days array length matches durationDays", () => {
-    if (MOCK_PLANNER_OUTPUT.days.length !== MOCK_PLANNER_OUTPUT.durationDays) {
-        throw new Error(`Days: ${MOCK_PLANNER_OUTPUT.days.length} != ${MOCK_PLANNER_OUTPUT.durationDays}`);
+await check("Planner fixture: days array length matches durationDays", () => {
+    if (PLANNER_OUTPUT_FIXTURE.days.length !== PLANNER_OUTPUT_FIXTURE.durationDays) {
+        throw new Error(`Days: ${PLANNER_OUTPUT_FIXTURE.days.length} != ${PLANNER_OUTPUT_FIXTURE.durationDays}`);
     }
 });
 
-await check("Mock planner output: all days have theme", () => {
-    for (const d of MOCK_PLANNER_OUTPUT.days) {
+await check("Planner fixture: all days have theme", () => {
+    for (const d of PLANNER_OUTPUT_FIXTURE.days) {
         if (!d.theme || d.theme.trim() === "") throw new Error(`Day ${d.day} missing theme`);
     }
 });
 
-await check("Mock planner output: startDate parses as valid ISO date", () => {
-    const date = new Date(MOCK_PLANNER_OUTPUT.startDate);
+await check("Planner fixture: startDate is a valid ISO date", () => {
+    const date = new Date(PLANNER_OUTPUT_FIXTURE.startDate);
     if (isNaN(date.getTime())) throw new Error("startDate is invalid");
 });
 
-await check("Mock planner output: serializes to JSON and back", () => {
-    const json = JSON.stringify(MOCK_PLANNER_OUTPUT);
-    const parsed = parseJSONResponse<typeof MOCK_PLANNER_OUTPUT>(json);
-    if (parsed.destination !== MOCK_PLANNER_OUTPUT.destination) throw new Error("Destination lost in serialization");
+await check("Planner fixture: round-trips through parseJSONResponse", () => {
+    const json = JSON.stringify(PLANNER_OUTPUT_FIXTURE);
+    const parsed = parseJSONResponse<TripContext>(json);
+    if (parsed.destination !== PLANNER_OUTPUT_FIXTURE.destination)
+        throw new Error("Destination lost in serialization");
+    if (parsed.durationDays !== PLANNER_OUTPUT_FIXTURE.durationDays)
+        throw new Error("durationDays lost in serialization");
 });
 
-// ─── 5. Research agent JSON output shape ─────────────────────────────────────
+// ─── 5. Research LLM output shape ────────────────────────────────────────────
+//
+// A representative research response typed against real EnrichedDay / HotelOption.
+// PriceRange is the production union type, not a hand-rolled Set<string>.
 
 console.log("\n🔬 Research output shape checks");
 
-const MOCK_RESEARCH_OUTPUT = {
+const RESEARCH_OUTPUT_FIXTURE: { days: EnrichedDay[]; hotels: HotelOption[] } = {
     days: [
         {
             day: 1,
@@ -216,31 +219,42 @@ const MOCK_RESEARCH_OUTPUT = {
         },
     ],
     hotels: [
-        { name: "Shinjuku Granbell", priceRange: "$$", area: "Shinjuku", tags: ["central"], rating: 4.2 },
-        { name: "Park Hyatt Tokyo", priceRange: "$$$$", area: "West Shinjuku", tags: ["luxury"], rating: 4.9 },
-        { name: "Khaosan Tokyo", priceRange: "$", area: "Asakusa", tags: ["budget"], rating: 3.8 },
+        { name: "Shinjuku Granbell", priceRange: "$$",   area: "Shinjuku",      tags: ["central"], rating: 4.2 },
+        { name: "Park Hyatt Tokyo",  priceRange: "$$$$", area: "West Shinjuku", tags: ["luxury"],  rating: 4.9 },
+        { name: "Khaosan Tokyo",     priceRange: "$",    area: "Asakusa",       tags: ["budget"],  rating: 3.8 },
     ],
 };
 
-await check("Mock research output: has at least 3 hotels", () => {
-    if (MOCK_RESEARCH_OUTPUT.hotels.length < 3) throw new Error("Fewer than 3 hotels");
+// Build the set of valid values from the actual PriceRange union type.
+const VALID_PRICE_RANGES = new Set<PriceRange>(["$", "$$", "$$$", "$$$$"]);
+
+await check("Research fixture: has at least 3 hotels", () => {
+    if (RESEARCH_OUTPUT_FIXTURE.hotels.length < 3) throw new Error("Fewer than 3 hotels");
 });
 
-await check("Mock research output: all hotels have valid priceRange", () => {
-    const valid = new Set(["$", "$$", "$$$", "$$$$"]);
-    for (const h of MOCK_RESEARCH_OUTPUT.hotels) {
-        if (!valid.has(h.priceRange)) throw new Error(`Invalid priceRange: ${h.priceRange}`);
+await check("Research fixture: all hotels have a valid PriceRange", () => {
+    for (const h of RESEARCH_OUTPUT_FIXTURE.hotels) {
+        if (!VALID_PRICE_RANGES.has(h.priceRange)) throw new Error(`Invalid priceRange: ${h.priceRange}`);
     }
 });
 
-await check("Mock research output: activities have required fields", () => {
-    for (const day of MOCK_RESEARCH_OUTPUT.days) {
+await check("Research fixture: activities satisfy Activity interface (name, type, description)", () => {
+    for (const day of RESEARCH_OUTPUT_FIXTURE.days) {
         for (const act of day.activities) {
-            if (!act.name || !act.type || act.description === undefined) {
-                throw new Error(`Activity missing required fields: ${JSON.stringify(act)}`);
-            }
+            if (!act.name)        throw new Error(`Activity missing 'name' in day ${day.day}`);
+            if (!act.type)        throw new Error(`Activity missing 'type' in day ${day.day}`);
+            if (act.description === undefined) throw new Error(`Activity missing 'description' in day ${day.day}`);
         }
     }
+});
+
+await check("Research fixture: round-trips through parseJSONResponse", () => {
+    const json = JSON.stringify(RESEARCH_OUTPUT_FIXTURE);
+    const parsed = parseJSONResponse<typeof RESEARCH_OUTPUT_FIXTURE>(json);
+    if (parsed.hotels.length !== RESEARCH_OUTPUT_FIXTURE.hotels.length)
+        throw new Error("Hotel array length changed in serialization");
+    if (parsed.days[0]!.activities.length !== RESEARCH_OUTPUT_FIXTURE.days[0]!.activities.length)
+        throw new Error("Activities array length changed in serialization");
 });
 
 // ─── Report ───────────────────────────────────────────────────────────────────
