@@ -7,14 +7,18 @@
  * Runs against the source files directly — no LLM calls.
  *
  * Checks:
- *   1. Presence   — every agent has a system prompt and it is non-empty
+ *   1. Presence   — every agent with an LLM call has a system prompt and it is non-empty
  *   2. Length     — prompts are within token-safe limits (< 3000 chars each)
  *   3. Format     — JSON output directive present in every agent's system prompt
  *   4. No secrets — prompts must not embed API keys or credentials
  *   5. No injection vectors — template strings free of unsanitised injection points
  *   6. Required tokens — user prompts include expected interpolation slots
- *   7. Orchestrator prompt — action set is complete and consistent with codebase
+ *   7. Orchestrator action set — valid actions exported from orchestrator are complete
  *   8. Schema instruction — research prompt schema matches known output fields
+ *
+ * Note: LogisticsAgent is entirely deterministic (no LLM calls), so there is
+ * no logistics system prompt to validate. AgentOrchestrator uses rule-based
+ * decision logic (no LLM prompt) — its contract is validated via exported types.
  */
 
 import { writeFileSync, mkdirSync } from "fs";
@@ -30,6 +34,13 @@ import {
     RESEARCH_SYSTEM_PROMPT,
     RESEARCH_SCHEMA_INSTRUCTION,
 } from "../../src/agents/research/researchPrompts.js";
+
+import { SAFETY_TIPS_SYSTEM_PROMPT } from "../../src/agents/safety/safetyAgent.js";
+import { BUDGET_SUGGESTIONS_SYSTEM_PROMPT } from "../../src/agents/budget/budgetAgent.js";
+import {
+    ORCHESTRATOR_VALID_ACTIONS,
+    type OrchestratorAction,
+} from "../../src/orchestrator/agentOrchestrator.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -49,55 +60,18 @@ function check(name: string, severity: Severity, fn: () => void): void {
     }
 }
 
-// ─── Inline orchestrator prompt (extracted for validation) ───────────────────
-
-const ORCHESTRATOR_DECISION_PROMPT = `You are an orchestrator.
-Given the issue and context, choose ONE action:
-- reoptimize_budget
-- rerun_logistics
-- ask_user
-- proceed
-
-Return JSON only:
-{ "action": "..." }`;
-
-// Logistics system prompt (inline — matches logisticsAgent.ts)
-const LOGISTICS_SYSTEM_PROMPT = `You are a travel logistics optimizer.
-
-Your only responsibilities:
-1. Reorder activities within each day and assign a timeSlot (morning / afternoon / evening).
-2. Select ONE hotel from the hotels array in the input.
-
-Return ONLY valid JSON — no markdown, no explanation, no extra keys:
-{
-  "days": [...],
-  "selectedHotel": { "name": "...", "priceRange": "..." }
-}`;
-
-// Safety system prompt (inline — matches safetyAgent.ts)
-const SAFETY_SYSTEM_PROMPT = `You are a travel safety analyst.
-Your task is to assess a finalized travel itinerary for risks and return a structured safety evaluation.
-Return ONLY valid JSON in this exact shape, no markdown, no explanation:
-{"riskLevel":"low|medium|high","warnings":["..."],"tips":["..."]}`;
-
-// Budget system prompt (inline — matches budgetAgent.ts)
-const BUDGET_SYSTEM_PROMPT = `You are a travel budget advisor. ` +
-    `Return ONLY valid JSON in this exact shape: { "suggestions": string[] }. ` +
-    `Each suggestion is one short sentence (max 10 words). ` +
-    `Maximum 3 suggestions.`;
-
 // ─── All prompts under test ───────────────────────────────────────────────────
+// Only agents that actually make LLM calls are listed.
+// LogisticsAgent = deterministic (no LLM); AgentOrchestrator = rule-based decisions.
 
 const ALL_SYSTEM_PROMPTS: Record<string, string> = {
-    planner:      PLANNER_SYSTEM_PROMPT,
-    research:     RESEARCH_SYSTEM_PROMPT,
-    logistics:    LOGISTICS_SYSTEM_PROMPT,
-    budget:       BUDGET_SYSTEM_PROMPT,
-    safety:       SAFETY_SYSTEM_PROMPT,
-    orchestrator: ORCHESTRATOR_DECISION_PROMPT,
+    planner:  PLANNER_SYSTEM_PROMPT,
+    research: RESEARCH_SYSTEM_PROMPT,
+    budget:   BUDGET_SUGGESTIONS_SYSTEM_PROMPT,
+    safety:   SAFETY_TIPS_SYSTEM_PROMPT,
 };
 
-// ─── 1. Presence — every agent has a non-empty system prompt ─────────────────
+// ─── 1. Presence — every agent with a prompt has a non-empty system prompt ────
 
 console.log("\n📋 Prompt presence checks");
 
@@ -145,13 +119,11 @@ check("planner: user prompt does not exceed 8000 chars for typical input", "medi
     if (p.length > 8000) throw new Error(`Prompt too long: ${p.length} chars`);
 });
 
-// ─── 3. JSON output directive — every agent must instruct JSON output ─────────
+// ─── 3. JSON output directive — every LLM agent must instruct JSON output ─────
 
 console.log("\n🔑 JSON output directive checks");
 
-const JSON_PROMPTS = ["planner", "research", "logistics", "budget", "safety", "orchestrator"];
-
-for (const agent of JSON_PROMPTS) {
+for (const agent of Object.keys(ALL_SYSTEM_PROMPTS)) {
     check(`${agent}: system prompt instructs JSON output`, "critical", () => {
         const p = ALL_SYSTEM_PROMPTS[agent]!;
         if (!/json/i.test(p)) throw new Error("No JSON instruction found in system prompt");
@@ -178,7 +150,6 @@ for (const [agent, prompt] of Object.entries(ALL_SYSTEM_PROMPTS)) {
     }
 }
 
-// Check user prompt builder output too
 for (const { name, re } of SECRET_PATTERNS) {
     check(`planner user prompt: no ${name}`, "critical", () => {
         const p = buildPlannerUserPrompt("Trip to Paris");
@@ -190,11 +161,10 @@ for (const { name, re } of SECRET_PATTERNS) {
 
 console.log("\n🛡️  Injection vector checks");
 
-// These patterns are dangerous in prompt templates (not user input — user input is expected data)
 const INJECTION_PATTERNS = [
     { name: "eval() call", re: /\beval\s*\(/ },
     { name: "exec() call", re: /\bexec\s*\(/ },
-    { name: "Dynamic template execution", re: /\$\{.*?\}/ },   // ${...} in the hardcoded template string
+    { name: "Dynamic template execution", re: /\$\{.*?\}/ },
     { name: "SQL injection vector", re: /'\s*(OR|AND)\s+'?1'?\s*=\s*'?1/i },
 ];
 
@@ -240,53 +210,51 @@ check("research: schema instruction references 'days'", "high", () => {
     }
 });
 
-check("logistics: system prompt references 'timeSlot'", "critical", () => {
-    if (!/timeSlot/i.test(LOGISTICS_SYSTEM_PROMPT)) {
-        throw new Error("Logistics prompt must reference timeSlot output field");
+check("safety: tips prompt references 'tips' output field", "critical", () => {
+    if (!/tips/i.test(SAFETY_TIPS_SYSTEM_PROMPT)) {
+        throw new Error("Safety tips prompt must reference 'tips' output field");
     }
 });
 
-check("logistics: system prompt references 'selectedHotel'", "critical", () => {
-    if (!/selectedHotel/i.test(LOGISTICS_SYSTEM_PROMPT)) {
-        throw new Error("Logistics prompt must reference selectedHotel output field");
+check("safety: tips prompt references 'warnings' input context", "high", () => {
+    if (!/warning/i.test(SAFETY_TIPS_SYSTEM_PROMPT)) {
+        throw new Error("Safety tips prompt must reference 'warnings' context");
     }
 });
 
-check("safety: system prompt references 'riskLevel'", "critical", () => {
-    if (!/riskLevel/i.test(SAFETY_SYSTEM_PROMPT)) {
-        throw new Error("Safety prompt must reference riskLevel output field");
+check("budget: suggestions prompt references 'suggestions' output field", "high", () => {
+    if (!/suggestions/i.test(BUDGET_SUGGESTIONS_SYSTEM_PROMPT)) {
+        throw new Error("Budget prompt must reference 'suggestions' output field");
     }
 });
 
-check("safety: system prompt references 'warnings'", "high", () => {
-    if (!/warnings/i.test(SAFETY_SYSTEM_PROMPT)) {
-        throw new Error("Safety prompt must reference warnings output field");
-    }
-});
+// ─── 7. Orchestrator action set — validated via exported runtime array ─────────
+//
+// AgentOrchestrator no longer uses an LLM for decisions (rule-based).
+// We validate the exported ORCHESTRATOR_VALID_ACTIONS array is complete.
 
-check("budget: system prompt references 'suggestions'", "high", () => {
-    if (!/suggestions/i.test(BUDGET_SYSTEM_PROMPT)) {
-        throw new Error("Budget prompt must reference suggestions output field");
-    }
-});
+console.log("\n🎛️  Orchestrator action set completeness");
 
-// ─── 7. Orchestrator action set complete ─────────────────────────────────────
-
-console.log("\n🎛️  Orchestrator action completeness");
-
-const EXPECTED_ACTIONS = ["reoptimize_budget", "rerun_logistics", "ask_user", "proceed"];
+const EXPECTED_ACTIONS: OrchestratorAction[] = [
+    "reoptimize_budget",
+    "rerun_logistics",
+    "ask_user",
+    "proceed",
+];
 
 for (const action of EXPECTED_ACTIONS) {
-    check(`orchestrator: decision prompt includes action '${action}'`, "critical", () => {
-        if (!ORCHESTRATOR_DECISION_PROMPT.includes(action)) {
-            throw new Error(`Action '${action}' missing from orchestrator decision prompt`);
+    check(`orchestrator: action '${action}' is in ORCHESTRATOR_VALID_ACTIONS`, "critical", () => {
+        if (!(ORCHESTRATOR_VALID_ACTIONS as readonly string[]).includes(action)) {
+            throw new Error(`Action '${action}' missing from ORCHESTRATOR_VALID_ACTIONS`);
         }
     });
 }
 
-check("orchestrator: prompt instructs single action selection", "high", () => {
-    if (!/ONE action/i.test(ORCHESTRATOR_DECISION_PROMPT)) {
-        throw new Error("Orchestrator prompt should instruct choosing ONE action");
+check("orchestrator: ORCHESTRATOR_VALID_ACTIONS contains exactly 4 actions", "high", () => {
+    if (ORCHESTRATOR_VALID_ACTIONS.length !== EXPECTED_ACTIONS.length) {
+        throw new Error(
+            `Expected ${EXPECTED_ACTIONS.length} actions, got ${ORCHESTRATOR_VALID_ACTIONS.length}: ${ORCHESTRATOR_VALID_ACTIONS.join(", ")}`
+        );
     }
 });
 

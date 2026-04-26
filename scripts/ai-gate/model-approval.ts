@@ -4,7 +4,7 @@
  * Model Approval — AI Security Gate Stage 1
  *
  * Checks:
- *   1. Approved model list  — every model in modelRouter.ts is on the allowlist
+ *   1. Approved model list  — every model in CONFIGS is on the allowlist
  *   2. Forbidden models     — no deprecated / unsafe models are referenced
  *   3. Temperature bounds   — all endpoints: 0.0 ≤ temp ≤ 1.0
  *   4. Token bounds         — maxTokens within provider limits
@@ -16,6 +16,9 @@
 
 import { writeFileSync, mkdirSync } from "fs";
 import path from "path";
+
+import { CONFIGS } from "../../src/lib/ai/modelRouterConfigs.js";
+import type { ProviderMatrix } from "../../src/lib/ai/modelRouterConfigs.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -36,7 +39,7 @@ function check(name: string, severity: Severity, fn: () => void): void {
 }
 
 // ─── Approved model registry ──────────────────────────────────────────────────
-// Any model added to modelRouter.ts must appear here first.
+// Any model added to modelRouterConfigs.ts must appear here first.
 
 const APPROVED_OPENAI_MODELS = new Set([
     "gpt-4.1",
@@ -67,37 +70,21 @@ const FORBIDDEN_MODELS = new Set([
     "gemini-pro",         // Old, superseded
 ]);
 
-// ─── All model configs extracted from modelRouter.ts ─────────────────────────
-// These must be kept in sync with the actual CONFIGS table in modelRouter.ts.
-// A mismatch between this registry and the source is itself a gate failure.
+// ─── Evaluate every endpoint at default (no intent) ──────────────────────────
+// Calling fn() with no argument produces the standard non-intent-specific matrix.
+// The landing endpoint has an intent-dependent branch; default covers the common path.
 
-interface EndpointConfig {
-    openai: { model: string; temperature: number; maxTokens: number; timeoutMs: number };
-    gemini: { model: string; temperature: number; maxTokens: number; timeoutMs: number };
-}
+const LIVE_CONFIGS: Record<string, ProviderMatrix> = Object.fromEntries(
+    Object.entries(CONFIGS).map(([endpoint, fn]) => [endpoint, fn()])
+);
 
-const ROUTER_SNAPSHOT: Record<string, EndpointConfig> = {
-    landing:          { openai: { model: "gpt-4.1-mini", temperature: 0.7, maxTokens: 800,  timeoutMs: 25_000 }, gemini: { model: "gemini-2.5-flash", temperature: 0.7, maxTokens: 800,  timeoutMs: 25_000 } },
-    "landing-preview":{ openai: { model: "gpt-4.1-mini", temperature: 0.7, maxTokens: 1200, timeoutMs: 20_000 }, gemini: { model: "gemini-2.5-flash", temperature: 0.7, maxTokens: 1200, timeoutMs: 20_000 } },
-    itinerary:        { openai: { model: "gpt-4.1-mini", temperature: 0.7, maxTokens: 8192, timeoutMs: 60_000 }, gemini: { model: "gemini-2.5-flash", temperature: 0.7, maxTokens: 8192, timeoutMs: 60_000 } },
-    reoptimize:       { openai: { model: "gpt-4.1-mini", temperature: 0.3, maxTokens: 8192, timeoutMs: 45_000 }, gemini: { model: "gemini-2.5-flash", temperature: 0.3, maxTokens: 8192, timeoutMs: 45_000 } },
-    chat:             { openai: { model: "gpt-4.1-mini", temperature: 0.7, maxTokens: 2048, timeoutMs: 30_000 }, gemini: { model: "gemini-2.5-flash", temperature: 0.7, maxTokens: 2048, timeoutMs: 30_000 } },
-    packing:          { openai: { model: "gpt-4.1-mini", temperature: 0.7, maxTokens: 4096, timeoutMs: 30_000 }, gemini: { model: "gemini-2.5-flash", temperature: 0.7, maxTokens: 4096, timeoutMs: 30_000 } },
-    simulation:       { openai: { model: "gpt-4.1-mini", temperature: 0.7, maxTokens: 4096, timeoutMs: 30_000 }, gemini: { model: "gemini-2.5-flash", temperature: 0.7, maxTokens: 4096, timeoutMs: 30_000 } },
-    "create-trip":    { openai: { model: "gpt-4.1-mini", temperature: 0.3, maxTokens: 512,  timeoutMs: 15_000 }, gemini: { model: "gemini-2.5-flash", temperature: 0.3, maxTokens: 512,  timeoutMs: 15_000 } },
-    ticket:           { openai: { model: "gpt-4.1-mini", temperature: 0.2, maxTokens: 512,  timeoutMs: 15_000 }, gemini: { model: "gemini-2.5-flash", temperature: 0.2, maxTokens: 512,  timeoutMs: 10_000 } },
-    budget:           { openai: { model: "gpt-4.1-mini", temperature: 0.3, maxTokens: 400,  timeoutMs: 15_000 }, gemini: { model: "gemini-2.5-flash", temperature: 0.3, maxTokens: 400,  timeoutMs: 15_000 } },
-    suggestions:      { openai: { model: "gpt-4.1-mini", temperature: 0.7, maxTokens: 512,  timeoutMs: 15_000 }, gemini: { model: "gemini-2.5-flash", temperature: 0.7, maxTokens: 512,  timeoutMs: 10_000 } },
-    research:         { openai: { model: "gpt-4.1-mini", temperature: 0.5, maxTokens: 4096, timeoutMs: 45_000 }, gemini: { model: "gemini-2.5-flash", temperature: 0.5, maxTokens: 4096, timeoutMs: 45_000 } },
-};
-
-const KNOWN_ENDPOINTS = Object.keys(ROUTER_SNAPSHOT);
+const KNOWN_ENDPOINTS = Object.keys(LIVE_CONFIGS);
 
 // ─── 1. Approved model list ───────────────────────────────────────────────────
 
 console.log("\n📋 Approved model list checks");
 
-for (const [endpoint, cfg] of Object.entries(ROUTER_SNAPSHOT)) {
+for (const [endpoint, cfg] of Object.entries(LIVE_CONFIGS)) {
     check(`${endpoint} → OpenAI model is approved`, "critical", () => {
         if (!APPROVED_OPENAI_MODELS.has(cfg.openai.model)) {
             throw new Error(`Model '${cfg.openai.model}' is not on the approved OpenAI list`);
@@ -114,7 +101,7 @@ for (const [endpoint, cfg] of Object.entries(ROUTER_SNAPSHOT)) {
 
 console.log("\n🚫 Forbidden model checks");
 
-const allModels = Object.values(ROUTER_SNAPSHOT).flatMap((c) => [c.openai.model, c.gemini.model]);
+const allModels = Object.values(LIVE_CONFIGS).flatMap((c) => [c.openai.model, c.gemini.model]);
 
 for (const model of new Set(allModels)) {
     check(`Model '${model}' is not on the forbidden list`, "critical", () => {
@@ -128,8 +115,8 @@ for (const model of new Set(allModels)) {
 
 console.log("\n🌡️  Temperature bound checks");
 
-for (const [endpoint, cfg] of Object.entries(ROUTER_SNAPSHOT)) {
-    for (const [provider, pcfg] of Object.entries(cfg) as [string, EndpointConfig["openai"]][]) {
+for (const [endpoint, cfg] of Object.entries(LIVE_CONFIGS)) {
+    for (const [provider, pcfg] of Object.entries(cfg) as [string, ProviderMatrix["openai"]][]) {
         check(`${endpoint}/${provider}: temperature in [0.0, 1.0]`, "high", () => {
             if (pcfg.temperature < 0 || pcfg.temperature > 1) {
                 throw new Error(`temperature ${pcfg.temperature} out of bounds`);
@@ -142,7 +129,7 @@ for (const [endpoint, cfg] of Object.entries(ROUTER_SNAPSHOT)) {
 const GENERATIVE_ENDPOINTS = ["itinerary", "chat", "packing", "suggestions", "landing"];
 for (const ep of GENERATIVE_ENDPOINTS) {
     check(`${ep}/openai: temperature > 0 (not fully deterministic)`, "medium", () => {
-        const t = ROUTER_SNAPSHOT[ep]?.openai.temperature ?? 0;
+        const t = LIVE_CONFIGS[ep]?.openai.temperature ?? 0;
         if (t === 0) throw new Error(`temperature is 0 — generative endpoint should have t > 0`);
     });
 }
@@ -151,7 +138,7 @@ for (const ep of GENERATIVE_ENDPOINTS) {
 const EXTRACTION_ENDPOINTS = ["ticket", "create-trip", "budget", "reoptimize"];
 for (const ep of EXTRACTION_ENDPOINTS) {
     check(`${ep}/openai: temperature ≤ 0.4 (extraction endpoint)`, "medium", () => {
-        const t = ROUTER_SNAPSHOT[ep]?.openai.temperature ?? 1;
+        const t = LIVE_CONFIGS[ep]?.openai.temperature ?? 1;
         if (t > 0.4) throw new Error(`temperature ${t} too high for extraction — should be ≤ 0.4`);
     });
 }
@@ -164,7 +151,7 @@ const MAX_OPENAI_TOKENS = 16384;
 const MAX_GEMINI_TOKENS = 65536;
 const MIN_TOKENS = 128;
 
-for (const [endpoint, cfg] of Object.entries(ROUTER_SNAPSHOT)) {
+for (const [endpoint, cfg] of Object.entries(LIVE_CONFIGS)) {
     check(`${endpoint}/openai: maxTokens in [${MIN_TOKENS}, ${MAX_OPENAI_TOKENS}]`, "high", () => {
         if (cfg.openai.maxTokens < MIN_TOKENS || cfg.openai.maxTokens > MAX_OPENAI_TOKENS) {
             throw new Error(`maxTokens ${cfg.openai.maxTokens} out of bounds [${MIN_TOKENS}, ${MAX_OPENAI_TOKENS}]`);
@@ -184,8 +171,8 @@ console.log("\n⏱️  Timeout bound checks");
 const MIN_TIMEOUT_MS = 5_000;
 const MAX_TIMEOUT_MS = 120_000;
 
-for (const [endpoint, cfg] of Object.entries(ROUTER_SNAPSHOT)) {
-    for (const [provider, pcfg] of Object.entries(cfg) as [string, EndpointConfig["openai"]][]) {
+for (const [endpoint, cfg] of Object.entries(LIVE_CONFIGS)) {
+    for (const [provider, pcfg] of Object.entries(cfg) as [string, ProviderMatrix["openai"]][]) {
         check(`${endpoint}/${provider}: timeout in [${MIN_TIMEOUT_MS}ms, ${MAX_TIMEOUT_MS}ms]`, "high", () => {
             if (pcfg.timeoutMs < MIN_TIMEOUT_MS || pcfg.timeoutMs > MAX_TIMEOUT_MS) {
                 throw new Error(`timeoutMs ${pcfg.timeoutMs} out of bounds`);
@@ -200,7 +187,7 @@ console.log("\n🗺️  Endpoint coverage checks");
 
 for (const ep of KNOWN_ENDPOINTS) {
     check(`Endpoint '${ep}' has an explicit config`, "high", () => {
-        if (!ROUTER_SNAPSHOT[ep]) throw new Error(`No config found for endpoint '${ep}'`);
+        if (!LIVE_CONFIGS[ep]) throw new Error(`No config found for endpoint '${ep}'`);
     });
 }
 
@@ -208,7 +195,7 @@ for (const ep of KNOWN_ENDPOINTS) {
 
 console.log("\n🔄 Fallback integrity checks");
 
-for (const [endpoint, cfg] of Object.entries(ROUTER_SNAPSHOT)) {
+for (const [endpoint, cfg] of Object.entries(LIVE_CONFIGS)) {
     check(`${endpoint}: both OpenAI and Gemini configs are present`, "critical", () => {
         if (!cfg.openai?.model) throw new Error("Missing OpenAI config");
         if (!cfg.gemini?.model) throw new Error("Missing Gemini config");

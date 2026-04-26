@@ -61,7 +61,7 @@ export type {
 
 type TimeSlot = "morning" | "afternoon" | "evening";
 
-const SLOT_PREFERENCE: Record<Activity["type"], TimeSlot> = {
+export const SLOT_PREFERENCE: Record<Activity["type"], TimeSlot> = {
     attraction: "morning",
     experience: "afternoon",
     restaurant: "evening",
@@ -124,7 +124,7 @@ function preprocessContext(context: EnrichedTripContext): EnrichedTripContext {
 
 // ─── Deterministic slot assignment (fallback only) ────────────────────────────
 
-function assignSlots(activities: Activity[]): ScheduledActivity[] {
+export function assignSlots(activities: Activity[]): ScheduledActivity[] {
     if (activities.length === 0) return [];
     const buckets: Record<TimeSlot, Activity[]> = { morning: [], afternoon: [], evening: [] };
     for (const act of activities) buckets[SLOT_PREFERENCE[act.type]].push(act);

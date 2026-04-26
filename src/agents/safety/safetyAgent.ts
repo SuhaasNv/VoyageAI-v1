@@ -24,8 +24,8 @@ export type SafeTripContext = BudgetedTripContext & {
 // ─── Rule Constants ───────────────────────────────────────────────────────────
 
 /** Non-meal activities per day that triggers high/medium fatigue warnings. */
-const FATIGUE_HIGH_THRESHOLD   = 5;
-const FATIGUE_MEDIUM_THRESHOLD = 4;
+export const FATIGUE_HIGH_THRESHOLD   = 5;
+export const FATIGUE_MEDIUM_THRESHOLD = 4;
 
 /** Travel time thresholds in milliseconds. */
 const TRAVEL_HIGH_MS   = 2 * 60 * 60 * 1000; // 2 hours
@@ -55,7 +55,7 @@ function formatMs(ms: number): string {
  * Runs all safety rules against the finalized itinerary.
  * No LLM. No heuristics. Only real signals from the Logistics output.
  */
-function runDeterministicRules(context: BudgetedTripContext): SafetyWarning[] {
+export function runDeterministicRules(context: BudgetedTripContext): SafetyWarning[] {
     const warnings: SafetyWarning[] = [];
 
     for (const day of context.days) {
@@ -139,7 +139,7 @@ function runDeterministicRules(context: BudgetedTripContext): SafetyWarning[] {
     return warnings;
 }
 
-function deriveRiskLevel(warnings: SafetyWarning[]): SafetyResult["riskLevel"] {
+export function deriveRiskLevel(warnings: SafetyWarning[]): SafetyResult["riskLevel"] {
     if (warnings.some((w) => w.severity === "high")) return "high";
     if (warnings.length > 0) return "medium";
     return "low";
@@ -147,7 +147,11 @@ function deriveRiskLevel(warnings: SafetyWarning[]): SafetyResult["riskLevel"] {
 
 // ─── LLM Tips (optional, gracefully degraded) ────────────────────────────────
 
-const TIPS_SYSTEM_PROMPT = `You are a travel advisor.
+/**
+ * System prompt for the LLM tips call. Exported so CI scripts can validate
+ * the prompt structure without maintaining a separate inline copy.
+ */
+export const SAFETY_TIPS_SYSTEM_PROMPT = `You are a travel advisor.
 Given a trip's destination, duration, and a list of specific safety warnings, return 2–4 short actionable tips that directly address those warnings.
 
 Rules:
@@ -181,7 +185,7 @@ Return tips JSON.`;
     const response = await executeWithRetry(
         llmClient,
         [
-            { role: "system", content: TIPS_SYSTEM_PROMPT },
+            { role: "system", content: SAFETY_TIPS_SYSTEM_PROMPT },
             { role: "user", content: userMsg },
         ],
         { temperature: 0.2, responseFormat: "json", timeoutMs: 20_000 },

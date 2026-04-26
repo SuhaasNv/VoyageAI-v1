@@ -19,6 +19,7 @@
 import { logError } from "@/infrastructure/logger";
 import { applyHealingOverrides } from "@/services/ai/healingStore";
 import { resolveRealLlmProvider } from "./resolveRealLlmProvider";
+import { CONFIGS, DEFAULT_MATRIX } from "./modelRouterConfigs";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -33,100 +34,6 @@ export interface ModelConfig {
 }
 
 type RealProvider = "gemini" | "openai";
-
-// ─── Model name constants (overridable via env) ───────────────────────────────
-
-const GEMINI_FLASH = process.env.GEMINI_FLASH_MODEL ?? process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
-
-// ─── Per-endpoint config table ────────────────────────────────────────────────
-
-interface ProviderMatrix {
-    openai: Omit<ModelConfig, "provider">;
-    gemini: Omit<ModelConfig, "provider">;
-}
-
-const CONFIGS: Record<string, (intent?: string) => ProviderMatrix> = {
-
-    // ── Landing page prompt bar ────────────────────────────────────────────────
-    landing: (intent) => {
-        const isCreate = intent === "CREATE_TRIP";
-        return {
-            openai: { model: isCreate ? "gpt-4.1-mini" : "gpt-4.1-mini", temperature: isCreate ? 0.2 : 0.7, maxTokens: isCreate ? 400 : 800, timeoutMs: isCreate ? 15_000 : 25_000 },
-            gemini: { model: GEMINI_FLASH, temperature: isCreate ? 0.2 : 0.7, maxTokens: isCreate ? 400 : 800, timeoutMs: isCreate ? 15_000 : 25_000 },
-        };
-    },
-
-    // ── Landing preview — lightweight single-call markdown (replaces full pipeline for teaser) ──
-    "landing-preview": () => ({
-        openai: { model: "gpt-4.1-mini", temperature: 0.7, maxTokens: 1200, timeoutMs: 20_000 },
-        gemini: { model: GEMINI_FLASH, temperature: 0.7, maxTokens: 1200, timeoutMs: 20_000 },
-    }),
-
-    // ── Full itinerary generation ──────────────────────────────────────────────
-    itinerary: () => ({
-        openai: { model: "gpt-4.1-mini", temperature: 0.7, maxTokens: 8192, timeoutMs: 60_000 },
-        gemini: { model: GEMINI_FLASH, temperature: 0.7, maxTokens: 8192, timeoutMs: 60_000 },
-    }),
-
-    // ── Structured diff reoptimization ────────────────────────────────────────
-    reoptimize: () => ({
-        openai: { model: "gpt-4.1-mini", temperature: 0.3, maxTokens: 8192, timeoutMs: 45_000 },
-        gemini: { model: GEMINI_FLASH, temperature: 0.3, maxTokens: 8192, timeoutMs: 45_000 },
-    }),
-
-    // ── Conversational chat companion ──────────────────────────────────────────
-    chat: () => ({
-        openai: { model: "gpt-4.1-mini", temperature: 0.7, maxTokens: 2048, timeoutMs: 30_000 },
-        gemini: { model: GEMINI_FLASH, temperature: 0.7, maxTokens: 2048, timeoutMs: 30_000 },
-    }),
-
-    // ── Packing list ───────────────────────────────────────────────────────────
-    packing: () => ({
-        openai: { model: "gpt-4.1-mini", temperature: 0.7, maxTokens: 4096, timeoutMs: 30_000 },
-        gemini: { model: GEMINI_FLASH, temperature: 0.7, maxTokens: 4096, timeoutMs: 30_000 },
-    }),
-
-    // ── Trip risk simulation ───────────────────────────────────────────────────
-    simulation: () => ({
-        openai: { model: "gpt-4.1-mini", temperature: 0.7, maxTokens: 4096, timeoutMs: 30_000 },
-        gemini: { model: GEMINI_FLASH, temperature: 0.7, maxTokens: 4096, timeoutMs: 30_000 },
-    }),
-
-    // ── NL → trip params extraction ───────────────────────────────────────────
-    "create-trip": () => ({
-        openai: { model: "gpt-4.1-mini", temperature: 0.3, maxTokens: 512, timeoutMs: 15_000 },
-        gemini: { model: GEMINI_FLASH, temperature: 0.3, maxTokens: 512, timeoutMs: 15_000 },
-    }),
-
-    // ── Ticket / booking text extraction ──────────────────────────────────────
-    ticket: () => ({
-        openai: { model: "gpt-4.1-mini", temperature: 0.2, maxTokens: 512, timeoutMs: 15_000 },
-        gemini: { model: GEMINI_FLASH, temperature: 0.2, maxTokens: 512, timeoutMs: 10_000 },
-    }),
-
-    // ── Budget constraint suggestions ─────────────────────────────────────────
-    budget: () => ({
-        openai: { model: "gpt-4.1-mini", temperature: 0.3, maxTokens: 400, timeoutMs: 15_000 },
-        gemini: { model: GEMINI_FLASH, temperature: 0.3, maxTokens: 400, timeoutMs: 15_000 },
-    }),
-
-    // ── Dashboard contextual suggestions ──────────────────────────────────────
-    suggestions: () => ({
-        openai: { model: "gpt-4.1-mini", temperature: 0.7, maxTokens: 512, timeoutMs: 15_000 },
-        gemini: { model: GEMINI_FLASH, temperature: 0.7, maxTokens: 512, timeoutMs: 10_000 },
-    }),
-
-    // ── Research Agent — attraction/hotel/restaurant enrichment ───────────────
-    research: () => ({
-        openai: { model: "gpt-4.1-mini", temperature: 0.5, maxTokens: 4096, timeoutMs: 45_000 },
-        gemini: { model: GEMINI_FLASH, temperature: 0.5, maxTokens: 4096, timeoutMs: 45_000 },
-    }),
-};
-
-const DEFAULT_MATRIX: ProviderMatrix = {
-    openai: { model: "gpt-4.1-mini", temperature: 0.7, maxTokens: 2048, timeoutMs: 30_000 },
-    gemini: { model: GEMINI_FLASH, temperature: 0.7, maxTokens: 2048, timeoutMs: 30_000 },
-};
 
 // ─── Provider resolution ──────────────────────────────────────────────────────
 

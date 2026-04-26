@@ -75,7 +75,7 @@ export type {
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 /** Map a numeric budget hint to a Bright Data query budget string. */
-function budgetHint(preferences?: TripContext["preferences"], durationDays = 1): string | undefined {
+export function budgetHint(preferences?: TripContext["preferences"], durationDays = 1): string | undefined {
     if (!preferences?.budget) return undefined;
     const daily = preferences.budget / Math.max(1, durationDays);
     if (daily < 100) return "budget cheap";

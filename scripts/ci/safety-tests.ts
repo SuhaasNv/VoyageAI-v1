@@ -24,6 +24,14 @@ import path from "path";
 import { buildPlannerUserPrompt } from "../../src/agents/planner/plannerPrompts.js";
 import { parseJSONResponse } from "../../src/lib/ai/llm.js";
 import { trunc } from "../../src/infrastructure/logger.js";
+import {
+    deriveRiskLevel,
+    runDeterministicRules,
+    FATIGUE_HIGH_THRESHOLD,
+    FATIGUE_MEDIUM_THRESHOLD,
+} from "../../src/agents/safety/safetyAgent.js";
+import type { SafetyWarning } from "../../src/agents/safety/safetyAgent.js";
+import type { BudgetedTripContext } from "../../src/agents/budget/budgetAgent.js";
 
 type CheckResult = { name: string; passed: boolean; severity: "critical" | "high" | "medium"; error?: string };
 const results: CheckResult[] = [];
@@ -186,48 +194,123 @@ check("Budget: isOverBudget true when total > userBudget", "medium", () => {
     if (!isOverBudget) throw new Error("Should be over budget");
 });
 
-// ─── 6. Safety agent — risk level escalation ─────────────────────────────────
+// ─── 6. Safety agent — real deterministic rule engine ────────────────────────
+//
+// Tests runDeterministicRules() and deriveRiskLevel() — the actual production
+// functions, not a local re-implementation.
 
 console.log("\n🚨 Safety agent threshold checks");
 
-type RiskLevel = "low" | "medium" | "high";
-
-function deriveRisk(maxActivitiesInDay: number, hasFastPace: boolean, isOverBudget: boolean): RiskLevel {
-    let level: RiskLevel = "low";
-    const warnings: string[] = [];
-    if (maxActivitiesInDay > 5) warnings.push("Dense schedule detected");
-    if (maxActivitiesInDay > 4 && hasFastPace) warnings.push("Fast pace + dense schedule");
-    if (isOverBudget) warnings.push("Trip exceeds budget");
-    if (warnings.length >= 3) return "high";
-    if (warnings.length >= 1) return "medium";
-    return level;
+/**
+ * Builds a minimal BudgetedTripContext for testing the safety rule engine.
+ * Only the fields read by runDeterministicRules are required.
+ */
+function makeSafetyCtx(
+    days: Array<{
+        activities: Array<{
+            isMeal?: boolean;
+            travelTimeFromPrevMs?: number;
+            endTime?: string;
+            name?: string;
+        }>;
+    }>,
+): BudgetedTripContext {
+    const baseActivity = {
+        type: "attraction" as const,
+        description: "",
+        timeSlot: "morning" as const,
+    };
+    return {
+        destination: "Tokyo",
+        startDate: "2026-05-01",
+        endDate: "2026-05-05",
+        durationDays: days.length,
+        days: days.map((d, i) => ({
+            day: i + 1,
+            theme: "Test",
+            activities: d.activities.map((a) => ({
+                ...baseActivity,
+                name: a.name ?? "Activity",
+                ...(a.isMeal !== undefined ? { isMeal: a.isMeal } : {}),
+                ...(a.travelTimeFromPrevMs !== undefined ? { travelTimeFromPrevMs: a.travelTimeFromPrevMs } : {}),
+                ...(a.endTime !== undefined ? { endTime: a.endTime } : {}),
+            })),
+        })),
+        hotels: [],
+        selectedHotel: { name: "Test Hotel", priceRange: "$$" as const, area: "Central", tags: [] },
+        budget: {
+            totalEstimatedCost: 500,
+            costPerDay: Array(days.length).fill(Math.round(500 / days.length)),
+            isOverBudget: false,
+            ledger: [],
+            costBreakdown: {
+                perDay: Array(days.length).fill(Math.round(500 / days.length)),
+                total: 500,
+                categories: { hotel: 0, food: 0, activity: 500, other: 0 },
+            },
+        },
+    };
 }
 
-check("Risk: 3 activities/day, slow pace, under budget → low", "medium", () => {
-    if (deriveRisk(3, false, false) !== "low") throw new Error("Expected low");
+check("Risk: no non-meal activities → no warnings → low risk", "medium", () => {
+    const ctx = makeSafetyCtx([{ activities: [{ isMeal: true }, { isMeal: true }] }]);
+    const warnings = runDeterministicRules(ctx);
+    if (deriveRiskLevel(warnings) !== "low") throw new Error("Expected low risk");
 });
 
-check("Risk: 5 activities/day, fast pace → at least medium", "high", () => {
-    const r = deriveRisk(5, true, false);
-    if (r === "low") throw new Error("Expected medium or high with dense fast-pace schedule");
+check(`Risk: FATIGUE_HIGH_THRESHOLD=${FATIGUE_HIGH_THRESHOLD} non-meal activities → high fatigue warning`, "high", () => {
+    const activities = Array.from({ length: FATIGUE_HIGH_THRESHOLD + 1 }, (_, i) => ({
+        name: `Activity ${i}`,
+        isMeal: false,
+    }));
+    const ctx = makeSafetyCtx([{ activities }]);
+    const warnings = runDeterministicRules(ctx);
+    const hasFatigueHigh = warnings.some((w) => w.type === "fatigue" && w.severity === "high");
+    if (!hasFatigueHigh) throw new Error(`Expected high fatigue warning for ${activities.length} non-meal activities`);
 });
 
-check("Risk: over budget triggers at least medium risk", "high", () => {
-    const r = deriveRisk(2, false, true);
-    if (r === "low") throw new Error("Over budget should trigger at least medium risk");
+check(`Risk: FATIGUE_MEDIUM_THRESHOLD=${FATIGUE_MEDIUM_THRESHOLD}+1 activities → at least medium risk`, "high", () => {
+    const activities = Array.from({ length: FATIGUE_MEDIUM_THRESHOLD + 1 }, (_, i) => ({
+        name: `Activity ${i}`,
+        isMeal: false,
+    }));
+    const ctx = makeSafetyCtx([{ activities }]);
+    const warnings = runDeterministicRules(ctx);
+    const risk = deriveRiskLevel(warnings);
+    if (risk === "low") throw new Error(`Expected at least medium risk, got ${risk}`);
 });
 
-check("Risk: dense + fast + over budget → high", "critical", () => {
-    if (deriveRisk(6, true, true) !== "high") throw new Error("Expected high with all risk factors");
+check("Risk: high-severity warning → deriveRiskLevel returns high", "high", () => {
+    const highWarning: SafetyWarning = {
+        type: "fatigue",
+        day: 1,
+        severity: "high",
+        message: "test",
+    };
+    if (deriveRiskLevel([highWarning]) !== "high") throw new Error("Expected high");
 });
 
-check("Safety result: warnings capped at 3", "medium", () => {
-    const rawWarnings = ["a", "b", "c", "d", "e"];
-    const capped = rawWarnings.slice(0, 3);
-    if (capped.length > 3) throw new Error("Warnings exceed cap of 3");
+check("Risk: medium-severity warnings only → deriveRiskLevel returns medium", "medium", () => {
+    const mediumWarning: SafetyWarning = {
+        type: "travel",
+        day: 1,
+        severity: "medium",
+        message: "test",
+    };
+    if (deriveRiskLevel([mediumWarning]) !== "medium") throw new Error("Expected medium");
 });
 
-check("Safety result: tips capped at 4", "medium", () => {
+check("Risk: travel time ≥ 2 hours → high severity travel warning", "high", () => {
+    const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+    const ctx = makeSafetyCtx([{
+        activities: [{ name: "Distant Attraction", isMeal: false, travelTimeFromPrevMs: TWO_HOURS_MS + 1 }],
+    }]);
+    const warnings = runDeterministicRules(ctx);
+    const hasHighTravel = warnings.some((w) => w.type === "travel" && w.severity === "high");
+    if (!hasHighTravel) throw new Error("Expected high-severity travel warning for 2h+ transit");
+});
+
+check("Safety result: tips are capped at 4", "medium", () => {
     const rawTips = ["a", "b", "c", "d", "e", "f"];
     const capped = rawTips.slice(0, 4);
     if (capped.length > 4) throw new Error("Tips exceed cap of 4");

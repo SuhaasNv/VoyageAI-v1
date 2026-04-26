@@ -17,6 +17,13 @@
 import { writeFileSync, mkdirSync, readdirSync, readFileSync } from "fs";
 import path from "path";
 
+import {
+    TravelStyleSchema,
+    PacePreferenceSchema,
+    BudgetTierSchema,
+    ActivityTypeSchema,
+} from "../../src/lib/ai/schemas/index.js";
+
 type Severity = "critical" | "high" | "medium";
 type Check = { name: string; passed: boolean; severity: Severity; error?: string };
 
@@ -33,33 +40,36 @@ function check(name: string, severity: Severity, fn: () => void): void {
     }
 }
 
+// ─── Enum values pulled directly from the source schemas ─────────────────────
+
+const TRAVEL_STYLES = [...TravelStyleSchema.options] as string[];
+const VALID_PACES   = [...PacePreferenceSchema.options] as string[];
+const BUDGET_TIERS  = [...BudgetTierSchema.options] as string[];
+const ACTIVITY_TYPES_SCHEMA = [...ActivityTypeSchema.options] as string[];
+
 // ─── 1. Travel style diversity ────────────────────────────────────────────────
 
 console.log("\n🧭 Travel style diversity");
 
-const TRAVEL_STYLES = [
-    "adventure", "cultural", "relaxation", "foodie", "luxury",
-    "budget", "family", "solo", "romantic", "eco",
-];
-
-const STYLE_ARCHETYPES = {
-    activeOutdoor:   ["adventure", "eco"],
-    culturalLearning:["cultural", "foodie"],
-    restfulEscape:   ["relaxation", "romantic"],
-    socialFocus:     ["family", "solo"],
-    economicRange:   ["budget", "luxury"],
+// Archetypes group schema-defined styles into thematic buckets.
+// Each style in an archetype must exist in TravelStyleSchema.
+const STYLE_ARCHETYPES: Record<string, string[]> = {
+    activeOutdoor:    ["adventure", "relaxation"],
+    culturalLearning: ["cultural", "foodie"],
+    social:           ["family", "solo"],
+    economicRange:    ["budget", "luxury"],
+    niche:            ["romantic", "business"],
 };
 
 for (const [archetype, styles] of Object.entries(STYLE_ARCHETYPES)) {
     check(`Travel styles include '${archetype}' archetype (${styles.join(", ")})`, "high", () => {
-        const covered = styles.every((s) => TRAVEL_STYLES.includes(s));
-        if (!covered) throw new Error(`Missing styles for archetype '${archetype}': ${styles.filter((s) => !TRAVEL_STYLES.includes(s)).join(", ")}`);
+        const missing = styles.filter((s) => !TRAVEL_STYLES.includes(s));
+        if (missing.length > 0) throw new Error(`Style(s) not in TravelStyleSchema: ${missing.join(", ")}`);
     });
 }
 
-check("At least 8 distinct travel styles are defined", "high", () => {
-    const unique = new Set(TRAVEL_STYLES);
-    if (unique.size < 8) throw new Error(`Only ${unique.size} styles defined — need at least 8`);
+check("At least 8 distinct travel styles are defined in TravelStyleSchema", "high", () => {
+    if (TRAVEL_STYLES.length < 8) throw new Error(`Only ${TRAVEL_STYLES.length} styles — need at least 8`);
 });
 
 check("No style archetype has fewer than 2 representatives", "medium", () => {
@@ -72,30 +82,26 @@ check("No style archetype has fewer than 2 representatives", "medium", () => {
 
 console.log("\n⚡ Pace coverage checks");
 
-const VALID_PACES = ["relaxed", "moderate", "fast-paced"];
-
-check("All three pace tiers are defined (relaxed, moderate, fast-paced)", "critical", () => {
-    const required = ["relaxed", "moderate", "fast-paced"];
+check("All three pace tiers are defined in PacePreferenceSchema (slow, moderate, fast)", "critical", () => {
+    const required = ["slow", "moderate", "fast"] as const;
     for (const p of required) {
-        if (!VALID_PACES.includes(p)) throw new Error(`Missing pace: '${p}'`);
+        if (!VALID_PACES.includes(p)) throw new Error(`Missing pace value in schema: '${p}'`);
     }
 });
 
 check("No pace tier aliases map to the same value (no duplication)", "medium", () => {
     const unique = new Set(VALID_PACES);
-    if (unique.size !== VALID_PACES.length) throw new Error("Duplicate pace tiers detected");
+    if (unique.size !== VALID_PACES.length) throw new Error("Duplicate pace tiers detected in schema");
 });
 
 // ─── 3. Budget tier equity ────────────────────────────────────────────────────
 
 console.log("\n💰 Budget tier equity checks");
 
-const BUDGET_TIERS = ["budget", "mid-range", "luxury"];
-
-check("All three budget tiers are defined", "critical", () => {
-    const required = ["budget", "mid-range", "luxury"];
+check("All three budget tiers are defined in BudgetTierSchema", "critical", () => {
+    const required = ["budget", "mid-range", "luxury"] as const;
     for (const b of required) {
-        if (!BUDGET_TIERS.includes(b)) throw new Error(`Missing budget tier: '${b}'`);
+        if (!BUDGET_TIERS.includes(b)) throw new Error(`Missing budget tier in schema: '${b}'`);
     }
 });
 
@@ -105,11 +111,9 @@ check("Budget tier 'budget' is listed first (not defaulting to premium)", "high"
     }
 });
 
-check("No tier is absent from TravelDNA schema validation", "high", () => {
-    // Simulate what TravelDNASchema would validate
-    for (const tier of BUDGET_TIERS) {
-        const valid = ["budget", "mid-range", "luxury"].includes(tier);
-        if (!valid) throw new Error(`Tier '${tier}' would fail schema validation`);
+check("No tier is absent from BudgetTierSchema enum", "high", () => {
+    for (const tier of ["budget", "mid-range", "luxury"]) {
+        if (!BUDGET_TIERS.includes(tier)) throw new Error(`Tier '${tier}' missing from BudgetTierSchema`);
     }
 });
 
@@ -117,16 +121,15 @@ check("No tier is absent from TravelDNA schema validation", "high", () => {
 
 console.log("\n🌍 Geographic diversity checks");
 
-// These represent the minimum spread we require in our destination fixtures and demos
 const REQUIRED_GEOGRAPHIC_REGIONS = {
-    "East Asia":        ["Tokyo", "Seoul", "Beijing", "Hong Kong"],
-    "South/SE Asia":    ["Bangkok", "Bali", "Mumbai", "Singapore"],
-    "Middle East/Africa":["Dubai", "Cairo", "Nairobi", "Marrakech"],
-    "Latin America":    ["Buenos Aires", "Rio de Janeiro", "Mexico City", "Cartagena"],
-    "Western Europe":   ["Paris", "Barcelona", "Rome", "Amsterdam"],
-    "North America":    ["New York", "Los Angeles", "Toronto", "Montreal"],
-    "Eastern Europe":   ["Prague", "Budapest", "Warsaw", "Krakow"],
-    "Oceania":          ["Sydney", "Auckland", "Melbourne"],
+    "East Asia":           ["Tokyo", "Seoul", "Beijing", "Hong Kong"],
+    "South/SE Asia":       ["Bangkok", "Bali", "Mumbai", "Singapore"],
+    "Middle East/Africa":  ["Dubai", "Cairo", "Nairobi", "Marrakech"],
+    "Latin America":       ["Buenos Aires", "Rio de Janeiro", "Mexico City", "Cartagena"],
+    "Western Europe":      ["Paris", "Barcelona", "Rome", "Amsterdam"],
+    "North America":       ["New York", "Los Angeles", "Toronto", "Montreal"],
+    "Eastern Europe":      ["Prague", "Budapest", "Warsaw", "Krakow"],
+    "Oceania":             ["Sydney", "Auckland", "Melbourne"],
 };
 
 const totalDestinations = Object.values(REQUIRED_GEOGRAPHIC_REGIONS).flat();
@@ -161,7 +164,6 @@ check("Non-English-primary countries have at least 3 destinations", "high", () =
 
 console.log("\n🧑‍🤝‍🧑 Demographic neutrality checks");
 
-// Scan prompt templates for demographic assumptions
 const PROMPT_FILES_DIR = path.join("src", "lib", "ai", "prompts");
 let promptFiles: string[] = [];
 try {
@@ -170,8 +172,8 @@ try {
     // Prompt directory may not exist in test environments
 }
 
-const GENDERED_TERMS = ["he/she", "he or she", "his/her", "his or her", "mankind", "staffed by men", "businessmen"];
-const AGE_BIAS_TERMS = ["young travellers only", "elderly visitors avoid", "seniors should not", "not for children"];
+const GENDERED_TERMS      = ["he/she", "he or she", "his/her", "his or her", "mankind", "staffed by men", "businessmen"];
+const AGE_BIAS_TERMS      = ["young travellers only", "elderly visitors avoid", "seniors should not", "not for children"];
 const WESTERN_ASSUMPTIONS = ["everyone speaks english", "accepts dollars", "uses western restaurants"];
 
 for (const file of promptFiles) {
@@ -193,7 +195,6 @@ for (const file of promptFiles) {
     });
 }
 
-// If no prompt files were found, note it but don't fail — CI may not have all files
 if (promptFiles.length === 0) {
     check("Prompt files accessible for demographic scan", "medium", () => {
         throw new Error(`No prompt files found in '${PROMPT_FILES_DIR}' — skip in isolated CI environment`);
@@ -204,15 +205,17 @@ if (promptFiles.length === 0) {
 
 console.log("\n🎭 Interest diversity checks");
 
-const INTEREST_CATEGORIES = {
-    outdoor:    ["hiking", "beaches", "adventure sports", "nature"],
-    cultural:   ["museums", "history", "art", "architecture", "local culture"],
-    culinary:   ["local food", "street food", "fine dining", "cooking classes"],
-    wellness:   ["spa", "yoga", "meditation", "wellness"],
-    family:     ["kid-friendly", "theme parks", "zoos", "family activities"],
-    nightlife:  ["bars", "clubs", "nightlife", "entertainment"],
-    shopping:   ["shopping", "markets", "local crafts"],
-    social:     ["meeting locals", "volunteering", "community"],
+// Interest categories are thematic groupings for bias validation (not a schema enum).
+// Individual interest strings are free-form (TravelDNASchema.interests is z.array(z.string())).
+const INTEREST_CATEGORIES: Record<string, string[]> = {
+    outdoor:   ["hiking", "beaches", "adventure sports", "nature"],
+    cultural:  ["museums", "history", "art", "architecture", "local culture"],
+    culinary:  ["local food", "street food", "fine dining", "cooking classes"],
+    wellness:  ["spa", "yoga", "meditation", "wellness"],
+    family:    ["kid-friendly", "theme parks", "zoos", "family activities"],
+    nightlife: ["bars", "clubs", "nightlife", "entertainment"],
+    shopping:  ["shopping", "markets", "local crafts"],
+    social:    ["meeting locals", "volunteering", "community"],
 };
 
 check("At least 6 interest categories are defined", "critical", () => {
@@ -246,7 +249,6 @@ check("Budget-accessible interests exist in at least 4 categories", "high", () =
 
 console.log("\n🛡️  Safety signal neutrality checks");
 
-// Safety risk descriptors should not reference nationality, religion, or demographics
 const SAFETY_RISK_LEVELS = ["low", "medium", "high"];
 const PROHIBITED_SAFETY_SIGNALS = [
     "avoid locals", "dangerous locals", "foreign nationals at risk",
@@ -255,13 +257,11 @@ const PROHIBITED_SAFETY_SIGNALS = [
 ];
 
 check("Safety risk levels cover full spectrum (low/medium/high)", "critical", () => {
-    const required = ["low", "medium", "high"];
-    for (const level of required) {
+    for (const level of ["low", "medium", "high"]) {
         if (!SAFETY_RISK_LEVELS.includes(level)) throw new Error(`Missing risk level: '${level}'`);
     }
 });
 
-// Scan any safety-agent related files for biased signal language
 const SAFETY_FILES = [
     path.join("src", "agents", "safety", "safetyAgent.ts"),
 ];
@@ -288,20 +288,23 @@ for (const safetyFile of SAFETY_FILES) {
 
 console.log("\n⚖️  Activity type balance checks");
 
-const ACTIVITY_TYPES = [
-    "cultural", "outdoor", "culinary", "relaxation", "nightlife",
-    "shopping", "educational", "family", "adventure",
-];
-
-check("At least 8 activity types are tracked in the system", "high", () => {
-    if (ACTIVITY_TYPES.length < 8) throw new Error(`Only ${ACTIVITY_TYPES.length} types — need ≥ 8`);
+check(`At least 8 activity types are tracked in ActivityTypeSchema`, "high", () => {
+    if (ACTIVITY_TYPES_SCHEMA.length < 8) {
+        throw new Error(`Only ${ACTIVITY_TYPES_SCHEMA.length} types in ActivityTypeSchema — need ≥ 8`);
+    }
 });
 
 check("No single activity type represents more than 25% of default slots", "high", () => {
-    // Simulate a default 5-day itinerary: each day has 3 activities = 15 total
+    // Simulate a default 5-day itinerary using ActivityTypeSchema types (3 activities/day × 5 days = 15 slots)
     const DEFAULT_DISTRIBUTION: Record<string, number> = {
-        cultural: 3, outdoor: 3, culinary: 2, relaxation: 2,
-        shopping: 1, educational: 1, adventure: 1, nightlife: 1, family: 1,
+        sightseeing:   4,
+        dining:        3,
+        cultural:      2,
+        relaxation:    2,
+        shopping:      1,
+        adventure:     1,
+        transport:     1,
+        accommodation: 1,
     };
     const totalSlots = Object.values(DEFAULT_DISTRIBUTION).reduce((a, b) => a + b, 0);
     for (const [type, count] of Object.entries(DEFAULT_DISTRIBUTION)) {
@@ -310,14 +313,20 @@ check("No single activity type represents more than 25% of default slots", "high
             throw new Error(`Activity type '${type}' is ${(ratio * 100).toFixed(0)}% of slots — exceeds 25% cap`);
         }
     }
+    // Ensure distribution only uses types that exist in the schema
+    const unknownTypes = Object.keys(DEFAULT_DISTRIBUTION).filter((t) => !ACTIVITY_TYPES_SCHEMA.includes(t));
+    if (unknownTypes.length > 0) {
+        throw new Error(`Distribution references types not in ActivityTypeSchema: ${unknownTypes.join(", ")}`);
+    }
 });
 
 check("Relaxation activities are not treated as lower priority", "medium", () => {
-    // Relaxation should be present in every budget tier's default itinerary
-    const budgetTiers = ["budget", "mid-range", "luxury"];
+    if (!ACTIVITY_TYPES_SCHEMA.includes("relaxation")) {
+        throw new Error("'relaxation' is not a recognized activity type in ActivityTypeSchema");
+    }
+    const budgetTiers = BUDGET_TIERS;
     const relaxationAvailableForAll = budgetTiers.every((tier) => {
         const relaxationActivities = ["beach", "park", "cafe", "meditation", "spa", "local market"];
-        // Budget tier has accessible relaxation options (not just spa/luxury)
         if (tier === "budget") return relaxationActivities.some((a) => ["beach", "park", "cafe", "local market"].includes(a));
         return true;
     });

@@ -47,6 +47,14 @@ export type OrchestratorAction =
     | "ask_user"
     | "proceed";
 
+/** Runtime-accessible array of all valid orchestrator actions. */
+export const ORCHESTRATOR_VALID_ACTIONS: ReadonlyArray<OrchestratorAction> = [
+    "reoptimize_budget",
+    "rerun_logistics",
+    "ask_user",
+    "proceed",
+] as const;
+
 export type ExecutionLogEntry =
     | { agent: string; status: "success" | "error"; timestamp: number; detail?: string }
     | { type: "llm-decision"; issue: string; action: OrchestratorAction; timestamp: number };

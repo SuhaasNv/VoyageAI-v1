@@ -153,7 +153,7 @@ export type BudgetedTripContext = OptimizedTripContext & {
 
 // ─── Cost constants ───────────────────────────────────────────────────────────
 
-const HOTEL_NIGHTLY: Record<string, number> = {
+export const HOTEL_NIGHTLY: Record<string, number> = {
     $: 50,
     $$: 100,
     $$$: 200,
@@ -163,7 +163,7 @@ const HOTEL_NIGHTLY: Record<string, number> = {
 /** Ordered cheapest → most expensive for tier navigation in Rule 2. */
 const HOTEL_TIERS: ReadonlyArray<HotelOption["priceRange"]> = ["$", "$$", "$$$", "$$$$"];
 
-const ACTIVITY_RANGE: Record<ScheduledActivity["type"], [number, number]> = {
+export const ACTIVITY_RANGE: Record<ScheduledActivity["type"], [number, number]> = {
     attraction: [20, 50],
     experience: [50, 150],
     restaurant: [15, 40],
@@ -198,7 +198,7 @@ const MIN_NON_MEAL_AFTER_REMOVE = 2;
  * Deterministic hash so a missing estimatedCost always maps to the same
  * integer within the activity cost range — no randomness between runs.
  */
-function deterministicActivityCost(name: string, type: ScheduledActivity["type"]): number {
+export function deterministicActivityCost(name: string, type: ScheduledActivity["type"]): number {
     const [min, max] = ACTIVITY_RANGE[type];
     let h = 5381;
     const str = name + type;
@@ -734,6 +734,20 @@ function solveOptimalPlan(
 
 // ─── Budget Agent ─────────────────────────────────────────────────────────────
 
+/**
+ * System prompt used by fetchSuggestions to rephrase deterministic adjustments
+ * as friendly, natural-language tips. Exported so CI scripts can validate the
+ * prompt structure without maintaining a separate inline copy.
+ */
+export const BUDGET_SUGGESTIONS_SYSTEM_PROMPT =
+    "You are a friendly travel budget advisor. " +
+    "Return ONLY valid JSON in this exact shape: { \"suggestions\": string[] }. " +
+    "Each suggestion is one concise, friendly sentence (max 12 words). " +
+    "Maximum 3 suggestions. " +
+    "Rephrase the provided trade-offs in natural language — do not invent new ones. " +
+    "Do NOT change dates, destinations, or itinerary order. " +
+    "No extra fields. No explanation outside the JSON.";
+
 export class BudgetAgent {
     /**
      * Calculates the full trip cost via a unified cost ledger, runs the
@@ -873,14 +887,7 @@ export class BudgetAgent {
         adjustments: BudgetAdjustment[],
         requestId?: string,
     ): Promise<string[] | undefined> {
-        const systemPrompt =
-            "You are a friendly travel budget advisor. " +
-            "Return ONLY valid JSON in this exact shape: { \"suggestions\": string[] }. " +
-            "Each suggestion is one concise, friendly sentence (max 12 words). " +
-            "Maximum 3 suggestions. " +
-            "Rephrase the provided trade-offs in natural language — do not invent new ones. " +
-            "Do NOT change dates, destinations, or itinerary order. " +
-            "No extra fields. No explanation outside the JSON.";
+        const systemPrompt = BUDGET_SUGGESTIONS_SYSTEM_PROMPT;
 
         const adjustmentContext = adjustments.length > 0
             ? "\n\nIdentified trade-offs (rephrase these — do not invent others):\n" +
