@@ -667,7 +667,7 @@ jobs:
 
       - name: Build image and export tarball
         if: github.event.inputs.image_tag == ''
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: ./python/agent_graph
           file: ./python/agent_graph/Dockerfile
@@ -763,7 +763,7 @@ jobs:
       - name: Build and push to DOCR (layers cached)
         id: push
         if: github.event.inputs.image_tag == ''
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: ./python/agent_graph
           file: ./python/agent_graph/Dockerfile
@@ -932,7 +932,7 @@ jobs:
 
       - name: Build Next.js image and export tarball
         if: github.event.inputs.image_tag == ''
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.app
@@ -1030,7 +1030,7 @@ jobs:
       - name: Build and push Next.js to DOCR (layers cached)
         id: push
         if: github.event.inputs.image_tag == ''
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.app

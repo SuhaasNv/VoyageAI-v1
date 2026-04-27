@@ -902,7 +902,7 @@ jobs:
 
       - name: Build image (cache-backed) and export tarball
         id: build
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: ./python/agent_graph
           file: ./python/agent_graph/Dockerfile
@@ -1072,7 +1072,7 @@ jobs:
 
       - name: Build and push to DOCR (layers cached from stage 13)
         id: push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: ./python/agent_graph
           file: ./python/agent_graph/Dockerfile
@@ -1131,7 +1131,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build Next.js image and export tarball
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.app
@@ -1286,7 +1286,7 @@ jobs:
 
       - name: Build and push Next.js to DOCR (layers cached from stage 13b)
         id: push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.app
