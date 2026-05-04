@@ -36,6 +36,8 @@ import { logStructured, logError } from "@/infrastructure/logger";
 import { getTravelTimeMatrix, isInvalidCoord } from "@/services/mapbox";
 import { geocodeCentroid } from "@/services/mapboxGeocoding";
 import { buildScheduledDay, computeFoodCost, injectMeals } from "./routingUtils";
+import { llmScheduleDay } from "./llmScheduler";
+import type { SchedulerTravelPair } from "./schedulerPrompts";
 import type { GeoCoordinate } from "@/services/mapbox";
 import type {
     Activity,
@@ -251,6 +253,43 @@ function validateOutput(result: OptimizedTripContext): void {
     }
 }
 
+// ─── LLM scheduler helpers ────────────────────────────────────────────────────
+
+/**
+ * Converts the per-day Mapbox matrix into a flat list of named travel-time
+ * pairs that the LLM prompt can read.  Both directions are included since
+ * driving times are not necessarily symmetric.
+ */
+function buildTravelPairsForLLM(
+    hotel: { id: string; name: string },
+    activities: Array<{ id: string; name: string }>,
+    matrix: number[][],
+    indexMap: Map<string, number>,
+): SchedulerTravelPair[] {
+    const allPoints = [hotel, ...activities];
+    const pairs: SchedulerTravelPair[] = [];
+
+    for (let i = 0; i < allPoints.length; i++) {
+        for (let j = 0; j < allPoints.length; j++) {
+            if (i === j) continue;
+            const fromIdx = indexMap.get(allPoints[i]!.id);
+            const toIdx   = indexMap.get(allPoints[j]!.id);
+            if (
+                fromIdx !== undefined &&
+                toIdx   !== undefined &&
+                matrix[fromIdx]?.[toIdx] !== undefined
+            ) {
+                pairs.push({
+                    from:    allPoints[i]!.name,
+                    to:      allPoints[j]!.name,
+                    minutes: Math.round(matrix[fromIdx]![toIdx]!),
+                });
+            }
+        }
+    }
+    return pairs;
+}
+
 // ─── LogisticsAgent ───────────────────────────────────────────────────────────
 
 export class LogisticsAgent {
@@ -369,9 +408,16 @@ export class LogisticsAgent {
         // Using Promise.allSettled so a matrix failure on one day does not
         // prevent routing on other days.
         let usedHaversineFallback = false;
-        let usedMapboxFallback = false;
+        let usedMapboxFallback    = false;
+        let llmScheduledDays      = 0;
+        let llmFallbackDays       = 0;
 
-        type DayResult = { optimizedDay: OptimizedDay; droppedCount: number; usedFallback: boolean };
+        type DayResult = {
+            optimizedDay:   OptimizedDay;
+            droppedCount:   number;
+            usedFallback:   boolean;
+            usedLlmSchedule: boolean;
+        };
 
         const dayResults = await Promise.allSettled(
             validatedDays.map(async (day): Promise<DayResult> => {
@@ -397,16 +443,58 @@ export class LogisticsAgent {
                 const { matrix, usedFallback } = await getTravelTimeMatrix(points);
                 const indexMap = new Map(points.map((p, i) => [p.id, i]));
 
-                const { scheduled, droppedCount } = buildScheduledDay(
-                    hotelCoord,
-                    dayActivities,
-                    { matrix, indexMap },
-                );
+                // ── LLM scheduling (primary path) ──────────────────────────
+                // Pass the real Mapbox travel times to the LLM so it can make
+                // geography-aware ordering decisions.  On any failure (LLM
+                // unavailable, JSON parse error, schema violation) we fall back
+                // to the deterministic nearest-neighbour router below.
+                let scheduled: ScheduledActivity[];
+                let usedLlmSchedule = false;
+
+                try {
+                    const travelPairs = buildTravelPairsForLLM(
+                        { id: hotelCoord.id, name: baseHotel.name },
+                        dayActivities,
+                        matrix,
+                        indexMap,
+                    );
+                    scheduled = await llmScheduleDay({
+                        destination: context.destination,
+                        day:         day.day,
+                        theme:       day.theme,
+                        hotel:       { name: baseHotel.name, area: baseHotel.area },
+                        activities:  dayActivities,
+                        travelPairs,
+                        pace:        context.preferences?.pace,
+                        style:       context.preferences?.style,
+                        requestId,
+                    });
+                    usedLlmSchedule = true;
+                } catch (llmErr) {
+                    // ── Deterministic fallback ─────────────────────────────
+                    logError(
+                        `[Logistics] LLM scheduler failed for day ${day.day} — falling back to deterministic router`,
+                        llmErr,
+                    );
+                    logStructured({
+                        layer: "agent", agent: "logistics", step: "llm_schedule_fallback", requestId,
+                        data: { day: day.day, reason: String(llmErr) },
+                    });
+                    const { scheduled: det } = buildScheduledDay(
+                        hotelCoord,
+                        dayActivities,
+                        { matrix, indexMap },
+                    );
+                    scheduled = det;
+                }
+
+                const droppedCount = dayActivities.length - scheduled.length;
 
                 return {
                     optimizedDay: { day: day.day, theme: day.theme, activities: scheduled },
                     droppedCount,
                     usedFallback,
+                    usedLlmSchedule,
                 };
             })
         );
@@ -416,8 +504,17 @@ export class LogisticsAgent {
             const originalDay = validatedDays[i]!;
 
             if (settled.status === "fulfilled") {
-                const { optimizedDay, droppedCount, usedFallback: dayFallback } = settled.value;
-                if (dayFallback) usedMapboxFallback = true;
+                const {
+                    optimizedDay,
+                    droppedCount,
+                    usedFallback:    dayFallback,
+                    usedLlmSchedule: dayUsedLlm,
+                } = settled.value;
+
+                if (dayFallback)  usedMapboxFallback = true;
+                if (dayUsedLlm)   llmScheduledDays++;
+                else              llmFallbackDays++;
+
                 if (droppedCount > 0) {
                     warnings.push(
                         `Day ${originalDay.day}: ${droppedCount} ${droppedCount === 1 ? "activity was" : "activities were"} removed due to time constraints`,
@@ -426,10 +523,11 @@ export class LogisticsAgent {
                 return optimizedDay;
             }
 
-            // Matrix or routing threw — fall back to slot-assignment only
+            // Matrix or routing threw entirely — last-resort slot-assignment
             // (slot assignment keeps all activities, so droppedCount is 0)
             usedHaversineFallback = true;
-            logError(`[Logistics] day ${originalDay.day} matrix failed — using deterministic fallback`, settled.reason);
+            llmFallbackDays++;
+            logError(`[Logistics] day ${originalDay.day} failed entirely — using slot-assignment fallback`, settled.reason);
             logStructured({
                 layer: "agent", agent: "logistics", step: "fallback_used", requestId,
                 data: { day: originalDay.day, reason: String(settled.reason) },
@@ -447,6 +545,11 @@ export class LogisticsAgent {
         }
         if (usedMapboxFallback) {
             warnings.push("Travel times are estimated (fallback routing used)");
+        }
+        if (llmFallbackDays > 0) {
+            warnings.push(
+                `${llmFallbackDays} ${llmFallbackDays === 1 ? "day" : "days"} used deterministic scheduling (LLM scheduler unavailable or invalid)`,
+            );
         }
 
         // ── 7. Inject meals (lunch + dinner) per day ─────────────────────────
@@ -530,11 +633,13 @@ export class LogisticsAgent {
         logStructured({
             layer: "agent", agent: "logistics", step: "end", requestId,
             data: {
-                selectedHotel:   result.selectedHotel.name,
-                days:            result.days.length,
-                totalScheduled:  result.days.reduce((s, d) => s + d.activities.length, 0),
-                warnings:        warnings.length,
-                path:            "mapbox_deterministic",
+                selectedHotel:    result.selectedHotel.name,
+                days:             result.days.length,
+                totalScheduled:   result.days.reduce((s, d) => s + d.activities.length, 0),
+                warnings:         warnings.length,
+                llmScheduledDays,
+                llmFallbackDays,
+                path:             llmScheduledDays > 0 ? "llm_primary" : "deterministic_only",
             },
         });
 

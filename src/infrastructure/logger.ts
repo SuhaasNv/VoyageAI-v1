@@ -85,7 +85,10 @@ export type LogStep =
     | "adjustment_applied"
     | "optimization_complete"
     | "plan_applied"
-    | "rules_applied";
+    | "rules_applied"
+    | "llm_schedule_attempt"
+    | "llm_schedule_success"
+    | "llm_schedule_fallback";
 
 export type StructuredLogEntry = {
     layer: "agent" | "orchestrator" | "llm" | "service";

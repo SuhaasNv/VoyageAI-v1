@@ -104,6 +104,14 @@ export const CONFIGS: Record<string, (intent?: string) => ProviderMatrix> = {
         openai: { model: "gpt-4.1-mini", temperature: 0.5, maxTokens: 4096, timeoutMs: 45_000 },
         gemini: { model: GEMINI_FLASH,    temperature: 0.5, maxTokens: 4096, timeoutMs: 45_000 },
     }),
+
+    // ── Logistics Agent — LLM-based per-day activity scheduling ───────────────
+    // Low temperature for deterministic, structured output.
+    // Compact token budget — each day is a small JSON array (≤ 8 activities).
+    "logistics-schedule": () => ({
+        openai: { model: "gpt-4.1-mini", temperature: 0.2, maxTokens: 2048, timeoutMs: 30_000 },
+        gemini: { model: GEMINI_FLASH,    temperature: 0.2, maxTokens: 2048, timeoutMs: 30_000 },
+    }),
 };
 
 export const DEFAULT_MATRIX: ProviderMatrix = {
